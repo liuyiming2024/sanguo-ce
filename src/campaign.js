@@ -35,6 +35,14 @@ export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } =
     forces: {},        // cityId -> { inside: [unit], camp: [unit] }
     intel: {},         // cityId -> { turn, garrison, wall, morale }（侦察结果）
     forts: [],         // { c, r, faction, turn } 前线垒寨
+    // 界面层共用、但要跟着存档走的状态：设施等级 / 部队编成 / 铜钱 / 设置。
+    // 全部是纯 JSON，逻辑层依旧不引用 DOM / localStorage。
+    facilities: {},
+    armies: [],
+    copper: 0,
+    claimedTasks: [],
+    reports: [],
+    settings: { idleStop: true, snap: true },
     nextOrderId: 1, nextForceId: 1, nextUnitId: 1, nextBattleId: 1,
     battles: {},
     stats: {
@@ -317,7 +325,7 @@ export function cityOverview(state, cityId) {
 }
 
 /** 地块产出聚合：只统计已占领格，围城中的城池产量减半。 */
-export function collectResources(state) {
+export function collectResources(state, { apply = true } = {}) {
   const out = {};
   for (const f of state.cfg.factions) out[f.id] = { wood: 0, stone: 0, iron: 0, grain: 0, tiles: 0 };
   for (const t of state.terrain.tiles) {
@@ -328,12 +336,30 @@ export function collectResources(state) {
   }
   for (const [fid, o] of Object.entries(out)) {
     for (const k of ['wood', 'stone', 'iron', 'grain']) o[k] = Math.round(o[k] * 10) / 10;
+    // 城内设施加成：伐木/采石/炼铁/磨坊每级各 +3%，城主府每级全局 +2%。
+    if (fid === state.playerFaction) {
+      const fl = state.facilities ?? {};
+      const bonus = {
+        wood: 1 + (fl.famuchang ?? 0) * 0.03,
+        stone: 1 + (fl.caishichang ?? 0) * 0.03,
+        iron: 1 + (fl.liantiechang ?? 0) * 0.03,
+        grain: 1 + (fl.mofang ?? 0) * 0.03,
+      };
+      const glob = 1 + (fl.chengzhufu ?? 0) * 0.02;
+      for (const k of ['wood', 'stone', 'iron', 'grain']) {
+        o[k] = Math.round(o[k] * bonus[k] * glob * 10) / 10;
+      }
+      if (apply) state.copper = Math.round((state.copper ?? 0) + 120 * (fl.minju ?? 0));
+    }
     state.yield[fid] = { ...o };
     const stock = state.resources[fid];
+    stock.tiles = o.tiles;
+    // apply=false 只刷新「每旬流量」用于界面显示，不重复入账。
+    // 设施升级后调它，避免同旬被加两次资源。
+    if (!apply) continue;
     for (const k of ['wood', 'stone', 'iron', 'grain']) {
       stock[k] = Math.round((stock[k] + o[k]) * 10) / 10;
     }
-    stock.tiles = o.tiles;
   }
   return out;
 }

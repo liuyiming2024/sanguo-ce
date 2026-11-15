@@ -3,31 +3,53 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#111815">
+<meta name="theme-color" content="#0a0d0c">
 <link rel="icon" href="data:,">
 <title>三国策 · 官渡</title>
-<link rel="stylesheet" href="./styles/main.css?v=0.2.0">
+<link rel="stylesheet" href="./styles/main.css?v=0.3.0">
 </head>
 <body>
 
 <canvas id="map" aria-label="建安五年豫兖战线地图"></canvas>
 
 <header id="topBar">
-  <div class="brand"><b>三国策</b><span>· 官渡</span></div>
-  <div class="date" id="date">建安五年 · 2月上旬</div>
-  <div class="faction" id="factionTag">曹操</div>
+  <div class="brand"><span class="seal">汉</span><b>三国策</b><span>· 官渡</span></div>
   <div class="res" id="res">
-    <span title="木材">木 <b id="rWood">0</b></span>
-    <span title="石料">石 <b id="rStone">0</b></span>
-    <span title="铁矿">铁 <b id="rIron">0</b></span>
-    <span title="粮草">粮 <b id="rGrain">0</b></span>
-    <span title="已占领地块">地 <b id="rTiles">0</b></span>
+    <span title="木材"><i class="k">木</i><b id="rWood">0</b></span>
+    <span title="石料"><i class="k">石</i><b id="rStone">0</b></span>
+    <span title="铁矿"><i class="k">铁</i><b id="rIron">0</b></span>
+    <span title="粮草"><i class="k">粮</i><b id="rGrain">0</b></span>
+    <span title="已占领地块"><i class="k">地</i><b id="rTiles">0</b></span>
   </div>
-  <div class="clock" id="clock">第 0 旬</div>
+  <div class="hudExtra">
+    <div class="hudChip" title="势力值"><span>势力</span><b id="hudPower">0</b></div>
+    <div class="hudChip hideSm" title="铜钱"><span>铜钱</span><b id="hudCopper">0</b></div>
+    <div class="hudChip hideSm" title="政令"><span>政令</span><b id="hudOrder">20/20</b></div>
+    <div class="hudChip hideSm" title="天气"><span id="hudWeather">晴</span></div>
+    <div class="date" id="date">建安五年 · 2月上旬</div>
+    <div class="faction" id="factionTag">曹操</div>
+    <div class="clock" id="clock">第 0 旬</div>
+    <button class="hudBtn" id="hudSystem" type="button" title="系统" aria-label="系统">⚙</button>
+  </div>
 </header>
 
-<!-- 地块信息 + 大地图指令 -->
-<aside id="infoCard" hidden aria-label="地块信息">
+<!-- 地图工具：右下竖排圆钮 -->
+<div id="mapTools">
+  <button id="zoomIn" type="button" title="放大" aria-label="放大">＋</button>
+  <button id="zoomOut" type="button" title="缩小" aria-label="缩小">−</button>
+  <button id="fitBtn" type="button" title="全图" aria-label="全图">全</button>
+  <button id="centerBtn" type="button" title="回中" aria-label="回中">中</button>
+  <div class="sep"></div>
+  <button id="endTurn" type="button" title="结束下一旬" aria-label="结束下一旬">旬<small>→</small></button>
+  <button id="autoBtn" type="button" aria-pressed="true" title="自动推进" aria-label="自动推进">自</button>
+  <button id="orderBtn" type="button" title="在途军情" aria-label="在途军情">军<b id="orderCount">0</b></button>
+  <button id="battleBtn" class="primary" type="button" title="进入城池布阵" aria-label="进入城池布阵">入城</button>
+  <button id="helpBtn" type="button" title="玩法" aria-label="玩法">?</button>
+</div>
+
+<!-- 地块信息（桌面右侧卷轴 / 手机底部 sheet） -->
+<aside id="infoCard" class="sheetCard" hidden aria-label="地块信息">
+  <div class="grabber"></div>
   <button class="x" id="closeInfoX" type="button" aria-label="关闭信息卡">×</button>
   <h2 id="infoTitle">地块</h2>
   <div id="infoBody"></div>
@@ -44,20 +66,23 @@
 </aside>
 
 <!-- 城池详情 -->
-<aside id="cityPanel" hidden aria-label="城池详情">
+<aside id="cityPanel" class="sheetCard" hidden aria-label="城池详情">
+  <div class="grabber"></div>
   <button class="x" id="closeCityX" type="button" aria-label="关闭城池详情">×</button>
   <h2 id="cityTitle">城池</h2>
   <div id="cityBody"></div>
   <div class="intel" id="cityIntel" hidden></div>
   <div class="cmdGroup">
     <button id="enterCityBtn" type="button" class="primary">进入城池布阵 →</button>
+    <button id="marchCityBtn" type="button">出征 / 调兵</button>
     <button id="recruitBtn" type="button">征兵 +500</button>
     <button id="scoutCityBtn" type="button">派斥候侦察</button>
   </div>
 </aside>
 
 <!-- 在途军情 -->
-<aside id="orderList" hidden aria-label="在途军情">
+<aside id="orderList" class="sheetCard" hidden aria-label="在途军情">
+  <div class="grabber"></div>
   <button class="x" id="closeOrderX" type="button" aria-label="关闭军情">×</button>
   <h2>在途军情</h2>
   <div id="orderBody"></div>
@@ -65,19 +90,13 @@
 
 <div id="log" aria-label="事件记录"></div>
 
-<footer id="bottomBar">
-  <button id="endTurn" type="button">结束回合 <small>→</small></button>
-  <button id="autoBtn" type="button" aria-pressed="true">自动推进 开</button>
-  <button id="zoomOut" type="button" aria-label="缩小">−</button>
-  <button id="zoomIn" type="button" aria-label="放大">＋</button>
-  <button id="centerBtn" type="button">回中</button>
-  <button id="fitBtn" type="button">全图</button>
-  <button id="orderBtn" type="button">军情 <b id="orderCount">0</b></button>
-  <button id="battleBtn" type="button" class="primary">进入当前城池</button>
-  <button id="helpBtn" type="button">玩法</button>
-</footer>
+<!-- 全屏子页面层（内政 / 武将 / 战法 / 部队 / 出征 / 战报 / 邮件 / 任务 / 同盟 / 天下 / 系统） -->
+<section id="screen" hidden aria-label="功能页面"></section>
 
-<!-- 城池小地图：固定视口、不拖动，只有调兵 -->
+<!-- 底部主菜单 Tab -->
+<footer id="bottomBar" aria-label="主菜单"></footer>
+
+<!-- 城池布阵：整屏固定视口小地图，不拖动，只调兵 -->
 <section id="battleOverlay" hidden aria-label="城池布阵界面">
   <button class="x" id="closeBattleX" type="button" aria-label="退出城池">×</button>
   <div class="battleHead">
@@ -104,30 +123,33 @@
   <button class="x" id="closeHelpX" type="button" aria-label="关闭玩法">×</button>
   <h2>玩法 · 建安五年</h2>
   <ul>
-    <li>1 回合 = 1 旬；点「结束回合」或开「自动推进」，日历不因战斗暂停。</li>
-    <li>144×108 栅格：山地/大河不可通行，关隘与津渡是唯一通道，官道行军更快。拖动平移、滚轮缩放、「全图」看整幅、右下角缩略图定位。</li>
-    <li><b>大地图指令</b>：占地（需连地）、屯田升级、筑垒寨、侦察、出征、调动、驻守、撤兵、征兵。全部需要行军时间，可在「军情」里撤令。</li>
-    <li><b>点城池</b>打开详情，再「进入城池布阵」：己方城部队在城内，敌方城部队在城外扎营。小地图固定视口、不拖动，只用来调兵。</li>
-    <li>小地图里拖单位部署；短拖画圆框选，再拖一次给方向（所有远程单位齐射 / 近战突击）；单击单位单兵接管。</li>
-    <li>退出的界面都能用 × 或 Esc 回来；「隔几旬再进来」会用同一固定步长空跑补齐，不另写结算公式。</li>
+    <li>1 回合 = 1 旬；日历不因进入城池而冻结，两端并行。</li>
+    <li>大地图可拖动 / 捏合缩放 / 滚轮缩放，「全」看整幅，右下缩略图定位。</li>
+    <li>底部主菜单：内政、武将、战法、部队、战报、邮件、任务、同盟、天下、系统。每层都能用 × 或 Esc 退出。</li>
+    <li>点地块弹信息卷轴；点城池可进「城池布阵」。己方部队在城内，敌方在城外扎营。</li>
+    <li>小地图固定视口、不拖动，只调兵；圆框选后二次拖拽定方向，所有远程单位齐射。</li>
+    <li>切到后台 / 锁屏 / 刷新会自动存档，主菜单可「继续上一局」。</li>
   </ul>
   <button class="closeBtn" id="closeHelp" type="button">关闭</button>
 </section>
 
 <section id="mainMenu" aria-label="开局选择势力">
   <div class="menuCard">
+    <div class="mseal">汉</div>
     <h1>三国策 <span>· 官渡</span></h1>
     <p class="menuSub" id="menuSub">建安五年 · 豫兖战线 · 栅格沙盘</p>
+    <div class="saveTip" id="saveTip" hidden></div>
     <label class="pick">选择势力
       <select id="factionPick"></select>
     </label>
     <p class="pickNote" id="pickNote"></p>
-    <button class="startBtn" id="startBtn" type="button">进入沙盘</button>
-    <p class="tiny">单方但可任选；其余势力由 AI 每两旬决策。真实城名 · 汉末黄河故道 · 官道与津渡 · 城池布阵。</p>
+    <button class="startBtn" id="continueBtn" type="button" hidden>继 续 上 一 局</button>
+    <button class="startBtn ghost" id="startBtn" type="button">新 开 一 局</button>
+    <p class="tiny">真实城名 · 汉末黄河故道 · 官道与津渡 · 城池布阵与双时钟并行。普天之下，莫非王土。</p>
   </div>
 </section>
 
-<div id="toast" role="status"></div>
-<script type="module" src="./src/main.js?v=0.2.0"></script>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+<script type="module" src="./src/main.js?v=0.3.0"></script>
 </body>
 </html>

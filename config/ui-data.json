@@ -1,0 +1,62 @@
+{
+  "meta": { "note": "界面展示数据。资源/城池/回合/领地/部队均从 campaign 状态实时派生，此处只放静态设定。" },
+  "facilities": [
+    { "id": "chengzhufu", "name": "城主府", "branch": "core", "lv": 5, "max": 10, "desc": "一城之枢。提升税收与城区耐久上限，并解锁其余设施。", "effect": "税收 +8% / 级 · 耐久上限 +150 / 级", "cost": { "wood": 12000, "stone": 18000, "iron": 6000, "grain": 4000 }, "need": 0, "unlockAtMax": "扩建：可多配置一支部队" },
+    { "id": "xiaochang", "name": "校场", "branch": "mil", "lv": 3, "max": 5, "desc": "使本城可配置部队，等级越高可出战部队越多。", "effect": "部队栏 +1 / 2 级 · 3、5 级各加一条征兵队列", "cost": { "wood": 4200, "stone": 5600, "iron": 2400, "grain": 1800 }, "need": 1, "unlockAtMax": "可同时出战 5 支部队" },
+    { "id": "jifeng", "name": "疾风营", "branch": "mil", "lv": 2, "max": 10, "desc": "提高本城部队行军速度。", "effect": "部队速度 +2 / 级 · 首回合全体速度 +10", "cost": { "wood": 3600, "stone": 4200, "iron": 3600, "grain": 1600 }, "need": 3, "unlockAtMax": "首回合先手" },
+    { "id": "tiebi", "name": "铁壁营", "branch": "mil", "lv": 2, "max": 10, "desc": "提高本城部队防御。", "effect": "部队防御 +2 / 级", "cost": { "wood": 3400, "stone": 5200, "iron": 2800, "grain": 1600 }, "need": 3, "unlockAtMax": "我军单体免疫首次伤害" },
+    { "id": "mubingsuo", "name": "募兵所", "branch": "mil", "lv": 4, "max": 10, "desc": "开启征兵并缩短征兵时间。", "effect": "征兵时间 -7% / 级 · 预备兵恢复 -1.5% / 级", "cost": { "wood": 4800, "stone": 3800, "iron": 2000, "grain": 3200 }, "need": 2, "unlockAtMax": "征兵时间 -70%" },
+    { "id": "junji", "name": "军机营", "branch": "mil", "lv": 1, "max": 10, "desc": "提高本城部队谋略。", "effect": "部队谋略 +2 / 级", "cost": { "wood": 3800, "stone": 3600, "iron": 4200, "grain": 1800 }, "need": 4, "unlockAtMax": "首回合单体洞察" },
+    { "id": "shangwu", "name": "尚武营", "branch": "mil", "lv": 1, "max": 10, "desc": "提高本城部队攻击。", "effect": "部队攻击 +2 / 级", "cost": { "wood": 4000, "stone": 3600, "iron": 3800, "grain": 1800 }, "need": 4, "unlockAtMax": "首次攻击无视相克" },
+    { "id": "minju", "name": "民居", "branch": "eco", "lv": 6, "max": 20, "desc": "开启税收，提高铜钱收入。", "effect": "铜钱 +120 / 旬 / 级", "cost": { "wood": 2600, "stone": 2100, "iron": 900, "grain": 1400 }, "need": 1, "unlockAtMax": "税收 +1000" },
+    { "id": "cangku", "name": "仓库", "branch": "eco", "lv": 5, "max": 20, "desc": "提高资源持有上限。", "effect": "资源上限 +8000 / 级", "cost": { "wood": 2400, "stone": 2800, "iron": 1200, "grain": 1200 }, "need": 1, "unlockAtMax": "满级激活：税收 +1000" },
+    { "id": "famuchang", "name": "伐木场", "branch": "eco", "lv": 5, "max": 20, "desc": "增加木材产量。", "effect": "木材 +150 / 旬 / 级", "cost": { "wood": 2000, "stone": 2400, "iron": 800, "grain": 1200 }, "need": 2, "unlockAtMax": "木材产出翻倍" },
+    { "id": "liantiechang", "name": "炼铁场", "branch": "eco", "lv": 4, "max": 20, "desc": "增加铁矿产量。", "effect": "铁矿 +120 / 旬 / 级", "cost": { "wood": 2200, "stone": 2600, "iron": 1000, "grain": 1200 }, "need": 2, "unlockAtMax": "铁矿产出翻倍" },
+    { "id": "caishichang", "name": "采石场", "branch": "eco", "lv": 4, "max": 20, "desc": "增加石料产量。", "effect": "石料 +140 / 旬 / 级", "cost": { "wood": 2100, "stone": 2200, "iron": 900, "grain": 1200 }, "need": 2, "unlockAtMax": "石料产出翻倍" },
+    { "id": "mofang", "name": "磨坊", "branch": "eco", "lv": 3, "max": 20, "desc": "增加粮草产量。", "effect": "粮草 +180 / 旬 / 级", "cost": { "wood": 2300, "stone": 1900, "iron": 700, "grain": 1600 }, "need": 3, "unlockAtMax": "粮草产出翻倍" },
+    { "id": "chengqiang", "name": "城墙", "branch": "mil", "lv": 2, "max": 5, "desc": "提高城区耐久，延缓敌军破城。", "effect": "耐久 +200 / 级", "cost": { "wood": 5200, "stone": 8800, "iron": 2400, "grain": 1200 }, "need": 4, "unlockAtMax": "城区耐久上限 +1500" },
+    { "id": "dianjiangtai", "name": "点将台", "branch": "mil", "lv": 1, "max": 10, "desc": "提高本势力阵营加成。", "effect": "阵营加成 +0.5% / 级", "cost": { "wood": 4200, "stone": 4200, "iron": 3600, "grain": 2000 }, "need": 5, "unlockAtMax": "阵营征兵时间 -20%" },
+    { "id": "yubeiyisuo", "name": "预备役所", "branch": "mil", "lv": 1, "max": 20, "desc": "提高预备兵上限并缩短恢复。", "effect": "预备兵上限 +600 / 级", "cost": { "wood": 3600, "stone": 3200, "iron": 1800, "grain": 2600 }, "need": 5, "unlockAtMax": "预备兵上限 +12000" },
+    { "id": "fenghuotai", "name": "烽火台", "branch": "mil", "lv": 0, "max": 5, "desc": "扩大视野，提前发现来犯之敌。", "effect": "视野 +1 格 / 级", "cost": { "wood": 3000, "stone": 3400, "iron": 1400, "grain": 1000 }, "need": 4, "unlockAtMax": "全境预警" },
+    { "id": "jishi", "name": "集市", "branch": "eco", "lv": 1, "max": 1, "desc": "四类资源按比例互换。", "effect": "开放资源交易", "cost": { "wood": 1800, "stone": 1800, "iron": 800, "grain": 800 }, "need": 3, "unlockAtMax": "交易" }
+  ],
+  "heroes": [
+    { "id": "caocao", "name": "曹操", "faction": "魏", "star": 5, "type": "骑", "cost": 3, "troops": 4200, "dim": [96, 72, 91, 98, 100], "tactic": "乱世奸雄", "bio": "字孟德，挟天子以令诸侯，官渡之战以少胜多。" },
+    { "id": "xiahou", "name": "夏侯惇", "faction": "魏", "star": 5, "type": "骑", "cost": 3, "troops": 4000, "dim": [91, 96, 58, 42, 99], "tactic": "拔矢啖睛", "bio": "字元让，曹军宿将，拔矢啖睛，勇冠三军。" },
+    { "id": "xunyu", "name": "荀彧", "faction": "魏", "star": 5, "type": "步", "cost": 3, "troops": 3200, "dim": [72, 38, 96, 99, 97], "tactic": "王佐之才", "bio": "字文若，举贤荐能，镇守许都，为曹氏根本。" },
+    { "id": "guojia", "name": "郭嘉", "faction": "魏", "star": 5, "type": "步", "cost": 3, "troops": 3000, "dim": [64, 32, 98, 86, 95], "tactic": "十胜十败", "bio": "字奉孝，策定官渡，遗计定辽东。" },
+    { "id": "xuchu", "name": "许褚", "faction": "魏", "star": 4, "type": "步", "cost": 2.5, "troops": 3800, "dim": [78, 97, 32, 24, 100], "tactic": "虎痴", "bio": "字仲康，力如虎而痴，号虎侯。" },
+    { "id": "zhangliao", "name": "张辽", "faction": "魏", "star": 5, "type": "骑", "cost": 3.5, "troops": 4100, "dim": [93, 92, 76, 61, 92], "tactic": "威震江东", "bio": "字文远，白狼山斩蹋顿，后威震逍遥津。" },
+    { "id": "yuanshao", "name": "袁绍", "faction": "群", "star": 5, "type": "骑", "cost": 3, "troops": 4400, "dim": [86, 68, 74, 82, 78], "tactic": "四世三公", "bio": "字本初，据河北四州，官渡败于曹操。" },
+    { "id": "yanliang", "name": "颜良", "faction": "群", "star": 4, "type": "骑", "cost": 2.5, "troops": 3900, "dim": [80, 95, 34, 28, 82], "tactic": "河北上将", "bio": "河北名将，白马之战为关羽所斩。" },
+    { "id": "wenchou", "name": "文丑", "faction": "群", "star": 4, "type": "骑", "cost": 2.5, "troops": 3850, "dim": [79, 94, 30, 26, 80], "tactic": "河北上将", "bio": "与颜良并称，延津战殁。" },
+    { "id": "jushou", "name": "沮授", "faction": "群", "star": 5, "type": "步", "cost": 3, "troops": 3100, "dim": [70, 36, 94, 93, 96], "tactic": "缓兵之计", "bio": "字公与，屡献良策不用，官渡败后被执。" },
+    { "id": "liubei", "name": "刘备", "faction": "蜀", "star": 5, "type": "步", "cost": 3, "troops": 3600, "dim": [84, 73, 78, 92, 100], "tactic": "仁德", "bio": "字玄德，客居汝南，扰许都之南。" },
+    { "id": "guanyu", "name": "关羽", "faction": "蜀", "star": 5, "type": "骑", "cost": 3.5, "troops": 4300, "dim": [95, 99, 72, 58, 100], "tactic": "万人之敌", "bio": "字云长，白马斩颜良，后归刘。" }
+  ],
+  "tactics": [
+    { "id": "yibing", "name": "疑兵", "rarity": "S", "type": "指挥", "desc": "开战前 2 回合，敌军谋略与攻击降低，判定成功率受军师智力影响。", "holder": "郭嘉" },
+    { "id": "huogong", "name": "火攻", "rarity": "S", "type": "主动", "desc": "对目标区域内敌军造成持续灼烧，对木质城防额外削减耐久。", "holder": "沮授" },
+    { "id": "guwu", "name": "鼓舞", "rarity": "A", "type": "主动", "desc": "恢复本军士气并短暂提高攻击，可解除溃散状态。", "holder": "曹操" },
+    { "id": "jianbi", "name": "坚壁", "rarity": "A", "type": "指挥", "desc": "驻守时部队防御提高，城门耐久流失减半。", "holder": "荀彧" },
+    { "id": "jixing", "name": "疾行", "rarity": "A", "type": "被动", "desc": "行军速度提高，行军回合数向下取整。", "holder": "张辽" },
+    { "id": "hewei", "name": "合围", "rarity": "S", "type": "主动", "desc": "框选部队向指定方向齐射 / 突击，断敌退路时提高擒获主帅概率。", "holder": "夏侯惇" },
+    { "id": "duanliang", "name": "断粮", "rarity": "A", "type": "主动", "desc": "使目标城池粮草产出减半，持续 3 旬。", "holder": "许褚" },
+    { "id": "zhenqian", "name": "阵前", "rarity": "B", "type": "被动", "desc": "前锋位受到的首次伤害降低。", "holder": "颜良" }
+  ],
+  "tasks": [
+    { "id": "t1", "kind": "主线", "name": "初定许都", "desc": "占领 3 块与己方领地相连的土地", "reward": "木材 2000 · 铜钱 500", "progress": "领地格数" },
+    { "id": "t2", "kind": "主线", "name": "屯田积谷", "desc": "对己方良田执行一次屯田", "reward": "粮草 3000", "progress": "屯田次数" },
+    { "id": "t3", "kind": "主线", "name": "修缮城主府", "desc": "将城主府提升至 6 级", "reward": "石料 4000", "progress": "城主府等级" },
+    { "id": "t4", "kind": "日常", "name": "遣斥候", "desc": "对任意敌方城池执行一次侦察", "reward": "铜钱 300", "progress": "侦察次数" },
+    { "id": "t5", "kind": "日常", "name": "整训部队", "desc": "完成一次征兵", "reward": "粮草 1200", "progress": "征兵次数" },
+    { "id": "t6", "kind": "主线", "name": "进逼官渡", "desc": "向敌方城池下达一次出征", "reward": "铁矿 2500", "progress": "出征次数" }
+  ],
+  "mails": [
+    { "id": "m1", "from": "许都·尚书台", "title": "建安五年二月 · 军报", "body": "袁绍遣颜良攻白马，东郡告急。主公宜先固黄河诸津，再图北上。", "turn": 0, "tag": "军情" },
+    { "id": "m2", "from": "荀彧", "title": "论官渡形势", "body": "绍兵多而法不整，田丰刚而犯上，许攸贪而不治。审配专而无谋，逢纪果而自用。此数人者，势不相容，必生内变。", "turn": 0, "tag": "私信" },
+    { "id": "m3", "from": "同盟", "title": "同盟公告", "body": "本旬起各城按领地多寡分摊粮草，津渡守军不得擅离。", "turn": 0, "tag": "同盟" },
+    { "id": "m4", "from": "系统", "title": "赛季 · 官渡", "body": "本赛季目标：据官渡、断乌巢、擒河北主帅。天下大势随各城归属实时变化。", "turn": 0, "tag": "系统" }
+  ],
+  "weather": ["晴", "多云", "风", "雨", "雾", "霜"]
+}
