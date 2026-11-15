@@ -20,13 +20,15 @@ const run = (s, turns, seed = 7) => {
   return all;
 };
 
-test('日历：建安五年二月上旬起，1 回合 = 1 旬，3 旬进一月', () => {
+test('军历：建安五年正月初一起，显示年号+月+日，3 旬进一月', () => {
   const s = mk();
-  assert.equal(dateLabel(s), '建安5年 · 2月上旬');   // 200 = 建安五年
-  run(s, 1); assert.equal(dateLabel(s), '建安5年 · 2月中旬');
-  run(s, 2); assert.equal(dateLabel(s), '建安5年 · 3月上旬');
+  assert.equal(dateLabel(s), '建安五年 正月初一');   // 200 = 建安五年，庚辰
+  run(s, 1); assert.equal(dateLabel(s), '建安五年 正月十一');
+  run(s, 1); assert.equal(dateLabel(s), '建安五年 正月廿一');
+  run(s, 1); assert.equal(dateLabel(s), '建安五年 二月初一');  // 史实：颜良围白马
   assert.equal(s.turn, 3);
   assert.equal(elapsedSec(s), 3 * cfg.calendar.secPerTurn);
+  assert.equal(dateLabel(s, 'full'), '建安五年 庚辰 · 二月 · 初一');
 });
 
 test('初始状态：12 城、完整栅格、三势力资源独立', () => {

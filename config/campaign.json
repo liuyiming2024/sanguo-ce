@@ -1,18 +1,18 @@
 {
   "meta": {
     "title": "三国策 · 官渡",
-    "version": "0.3.0",
-    "subtitle": "建安五年 · 豫兖战线 · 率式界面 · 城池布阵与双时钟"
+    "version": "0.4.0",
+    "subtitle": "建安五年 · 官渡章回 · 栅格沙盘与城池布阵"
   },
   "calendar": {
     "startYear": 200,
-    "startMonth": 2,
+    "startMonth": 1,
     "startXun": 1,
     "xunPerMonth": 3,
     "secPerTurn": 4,
     "fastForwardStepSec": 0.016666666666666666,
     "maxFastForwardSteps": 200000,
-    "_note": "1 回合 = 1 旬（10 日）。策略层 secPerTurn 秒折算一旬；战斗层用同一固定步长，快进只是不渲染地空跑。"
+    "_note": "内部 1 回合 = 1 旬（10 日）；显示层映射为年号+农历月+日（初一/十一/廿一），3 旬进一月。建安五年正月开局，与官渡章回史实时序对齐。"
   },
   "factions": [
     {

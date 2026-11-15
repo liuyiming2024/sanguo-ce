@@ -66,6 +66,7 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
     // 3) 山地：三角山形簇 + 亮面 + 等高线
     for (const t of terrain.tiles) {
       if (t.type !== T.MOUNTAIN && t.type !== T.HILL) continue;
+      if ((t.c + t.r) & 1) continue;   // 隔格抽样：山形不再铺满半屏
       const x = t.c * TP, y = t.r * TP;
       const big = t.type === T.MOUNTAIN;
       const h = big ? 11 + hash(t.c, t.r, 7) * 7 : 5 + hash(t.c, t.r, 7) * 3;
@@ -168,23 +169,24 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
         const n = terrain.inBounds(t.c + dc, t.r + dr) ? terrain.at(t.c + dc, t.r + dr) : null;
         return n?.road ? 1 : 0;
       };
+      // 正交半段为主，斜向只在「别无通路」时补：不再织成金色网带。
       const links = [];
       if (nb(1, 0)) links.push([cx, cy, x + TP, cy]);
       if (nb(-1, 0)) links.push([cx, cy, x, cy]);
       if (nb(0, 1)) links.push([cx, cy, cx, y + TP]);
       if (nb(0, -1)) links.push([cx, cy, cx, y]);
-      if (nb(1, 1)) links.push([cx, cy, x + TP, y + TP]);
-      if (nb(-1, -1)) links.push([cx, cy, x, y]);
-      if (nb(1, -1)) links.push([cx, cy, x + TP, y]);
-      if (nb(-1, 1)) links.push([cx, cy, x, y + TP]);
+      if (nb(1, 1) && !nb(1, 0) && !nb(0, 1)) links.push([cx, cy, x + TP, y + TP]);
+      if (nb(-1, -1) && !nb(-1, 0) && !nb(0, -1)) links.push([cx, cy, x, y]);
+      if (nb(1, -1) && !nb(1, 0) && !nb(0, -1)) links.push([cx, cy, x + TP, y]);
+      if (nb(-1, 1) && !nb(-1, 0) && !nb(0, 1)) links.push([cx, cy, x, y + TP]);
       if (!links.length) links.push([x + 2, cy, x + TP - 2, cy]);
       for (const [a, b, c, d] of links) {
-        g.strokeStyle = rgba('#181b14', 0.62); g.lineWidth = 8;
+        g.strokeStyle = rgba('#181b14', 0.50); g.lineWidth = 5;
         g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
-        g.strokeStyle = rgba('#cbb98a', 0.88); g.lineWidth = 4.2;
+        g.strokeStyle = rgba('#cbb98a', 0.70); g.lineWidth = 2.4;
         g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
-        g.strokeStyle = rgba('#f0e2b8', 0.34); g.lineWidth = 1.1;
-        g.beginPath(); g.moveTo(a, b - 1.6); g.lineTo(c, d - 1.6); g.stroke();
+        g.strokeStyle = rgba('#f0e2b8', 0.22); g.lineWidth = 0.8;
+        g.beginPath(); g.moveTo(a, b - 1); g.lineTo(c, d - 1); g.stroke();
       }
       if (t.type === T.FORD) {
         g.fillStyle = rgba('#d8c89a', 0.5);
@@ -467,11 +469,14 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
 
     // 缩略导航：全图 + 当前视口框，解决「放大后不知道自己在哪」
     const mw = Math.min(190, cssW * 0.24), mh = mw * (H / W);
-    const mx = cssW - mw - 14, my = cssH - mh - 58;
-    ctx.fillStyle = rgba('#0b100e', 0.9);
-    ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
-    ctx.strokeStyle = rgba(GOLD, 0.4); ctx.lineWidth = 1;
-    ctx.strokeRect(mx - 3, my - 3, mw + 6, mh + 6);
+    // 让开右下工具列（约 62px），否则缩略图被压在按钮底下。
+    const mx = cssW - mw - 14 - (cssW > 720 ? 62 : 56), my = cssH - mh - 58;
+    ctx.fillStyle = rgba('#0b100e', 0.97);
+    ctx.fillRect(mx - 5, my - 5, mw + 10, mh + 10);
+    ctx.strokeStyle = rgba(GOLD, 0.62); ctx.lineWidth = 1.5;
+    ctx.strokeRect(mx - 5, my - 5, mw + 10, mh + 10);
+    ctx.fillStyle = rgba('#0b100e', 0.97);
+    ctx.fillRect(mx - 5, my - 22, 76, 16);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(off, mx, my, mw, mh);
     const vx = mx + (camera.x / W) * mw, vy = my + (camera.y / H) * mh;
@@ -480,7 +485,7 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
     ctx.strokeRect(vx, vy, Math.max(3, vw), Math.max(3, vh));
     ctx.font = '9px "WenQuanYi Micro Hei", serif';
     ctx.fillStyle = rgba(TEXT, 0.85);
-    ctx.fillText(`全图 ${terrain.cols}×${terrain.rows}`, mx, my - 12);
+    ctx.fillText(`全图 ${terrain.cols}×${terrain.rows}`, mx, my - 10);
 
     // 比例尺
     ctx.font = '10px "WenQuanYi Micro Hei", serif';

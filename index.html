@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0a0d0c">
 <link rel="icon" href="data:,">
 <title>三国策 · 官渡</title>
-<link rel="stylesheet" href="./styles/main.css?v=0.3.0">
+<link rel="stylesheet" href="./styles/main.css?v=0.4.0">
 </head>
 <body>
 
@@ -26,9 +26,9 @@
     <div class="hudChip hideSm" title="铜钱"><span>铜钱</span><b id="hudCopper">0</b></div>
     <div class="hudChip hideSm" title="政令"><span>政令</span><b id="hudOrder">20/20</b></div>
     <div class="hudChip hideSm" title="天气"><span id="hudWeather">晴</span></div>
-    <div class="date" id="date">建安五年 · 2月上旬</div>
+    <div class="date" id="date">建安五年 正月初一</div>
     <div class="faction" id="factionTag">曹操</div>
-    <div class="clock" id="clock">第 0 旬</div>
+    <div class="clock" id="clock">第一回 · 许都受檄</div>
     <button class="hudBtn" id="hudSystem" type="button" title="系统" aria-label="系统">⚙</button>
   </div>
 </header>
@@ -52,6 +52,7 @@
   <div class="grabber"></div>
   <button class="x" id="closeInfoX" type="button" aria-label="关闭信息卡">×</button>
   <h2 id="infoTitle">地块</h2>
+  <div class="sheetScroll">
   <div id="infoBody"></div>
   <div class="cmdGroup" id="tileCmds">
     <button data-cmd="claim" type="button">占领此地</button>
@@ -63,6 +64,7 @@
     <button data-cmd="garrison" type="button">驻守</button>
     <button data-cmd="withdraw" type="button">撤兵回营</button>
   </div>
+  </div>
 </aside>
 
 <!-- 城池详情 -->
@@ -70,13 +72,15 @@
   <div class="grabber"></div>
   <button class="x" id="closeCityX" type="button" aria-label="关闭城池详情">×</button>
   <h2 id="cityTitle">城池</h2>
+  <div class="sheetScroll">
   <div id="cityBody"></div>
   <div class="intel" id="cityIntel" hidden></div>
   <div class="cmdGroup">
-    <button id="enterCityBtn" type="button" class="primary">进入城池布阵 →</button>
+    <button id="enterCityBtn" type="button" class="primary btn-primary">进入城池布阵 →</button>
     <button id="marchCityBtn" type="button">出征 / 调兵</button>
     <button id="recruitBtn" type="button">征兵 +500</button>
     <button id="scoutCityBtn" type="button">派斥候侦察</button>
+  </div>
   </div>
 </aside>
 
@@ -85,7 +89,7 @@
   <div class="grabber"></div>
   <button class="x" id="closeOrderX" type="button" aria-label="关闭军情">×</button>
   <h2>在途军情</h2>
-  <div id="orderBody"></div>
+  <div class="sheetScroll"><div id="orderBody"></div></div>
 </aside>
 
 <div id="log" aria-label="事件记录"></div>
@@ -103,53 +107,71 @@
     <h2>城池 · <span id="battleCity">—</span> <small id="battleSide">—</small></h2>
     <span class="sub" id="battleTip">固定视口，不拖动：把兵从城外大营拖进城里，或撤回大营。</span>
   </div>
-  <canvas id="cityCanvas" aria-label="城内小地图"></canvas>
-  <div class="battleGrid">
-    <div class="cell">策略回合<b id="bTurn">0</b></div>
-    <div class="cell">策略时刻 / 秒<b id="bCampaignSec">0</b></div>
-    <div class="cell">战斗时刻 / 秒<b id="bSec">0</b></div>
-    <div class="cell">上次快照 / 秒<b id="bSnapSec">—</b></div>
-    <div class="cell">快进步数<b id="bFastSteps">0</b></div>
-    <div class="cell">累计逻辑步<b id="bSteps">0</b></div>
-    <div class="cell">城内 / 大营<b id="bForces">0 / 0</b></div>
-    <div class="cell">士气 / 城防<b id="bMorale">0</b></div>
-    <div class="cell">邮箱待办<b id="bMail">0</b></div>
+  <div class="battleBody">
+    <canvas id="cityCanvas" aria-label="城内小地图"></canvas>
+    <details class="battleDebug" id="battleDebug">
+      <summary>军情细目 · 展开</summary>
+      <div class="battleGrid">
+        <div class="cell">军历<b id="bTurn">—</b></div>
+        <div class="cell">策略时刻<b id="bCampaignSec">0</b></div>
+        <div class="cell">战斗时刻<b id="bSec">0</b></div>
+        <div class="cell">上次快照<b id="bSnapSec">—</b></div>
+        <div class="cell">快进步数<b id="bFastSteps">0</b></div>
+        <div class="cell">累计逻辑步<b id="bSteps">0</b></div>
+        <div class="cell">城内 / 大营<b id="bForces">0 / 0</b></div>
+        <div class="cell">士气 / 城防<b id="bMorale">0</b></div>
+        <div class="cell">邮箱待办<b id="bMail">0</b></div>
+      </div>
+      <div class="battleNote" id="battleNote">离营期间各城照常运转；再进城时按同一军历补齐，部署状态随行保留。</div>
+    </details>
+    <button class="closeBattle" id="leaveBattle" type="button">退 出 城 池 · 回 大 营</button>
   </div>
-  <div class="battleNote" id="battleNote">两端并行：退出后策略日历照常走，再进入时用同一固定步长空跑补齐；部署状态随快照保留。</div>
-  <button class="closeBattle" id="leaveBattle" type="button">退出城池（拍快照）</button>
 </section>
 
 <section id="helpPanel" hidden aria-label="玩法说明">
   <button class="x" id="closeHelpX" type="button" aria-label="关闭玩法">×</button>
   <h2>玩法 · 建安五年</h2>
   <ul>
-    <li>1 回合 = 1 旬；日历不因进入城池而冻结，两端并行。</li>
+    <li>军历用年号 + 月 + 日（建安五年 正月初一 起）；日历不因进入城池而冻结，两端并行。</li>
+    <li>「纪事」按史实章回推进：正月许都受檄、二月颜良围白马、四月声东击西、八月官渡深堑、十月许攸夜奔与乌巢焚粮。不到史实月份不能跳回。</li>
     <li>大地图可拖动 / 捏合缩放 / 滚轮缩放，「全」看整幅，右下缩略图定位。</li>
-    <li>底部主菜单：内政、武将、战法、部队、战报、邮件、任务、同盟、天下、系统。每层都能用 × 或 Esc 退出。</li>
+    <li>底部主菜单：内政、武将、战法、部队、战报、邮件、纪事、同盟、天下、系统。每层都能用 × 或 Esc 退出。</li>
     <li>点地块弹信息卷轴；点城池可进「城池布阵」。己方部队在城内，敌方在城外扎营。</li>
     <li>小地图固定视口、不拖动，只调兵；圆框选后二次拖拽定方向，所有远程单位齐射。</li>
-    <li>切到后台 / 锁屏 / 刷新会自动存档，主菜单可「继续上一局」。</li>
+    <li>切到后台 / 锁屏 / 刷新会自动存档，主菜单可「继续上一局」；系统页可导出军令帖，无服务器也能异步对演。</li>
   </ul>
   <button class="closeBtn" id="closeHelp" type="button">关闭</button>
 </section>
 
-<section id="mainMenu" aria-label="开局选择势力">
-  <div class="menuCard">
+<section id="mainMenu" aria-label="序章 · 许都受檄">
+  <div class="menuCard proCard">
     <div class="mseal">汉</div>
     <h1>三国策 <span>· 官渡</span></h1>
-    <p class="menuSub" id="menuSub">建安五年 · 豫兖战线 · 栅格沙盘</p>
+    <p class="menuSub" id="menuSub">建安五年 · 官渡章回 · 栅格沙盘</p>
+
+    <div class="prologue">
+      <div class="proDate" id="proDate">建安五年 庚辰 · 正月 · 初一</div>
+      <h3 id="proTitle">第一回 · 许都受檄</h3>
+      <p class="proBeat" id="proBeat"></p>
+      <div class="proSource" id="proSource"></div>
+      <div class="proRole" id="proRole">司空府参军事 · 奉命领行台文书，统筹许都与黄河诸津</div>
+    </div>
+
     <div class="saveTip" id="saveTip" hidden></div>
-    <label class="pick">选择势力
-      <select id="factionPick"></select>
-    </label>
-    <p class="pickNote" id="pickNote"></p>
+
+    <div class="proChoice" id="proChoice">
+      <div class="pcLabel">府中议事 · 开局侧重（非势力选择）</div>
+      <button class="pcBtn selected" type="button" data-open="farm">先屯田积谷<small>粮草 +2500 · 城主府 +1</small></button>
+      <button class="pcBtn" type="button" data-open="scout">先遣斥候北探<small>白马 / 黎阳 / 延津情报</small></button>
+    </div>
+
     <button class="startBtn" id="continueBtn" type="button" hidden>继 续 上 一 局</button>
-    <button class="startBtn ghost" id="startBtn" type="button">新 开 一 局</button>
-    <p class="tiny">真实城名 · 汉末黄河故道 · 官道与津渡 · 城池布阵与双时钟并行。普天之下，莫非王土。</p>
+    <button class="startBtn ghost" id="startBtn" type="button">入 局 · 受 檄</button>
+    <p class="tiny">章回依《三国志·武帝纪》《资治通鉴》时序；身份由剧情给定，不再三选一。普天之下，莫非王土。</p>
   </div>
 </section>
 
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-<script type="module" src="./src/main.js?v=0.3.0"></script>
+<script type="module" src="./src/main.js?v=0.4.0"></script>
 </body>
 </html>

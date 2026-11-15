@@ -4,6 +4,11 @@
 // 每个页面都有 × 与返回、Esc 逐级退出。所有数值从 state 实时派生，不是写死的假界面。
 import { CITIES, cityById } from './map-data.js';
 import { dateLabel } from './campaign.js';
+import { formatCalendar } from './calendar.js';
+import {
+  currentChapter, chapterIndex, chapterById, goalProgress, canAdvance,
+  chapterHeadline, allMails,
+} from './story.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -17,13 +22,14 @@ const TABS = [
   { id: 'army', name: '部队', glyph: '阵' },
   { id: 'reports', name: '战报', glyph: '报' },
   { id: 'mail', name: '邮件', glyph: '书' },
-  { id: 'tasks', name: '任务', glyph: '令' },
+  { id: 'story', name: '纪事', glyph: '纪' },
   { id: 'alliance', name: '同盟', glyph: '盟' },
   { id: 'world', name: '天下', glyph: '势' },
   { id: 'system', name: '系统', glyph: '设' },
 ];
 
 const TITLE = {
+  chapterRead: ['章回回看', ''],
   interior: ['内政 · 设施', '城主府为本，左军事、右内政'],
   facility: ['设施详情', '升级立即生效'],
   heroes: ['武将', '点将台 · 在野与在任'],
@@ -37,9 +43,10 @@ const TITLE = {
   report: ['战报详情', ''],
   mail: ['邮件', '军情 · 私信 · 同盟'],
   mailRead: ['邮件', ''],
+  story: ['官渡纪事', '章回 · 军务 · 抉择'],
   tasks: ['任务', '主线与日常'],
   alliance: ['同盟', '合纵连横'],
-  world: ['天下', '建安五年 · 官渡局势'],
+  world: ['天下', '建安五年 · 天下大势'],
   system: ['系统', '设置与存档'],
   help: ['玩法', ''],
 };
@@ -52,10 +59,10 @@ export function facilityCost(f, lv) {
 
 // 文治页反纸：内政 / 政令 / 任务 / 邮件 / 同盟 / 天下 / 系统 / 玩法。
 // 武将、战法、部队、出征、战报仍走墨底，一深一浅才有翻页节奏。
-const PAPER_ROUTES = new Set(['interior', 'facility', 'tasks', 'mail', 'mailRead',
+const PAPER_ROUTES = new Set(['interior', 'facility', 'story', 'tasks', 'mail', 'mailRead',
   'alliance', 'world', 'system', 'help']);
 
-export function createShell({ cfg, uiData, actions, getState, getReports }) {
+export function createShell({ cfg, uiData, story, actions, getState, getReports }) {
   const screen = document.getElementById('screen');
   const tabsEl = document.getElementById('bottomBar');
   let stack = [];
@@ -327,7 +334,7 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
           <div class="kv"><span>归属</span><b>${target ? esc((s.cfg.factions.find((f) => f.id === s.cities[target.id]?.owner) ?? {}).name ?? '—') : '无主 / 敌方'}</b></div>
           <div class="kv"><span>行军距离</span><b>${distKm.toFixed(0)} km</b></div>
           <div class="kv"><span>行军回合</span><b>${turns} 旬</b></div>
-          <div class="kv"><span>预计抵达</span><b>第 ${arrive} 旬</b></div>
+          <div class="kv"><span>预计抵达</span><b>${esc(formatCalendar(arrive, s.cfg.calendar, 'short'))}</b></div>
           <div class="kv"><span>体力消耗</span><b>20（剩余 ${(army.stamina ?? 100) - 20}）</b></div>
           <div class="kv"><span>连地</span><b>${p.adjacent === false ? '未相连，需先铺路' : '已相连'}</b></div>
         </div>
@@ -352,38 +359,104 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
     return `${sec('战报', `${list.length} 条 · 最近在上`)}
       ${list.length ? list.map((r, i) => `<div class="listRow" data-act="report" data-id="${i}">
         <span class="tag ${r.red ? 'red' : ''}">${esc(r.tag)}</span>
-        <div><div class="t">${esc(r.title)}</div><div class="s">第 ${r.turn} 旬 · ${esc(r.sub)}</div></div>
+        <div><div class="t">${esc(r.title)}</div><div class="s">${esc(formatCalendar(r.turn, state().cfg.calendar, 'short'))} · ${esc(r.sub)}</div></div>
         <span class="arrow">›</span></div>`).join('')
         : '<p class="hintLine">暂无战报。出征、占领、侦察与屯田之后，这里会逐条记录。</p>'}`;
   }
   function pageReport(p) {
     const r = getReports()[Number(p.id)];
     if (!r) return '<p class="hintLine">战报不存在。</p>';
-    return `${sec(r.title, `第 ${r.turn} 旬 · ${r.tag}`)}
+    return `${sec(r.title, `${formatCalendar(r.turn, state().cfg.calendar, 'short')} · ${r.tag}`)}
       <p class="readBody">${esc(r.body)}</p>
       <button class="bigBtn ghost" data-act="back">返回战报列表</button>`;
   }
   function pageMail() {
-    return `${sec('邮件', `${uiData.mails.length} 封`)}
-      ${uiData.mails.map((m) => `<div class="listRow" data-act="mailRead" data-id="${m.id}">
+    const mailList = allMails(uiData, state());
+    return `${sec('邮件', `${mailList.length} 封`)}
+      ${mailList.map((m) => `<div class="listRow" data-act="mailRead" data-id="${m.id}">
         <span class="tag">${esc(m.tag)}</span>
         <div><div class="t">${esc(m.title)}</div><div class="s">${esc(m.from)}</div></div>
         <span class="arrow">›</span></div>`).join('')}`;
   }
   function pageMailRead(p) {
-    const m = uiData.mails.find((x) => x.id === p.id);
+    const m = allMails(uiData, state()).find((x) => x.id === p.id);
     if (!m) return '<p class="hintLine">邮件不存在。</p>';
     return `${sec(m.title, m.from)}
       <p class="readBody">${esc(m.body)}</p>
       <button class="bigBtn ghost" data-act="back">返回收件箱</button>`;
   }
 
-  function pageTasks() {
+  function pageStory() {
+    const s = state();
+    const cur = currentChapter(story, s);
+    const idx = chapterIndex(story, cur.id);
+    const next = story.chapters[idx + 1];
+    const gp = goalProgress(s, cur);
+    const gate = canAdvance(story, s);
+    const chosenId = (s.storyChoices ?? {})[cur.choice?.id];
+    const claimed = (s.claimedTasks ?? []).includes(cur.id);
+    const pct = Math.min(100, gp.cur / Math.max(1, gp.n) * 100);
+
+    const choiceHtml = cur.choice ? `
+      ${sec('行台议决', cur.choice.prompt)}
+      <div class="cardList">${cur.choice.options.map((o) => `
+        <div class="card choiceCard${chosenId === o.id ? ' chosen' : ''}" data-act="choose" data-id="${o.id}">
+          ${o.historical ? '<div class="stamp">史</div>' : ''}
+          <h3>${esc(o.text)}</h3>
+          <div class="meta">${esc(o.desc)}</div>
+          <div class="desc">${esc(o.note ?? '')}</div>
+          ${chosenId === o.id ? '<div class="chosenTag">已定</div>' : ''}
+        </div>`).join('')}</div>` : '';
+
+    const past = story.chapters.slice(0, idx).reverse().map((c) => `
+      <div class="listRow" data-act="chapterRead" data-id="${c.id}">
+        <span class="tag">${esc(c.no)}</span>
+        <div><div class="t">${esc(c.title)}</div><div class="s">${esc(c.era)} · ${esc(c.historical.slice(0, 26))}…</div></div>
+        <span class="arrow">›</span></div>`).join('');
+
+    return `
+      ${sec('官渡章回', `${dateLabel(s, 'full')} · ${story.meta.role}`)}
+      <div class="chapterHero">
+        <div class="chNo">${esc(cur.no)}</div>
+        <h3>${esc(cur.title)}</h3>
+        <div class="chEra">${esc(cur.era)} · 第 ${idx + 1} / ${story.chapters.length} 回</div>
+        <p class="readBody">${esc(cur.beat)}</p>
+        <div class="chSource">${esc(cur.historical)}<small>— ${esc(cur.source)}</small></div>
+      </div>
+
+      ${sec('本回军务', gp.label)}
+      <div class="goalCard">
+        <div class="kv"><span>军务进度</span><b>${gp.cur} / ${gp.n}</b></div>
+        <div class="progress"><i class="barFill" style="width:${pct}%"></i></div>
+        <div class="goalNote ${gate.ok ? 'ready' : ''}">${gate.ok
+          ? `军务已竟，时至 ${esc(next.era)}：可入「${esc(next.no)} · ${esc(next.title)}」`
+          : esc(gate.reason)}</div>
+        <div class="kv"><span>本回犒赏</span><b>${esc(cur.reward.text)}</b></div>
+        <div class="kv"><span>领取状态</span><b>${claimed ? '已随推进发讫' : '推进时一次发清'}</b></div>
+      </div>
+      ${choiceHtml}
+      <button class="bigBtn" data-act="advance">${gate.ok ? `入 ${esc(next.no)} · ${esc(next.title)}` : '推进章回'}</button>
+      <p class="hintLine" style="margin-top:8px">章回与军历月份绑定：不到史实月份（如二月颜良围白马、十月许攸夜奔）不能跳回。军务目标与大地图指令共用同一套 state 派生。</p>
+
+      ${past ? `${sec('已过章回', `${idx} 回`)}${past}` : ''}
+      ${dailyTasks()}
+    `;
+  }
+
+  function pageChapterRead(p) {
+    const c = chapterById(story, p.id);
+    if (!c) return '<p class="hintLine">无此章回。</p>';
+    return `${sec(c.title, `${c.no} · ${c.era}`)}
+      <p class="readBody">${esc(c.beat)}\n\n${esc(c.historical)}\n— ${esc(c.source)}</p>
+      <button class="bigBtn ghost" data-act="back">返回纪事</button>`;
+  }
+
+  function dailyTasks() {
     const s = state();
     const vals = [landCount(), s.stats.develops, facLv('chengzhufu'),
       s.stats.scouts, s.stats.recruits, s.stats.ordersIssued];
     const goals = [3, 1, 6, 1, 1, 1];
-    return `${sec('主线与日常', `第 ${s.turn} 旬 · ${dateLabel(s)}`)}
+    return `${sec('日常陈情', dateLabel(s, 'full'))}
       ${uiData.tasks.map((t, i) => {
         const done = vals[i] >= goals[i];
         const claimed = (s.claimedTasks ?? []).includes(t.id);
@@ -426,7 +499,7 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
         <button data-act="donate" data-id="grain">捐粮草 500</button>
       </div>
       ${sec('同盟日志')}
-      <p class="readBody">第 ${s.turn} 旬 · ${f?.name ?? ''}据${members.map((c) => c.name).slice(0, 4).join('、')}等城。\n第 0 旬 · 同盟初创，盟主 ${f?.name ?? ''}。</p>`;
+      <p class="readBody">${dateLabel(s, 'short')} · ${f?.name ?? ''}据${members.map((c) => c.name).slice(0, 4).join('、')}等城。\n建安五年 正月初一 · 同盟初创，盟主 ${f?.name ?? ''}。</p>`;
   }
 
   function pageWorld() {
@@ -438,7 +511,7 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
     }
     const landByOwner = {};
     for (const t of s.terrain.tiles) if (t.owner) landByOwner[t.owner] = (landByOwner[t.owner] ?? 0) + 1;
-    return `${sec('天下大势', `第 ${s.turn} 旬 · ${dateLabel(s)}`)}
+    return `${sec('天下大势', dateLabel(s, 'full'))}
       <p class="hintLine">赛季目标：据官渡、断乌巢、擒河北主帅。城池归属与领地格数随每旬实时变化。</p>
       ${statGrid([
         ['全图格数', fmt(s.terrain.cols * s.terrain.rows), '格'],
@@ -484,7 +557,18 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
         <button data-act="newgame">新开一局</button>
         <button data-act="delsave">删除存档</button>
       </div>
-      <p class="readBody" style="margin-top:12px">当前局面：第 ${s.turn} 旬 · ${dateLabel(s)}\n己方 ${esc((s.cfg.factions.find((f) => f.id === pf()) ?? {}).name ?? '')} · 领地 ${fmt(landCount())} 格 · 在途命令 ${s.orders.length} 道\n城池 ${ownCities().length} 座 · 事件记录 ${getReports().length} 条</p>
+      <p class="readBody" style="margin-top:12px">当前局面：${dateLabel(s, 'full')}\n己方 ${esc((s.cfg.factions.find((f) => f.id === pf()) ?? {}).name ?? '')} · 领地 ${fmt(landCount())} 格 · 在途命令 ${s.orders.length} 道\n城池 ${ownCities().length} 座 · 事件记录 ${getReports().length} 条</p>
+
+      ${sec('军令帖 · 无服务器异步对演', '零预算可做')}
+      <p class="hintLine">不设服务器也能两人对演：导出本局口令（存档 + 带序号的命令日志）交给对方，对方导入后接着下命令，再把口令传回。逻辑时间只有年号月日对应的 turn，没有墙钟；RNG 状态随命令入日志，两端序列不分叉。</p>
+      <textarea class="ticketBox" id="ticketBox" readonly placeholder="点「导出」生成本局口令">${esc(s.exportedTicket ?? '')}</textarea>
+      <div class="cmdGroup">
+        <button type="button" data-act="exportTicket">导出本局口令</button>
+        <button type="button" data-act="importTicket">导入对方口令</button>
+        <button type="button" data-act="verifyReplay">校验确定性重放</button>
+        <button type="button" data-act="syncInfo">联机边界说明</button>
+      </div>
+      <div class="syncNote">${esc(s.syncReport ?? `命令日志 ${s.commandLog?.entries?.length ?? 0} 条 · actor 三态 human / ai / remote · 状态指纹可直接比对`)}</div>
       <button class="bigBtn ghost" data-act="help">查看玩法说明</button>`;
   }
 
@@ -497,7 +581,8 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
     interior: pageInterior, facility: pageFacility, heroes: pageHeroes, hero: pageHero,
     tactics: pageTactics, tactic: pageTactic, army: pageArmy, heroPick: pageHeroPick,
     march: pageMarch, reports: pageReports, report: pageReport,
-    mail: pageMail, mailRead: pageMailRead, tasks: pageTasks,
+    mail: pageMail, mailRead: pageMailRead, story: pageStory,
+    chapterRead: pageChapterRead, tasks: dailyTasks,
     alliance: pageAlliance, world: pageWorld, system: pageSystem, help: pageHelp,
   };
 
@@ -583,6 +668,13 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
       case 'report': navigate('report', { id }); break;
       case 'mailRead': navigate('mailRead', { id }); break;
       case 'claim': actions.claimTask(id); render(); break;
+      case 'advance': {
+        const r = actions.advanceChapter();
+        if (r?.ok) render();
+        break;
+      }
+      case 'choose': actions.chooseOption(id); render(); break;
+      case 'chapterRead': navigate('chapterRead', { id }); break;
       case 'donate': actions.donate(id, 500); render(); break;
       case 'focusCity': actions.focusCity(id); closeAll(); break;
       case 'quick': actions.quick(id); render(); break;
@@ -593,6 +685,10 @@ export function createShell({ cfg, uiData, actions, getState, getReports }) {
       case 'load': actions.loadGame(); break;
       case 'newgame': actions.newGame(); break;
       case 'delsave': actions.deleteSave(); break;
+      case 'exportTicket': actions.exportTicket(); render(); break;
+      case 'importTicket': actions.importTicket(screen.querySelector('#ticketBox')?.value ?? ''); render(); break;
+      case 'verifyReplay': actions.verifyReplay(); render(); break;
+      case 'syncInfo': actions.syncInfo(); render(); break;
       case 'help': actions.openHelp(); break;
       default: break;
     }

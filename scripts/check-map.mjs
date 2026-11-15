@@ -6,6 +6,7 @@ import { createTerrain, terrainStats } from '../src/terrain.js';
 import { CITIES, PASSES, ROADS, validateMap } from '../src/map-data.js';
 import { validateConnectivity, routeCities, tilesPerTurn, hasAdjacentTerritory } from '../src/pathfind.js';
 import { createCampaign, collectResources, issueOrder } from '../src/campaign.js';
+import { calendarParts, formatCalendar, cnYear } from '../src/calendar.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const cfg = JSON.parse(readFileSync(join(root, 'config/campaign.json'), 'utf8'));
@@ -13,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.3.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.4.0', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -80,14 +81,16 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.3.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.3.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.4.0'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.4.0"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
   'src/rng.js', 'src/ui-shell.js', 'src/persist.js',
-  'config/campaign.json', 'config/ui-data.json', 'styles/main.css',
+  'src/calendar.js', 'src/story.js', 'src/sync.js',
+  'config/campaign.json', 'config/ui-data.json', 'config/story.json', 'styles/main.css',
   'tests/commands.test.mjs', 'tests/persist.test.mjs',
+  'tests/calendar.test.mjs', 'tests/story.test.mjs', 'tests/sync.test.mjs',
   'scripts/smoke.mjs', 'scripts/serve.mjs', '.nojekyll']) {
   ok(existsSync(join(root, f)), `缺少文件 ${f}`);
 }
@@ -99,18 +102,34 @@ if (problems.length) {
 }
 // ── 界面层机制自检（评审里「会真在屏幕上出事」的几条） ──────────────────
 const css = readFileSync(join(root, 'styles/main.css'), 'utf8');
-ok(/body::before\{[^}]*z-index:2/.test(css) && /body::after\{[^}]*z-index:3/.test(css),
-  '装饰层压在弹窗之上：必须降到 2/3');
-ok(/body::after\{[\s\S]*?linear-gradient\(90deg,transparent,var\(--gold2\)/.test(css),
-  '金线渐变方向写反，只会渲染成两个点');
+ok(/body::before\{[^}]*z-index:2/.test(css) && !/body::after\{/.test(css),
+  '装饰层只能压地图；被顶栏盖住又与顶栏金线重复的外框金线应删除');
+ok(!/--goldDim/.test(css), '--goldDim 成死变量');
+ok(/\.hudExtra\{[^}]*flex:0 0 auto/.test(css), 'flex 简写被 flex-shrink 覆盖，应合成一行');
 ok(/#bottomBar\{[^}]*padding:0 8px;padding:0 8px env\(/.test(css), 'env() 缺降级双写');
 ok(/\.x\{position:absolute/.test(css), '.x 没有基类，定位靠碰巧匹配');
+ok(/\.sheetCard\{[^}]*overflow:hidden/.test(css) && /\.sheetScroll\{[^}]*overflow:auto/.test(css),
+  'sheet 的 × 挂在滚动容器上，长内容会滚走');
 ok(/\.scrHead\{position:relative/.test(css) && /\.scrHead \.x\{position:static/.test(css),
   'scrHead 未建立定位上下文 / 标题栏 × 未回归 flex item');
 ok(/#topBar \.res\{[^}]*min-width:0/.test(css) && /\.hudExtra\{[^}]*min-width:0/.test(css),
   'flex 子项缺 min-width:0，资源一多会挤爆顶栏');
-ok(/#battleOverlay\{[^}]*overflow-y:auto/.test(css) && /#cityCanvas\{[^}]*flex:0 0 min\(42vh/.test(css),
-  '矮屏会硬裁掉城池界面底部按钮');
+ok(/#battleOverlay\{[^}]*overflow:hidden/.test(css) && /\.battleBody\{[^}]*overflow-y:auto/.test(css),
+  '整页滚动会让 head / × 一起滚走，应把滚动下移给 battleBody');
+ok(/#cityCanvas\{[^}]*flex:0 0 min\(55vh/.test(css), '画布应放到 55vh');
+ok(/\.cmdGroup button\.primary[\s\S]{0,400}?background:var\(--ink\)/.test(css) ||
+   /\.btn-primary[\s\S]{0,300}?background:var\(--ink\)/.test(css),
+  '主操作缺墨底反金重量');
+ok(/#screen\{position:absolute;top:0;left:0;right:0;bottom:58px/.test(css),
+  '全屏页盖住底部 Tab，翻页不该像开关灯');
+ok(/#screen\[data-tone="paper"\]::after/.test(css) &&
+   !/#screen\[data-tone="paper"\] \.scrBody::before/.test(css),
+  '朱印挂在滚动容器上会被长战报带出视口');
+ok(/--cardBg:/.test(css) && /--groundBg:/.test(css) &&
+   /#screen\[data-tone="paper"\] \.scrBody\{[\s\S]*?--cardBg:rgba\(255,255,255/.test(css),
+  '纸页应是局部变量覆盖，不是逐组件白名单');
+const paperOverrides = (css.match(/#screen\[data-tone="paper"\] \.scrBody \.[\w-]+/g) ?? []).length;
+ok(paperOverrides <= 6, `纸页仍有点名覆盖 ${paperOverrides} 处，应靠变量继承`);
 ok(/#screen\[data-tone="paper"\]/.test(css), '文治页缺蚕白纸底');
 ok(/--serif:"Noto Serif CJK SC","Source Han Serif SC"/.test(css),
   '字体栈首位是 macOS 专属，Windows 会掉到黑体');
@@ -134,4 +153,54 @@ ok(main3.includes('visibilitychange') && main3.includes('pagehide'), '切后台 
 ok(main3.includes('pointers.size === 2') && main3.includes('snapTile'), '移动端缺捏合缩放 / 地块吸附');
 ok(main3.includes('idleStop'), '静止停绘未接线');
 
-console.log('\n✓ 地图/连通性/导航/指纹/界面机制自检全绿');
+// ── v0.4.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
+ok(cfg.calendar.startMonth === 1 && cfg.calendar.xunPerMonth === 3,
+  '军历须自正月起，3 旬进一月，才能与史实章回月份对齐');
+ok(formatCalendar(0, cfg.calendar) === '建安五年 正月初一', '开局日期不是建安五年正月初一');
+ok(formatCalendar(3, cfg.calendar) === '建安五年 二月初一', '二月未对齐（颜良围白马）');
+ok(formatCalendar(9, cfg.calendar) === '建安五年 四月初一', '四月未对齐（声东击西）');
+ok(formatCalendar(27, cfg.calendar) === '建安五年 十月初一', '十月未对齐（许攸夜奔）');
+ok(calendarParts(0, cfg.calendar).ganzhi === '庚辰', '干支年不是庚辰');
+ok(cnYear(13) === '十三' && cnYear(5) === '五', '汉字年号有误');
+ok(!formatCalendar(0, cfg.calendar).includes('旬'), '界面日期不该出现「第几旬」');
+
+const story = JSON.parse(readFileSync(join(root, 'config/story.json'), 'utf8'));
+ok(story.chapters.length >= 8, '章回不足 8 回');
+ok(story.meta.faction === 'cao' && !!story.meta.role, '身份未由剧情给定');
+ok(story.chapters.every((c, i, a) => i === 0 || c.minTurn > a[i - 1].minTurn),
+  '章回 minTurn 未按史实时序递增');
+ok(story.chapters.every((c) => c.beat && c.historical && c.source && c.goal && c.reward && c.choice),
+  '章回缺叙事 / 史注 / 目标 / 犒赏 / 抉择');
+ok(story.chapters.every((c) => c.onEnter?.report), '章回入场缺史实战报');
+ok(!html.includes('factionPick') && html.includes('class="prologue"'),
+  '仍在做势力三选一，序章卷轴未取代势力下拉');
+ok(html.includes('id="proBeat"') && html.includes('data-open="farm"'), '序章未取代势力下拉');
+ok(!readFileSync(join(root, 'src/main.js'), 'utf8').includes('factionPick'), 'main.js 仍绑定势力下拉');
+
+const sync = readFileSync(join(root, 'src/sync.js'), 'utf8');
+ok(sync.includes('export function hashState') && sync.includes('appendCommand') &&
+   sync.includes('verifyReplay') && sync.includes('createBroadcastTransport') &&
+   sync.includes('encodeTicket'), '联机地基缺命令日志 / 指纹 / 重放 / 传输 / 口令');
+const main4 = readFileSync(join(root, 'src/main.js'), 'utf8');
+ok(main4.includes('exportTicket') && main4.includes('verifyReplay') && main4.includes('syncInfo'),
+  '系统页未接线军令帖 / 重放校验');
+ok(main4.includes('chapterHeadline(story, state)'), '顶栏未显示章回名');
+ok(!/第 \$\{[^}]*turn\} 旬/.test(main4), '装配层仍有「第 N 旬」文案');
+
+// ── v0.4.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
+const mrender = readFileSync(join(root, 'src/map-render.js'), 'utf8');
+ok(/lineWidth = 5;/.test(mrender) && /lineWidth = 2\.4;/.test(mrender),
+  '官道仍是 8/4.2 金带');
+ok(!/if \(nb\(1, 1\)\) links\.push/.test(mrender),
+  '8 向全连会把官道织成金网');
+ok(/\(t\.c \+ t\.r\) & 1\) continue/.test(mrender), '山形未隔格抽样');
+ok(/cssW - mw - 14 - \(cssW > 720 \? 62 : 56\)/.test(mrender),
+  '缩略导航被右下工具列压住');
+ok(/rgba\('#0b100e', 0\.97\)/.test(mrender), '缩略导航缺实底');
+const html4 = readFileSync(join(root, 'index.html'), 'utf8');
+ok(html4.includes('class="battleDebug"') && html4.includes('军情细目 · 展开'),
+  '调试 9 格仍是一级 UI');
+ok(!/已拍快照 @/.test(readFileSync(join(root, 'src/main.js'), 'utf8')),
+  'toast 仍在报调试数字');
+
+console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾自检全绿');

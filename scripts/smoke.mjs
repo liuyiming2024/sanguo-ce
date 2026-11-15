@@ -59,9 +59,17 @@ try {
 
   // ── 基础 ──────────────────────────────────────────────────────────────
   check('页面加载且模块装配完成', await page.isVisible('#mainMenu'));
-  check('主菜单标注 v0.3.0 与栅格规模',
+  check('序章卷轴取代势力三选一',
+    (await page.locator('#proBeat').innerText()).includes('董承') &&
+    (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
+    !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
+  check('主菜单标注 v0.4.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.3.0'));
+    (await page.locator('#menuSub').innerText()).includes('0.4.0'));
+  check('开局是建安五年庚辰正月初一',
+    (await page.locator('#proDate').innerText()).includes('建安五年') &&
+    (await page.locator('#proDate').innerText()).includes('庚辰') &&
+    (await page.locator('#proDate').innerText()).includes('正月'));
   check('界面外壳已接线', await page.evaluate(() => !!window.__sanguo.shell));
 
   await page.click('#startBtn');
@@ -82,15 +90,15 @@ try {
     return {
       beforeZ: before.zIndex, afterZ: after.zIndex,
       afterBg: after.backgroundImage,
+      screenBottom: getComputedStyle(document.getElementById('screen')).bottom,
       toolsBottom: tools.bottom,
       sheetXPos: sheetX.position,
     };
   });
-  check('装饰层降到地图之上、UI 之下', cssMech.beforeZ === '2' && cssMech.afterZ === '3',
-    `${cssMech.beforeZ}/${cssMech.afterZ}`);
-  check('金线是贯通渐变而非两个点',
-    cssMech.afterBg.includes('linear-gradient') && cssMech.afterBg.includes('12%'),
-    cssMech.afterBg.slice(0, 60));
+  check('装饰层降到地图之上、UI 之下', cssMech.beforeZ === '2', cssMech.beforeZ);
+  check('顶栏重复的外框金线已删', cssMech.afterBg === 'none' || !cssMech.afterBg,
+    cssMech.afterBg.slice(0, 40));
+  check('全屏页让出底部 Tab', cssMech.screenBottom === '58px', cssMech.screenBottom);
   check('env() 有降级：mapTools.bottom 不是 auto',
     cssMech.toolsBottom !== 'auto' && cssMech.toolsBottom.endsWith('px'), cssMech.toolsBottom);
   check('.x 有基类：sheet 关闭按钮绝对定位', cssMech.sheetXPos === 'absolute');
@@ -121,13 +129,62 @@ try {
 
   // ── 整套界面：每个 Tab 可进、可出 ────────────────────────────────────
   const TABS = ['interior', 'heroes', 'tactics', 'army', 'reports', 'mail',
-    'tasks', 'alliance', 'world', 'system'];
+    'story', 'alliance', 'world', 'system'];
   for (const t of TABS) {
     await tabClick(t);
     await page.waitForTimeout(60);
     const ok = await page.isVisible('#screen') && (await routes()).includes(t);
     check(`Tab「${t}」可达`, ok);
   }
+  check('全屏页打开时底部 Tab 仍可命中', await page.evaluate(() => {
+    const t = document.querySelector('#bottomBar [data-tab="heroes"]');
+    const r = t.getBoundingClientRect();
+    const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return !!el && !!el.closest('#bottomBar');
+  }));
+  // ── v0.4.0：章回剧情与军历 ────────────────────────────────────────────
+  await nav('story');
+  const storyTxt = await page.locator('#screen').innerText();
+  check('纪事页有章回叙事 / 史注 / 军务 / 抉择',
+    storyTxt.includes('许都受檄') && storyTxt.includes('三国志') &&
+    storyTxt.includes('军务进度') && storyTxt.includes('行台议决'));
+  check('纪事页含配套日常陈情，不再单列任务 Tab',
+    storyTxt.includes('日常陈情') && !(await page.locator('#bottomBar').innerHTML()).includes('data-tab="tasks"'));
+  check('章回目标不从开局领地白送进度', await page.evaluate(() => {
+    const w = window.__sanguo;
+    const m = w.story.chapters[0];
+    return w.state.storyBaseline.land > 300 && w.state.stats.tilesClaimed === 0;
+  }));
+  check('顶栏显示章回名与年号月日',
+    (await page.locator('#clock').innerText()).includes('回') &&
+    (await page.locator('#date').innerText()).includes('建安五年') &&
+    !(await page.locator('#date').innerText()).includes('旬'));
+  check('不到二月不能跳回黎阳压河', await page.evaluate(() => {
+    const w = window.__sanguo;
+    w.state.stats.tilesClaimed = 3;
+    return w.state.turn < w.story.chapters[1].minTurn;
+  }));
+  check('军历 3 旬进一月、十月对齐许攸夜奔', await page.evaluate(() => {
+    const w = window.__sanguo;
+    return w.calendar(3, w.cfg.calendar) === '建安五年 二月初一' &&
+      w.calendar(27, w.cfg.calendar) === '建安五年 十月初一';
+  }));
+  // 系统页：军令帖 / 重放 / 联机边界
+  await nav('system');
+  check('系统页含军令帖与确定性重放入口',
+    (await page.locator('#screen').innerText()).includes('军令帖') &&
+    (await page.locator('#screen').innerText()).includes('校验确定性重放'));
+  const ticket = await page.evaluate(() => window.__sanguo.actions.exportTicket());
+  check('军令帖可导出且是 base64url 口令', /^[A-Za-z0-9_-]+$/.test(ticket) && ticket.length > 200);
+  const replay = await page.evaluate(() => window.__sanguo.actions.verifyReplay());
+  check('双路径确定性重放通过', replay.ok === true && replay.steps === 12,
+    replay.ok ? replay.hash : String(replay.mismatchAt));
+  await page.evaluate(() => window.__sanguo.actions.syncInfo());
+  check('联机边界写明「无预算可做 / 不可做」', await page.evaluate(() =>
+    window.__sanguo.state.syncReport.includes('无预算可做') &&
+    window.__sanguo.state.syncReport.includes('做不了')));
+  await nav('interior');   // 保持 screen 打开，后续逐层断言才有元素
+
   check('每层都有 × 与返回',
     await page.isVisible('#screen .x') && await page.isVisible('#screen .back'));
   check('.scrHead 建立定位上下文，标题栏 × 是 flex item',
@@ -146,9 +203,15 @@ try {
   }));
   check('文治页反一张蚕白纸底', paper.tone === 'paper' &&
     paper.color === 'rgb(32, 37, 31)' && paper.bg.includes('linear-gradient'), paper.tone);
-  check('纸面右下有朱印', await page.evaluate(() => {
-    const s = getComputedStyle(document.querySelector('#screen .scrBody'), '::before');
+  check('朱印挂在 #screen 上，滚动带不走', await page.evaluate(() => {
+    const s = getComputedStyle(document.getElementById('screen'), '::after');
     return s.content.includes('政') && s.backgroundImage.includes('linear-gradient');
+  }));
+  check('纸页用局部变量覆盖而非白名单', await page.evaluate(() => {
+    const b = document.querySelector('#screen .scrBody');
+    const cs = getComputedStyle(b);
+    return cs.getPropertyValue('--cardBg').trim().startsWith('rgba(255,255,255') &&
+      cs.getPropertyValue('--gold').trim() === '#6a5227';
   }));
   await nav('heroes');
   check('武备页仍是墨底', await page.evaluate(() =>
@@ -236,8 +299,9 @@ try {
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => !!window.__sanguo, null, { timeout: 20000 });
   check('刷新后主菜单出现「继续上一局」', await page.isVisible('#continueBtn'));
-  check('存档摘要显示回合与势力',
-    (await page.locator('#saveTip').innerText()).includes(`第 ${turnBefore} 旬`));
+  check('存档摘要用年号月日而非「第几旬」',
+    (await page.locator('#saveTip').innerText()).includes('建安五年') &&
+    !(await page.locator('#saveTip').innerText()).includes('旬'));
   await page.click('#continueBtn');
   await page.waitForTimeout(200);
   const turnAfter = await page.evaluate(() => window.__sanguo.state.turn);
@@ -327,11 +391,16 @@ try {
   // 矮屏：底部退出按钮不被裁
   await page.setViewportSize({ width: 390, height: 667 });
   await page.waitForTimeout(120);
-  check('矮屏上退出按钮仍在可滚区域内', await page.evaluate(() => {
+  check('矮屏上 head / × 不随整页滚走', await page.evaluate(() => {
     const o = document.getElementById('battleOverlay');
-    const b = document.getElementById('leaveBattle');
-    return getComputedStyle(o).overflowY === 'auto' && b.getBoundingClientRect().height > 0 &&
-      b.getBoundingClientRect().top < o.scrollHeight + 200;
+    const body = document.querySelector('.battleBody');
+    return getComputedStyle(o).overflowY === 'hidden' &&
+      getComputedStyle(body).overflowY === 'auto' && !body.contains(document.getElementById('closeBattleX'));
+  }));
+  check('军情细目默认收起，画布放到 55vh', await page.evaluate(() => {
+    const d = document.getElementById('battleDebug');
+    const c = document.getElementById('cityCanvas');
+    return !d.open && c.getBoundingClientRect().height > 300;
   }));
   await page.setViewportSize({ width: 1200, height: 780 });
 
@@ -349,8 +418,8 @@ try {
   }));
   await page.evaluate(() => window.__sanguo.openBattle('liyang'));
   await page.waitForTimeout(180);
-  const fast = Number(await page.locator('#bFastSteps').innerText());
-  const secNow = Number(await page.locator('#bSec').innerText());
+  const fast = Number(await page.locator('#bFastSteps').textContent());
+  const secNow = Number(await page.locator('#bSec').textContent());
   check('隔 5 旬再进入触发同算法快进', fast > 100, `${fast} 步`);
   check('快进后战斗时刻追平策略时刻',
     secNow >= now.turn * now.per - 0.05 && secNow <= now.turn * now.per + 1.2,

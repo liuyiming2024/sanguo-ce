@@ -1,25 +1,35 @@
-// 装配层 v0.3.0：唯一引用 DOM / rAF / localStorage 的地方。
+// 装配层 v0.4.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.3.0';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.4.0';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.3.0';
+} from './campaign.js?v=0.4.0';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.3.0';
-import { createMapRenderer } from './map-render.js?v=0.3.0';
-import { createCityView } from './city-view.js?v=0.3.0';
+} from './pathfind.js?v=0.4.0';
+import { createMapRenderer } from './map-render.js?v=0.4.0';
+import { createCityView } from './city-view.js?v=0.4.0';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.3.0';
-import { CITIES, cityById } from './map-data.js?v=0.3.0';
-import { TYPE_LABEL } from './terrain.js?v=0.3.0';
-import { createShell, facilityCost } from './ui-shell.js?v=0.3.0';
+} from './battle-session.js?v=0.4.0';
+import { CITIES, cityById } from './map-data.js?v=0.4.0';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.4.0';
+import {
+  currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
+  applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
+  claimChapterReward as claimStoryReward, allMails,
+} from './story.js?v=0.4.0';
+import {
+  appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
+  createLoopbackTransport, createBroadcastTransport, stateFingerprint,
+} from './sync.js?v=0.4.0';
+import { TYPE_LABEL } from './terrain.js?v=0.4.0';
+import { createShell, facilityCost } from './ui-shell.js?v=0.4.0';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.3.0';
+} from './persist.js?v=0.4.0';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -27,7 +37,8 @@ const ctx = canvas.getContext('2d');
 const cityCanvas = $('cityCanvas');
 const LON_MIN = 112.75, LON_MAX = 116.15, LAT_MIN = 32.65, LAT_MAX = 36.65;
 
-let cfg, uiData, state, rng, renderer, cityView = null, shell = null;
+let cfg, uiData, story, state, rng, renderer, cityView = null, shell = null;
+let openingChoice = 'farm', chapterGateWasReady = false;
 let session = null, snapshot = null, battleCityId = null;
 let auto = true, accTurn = 0, last = 0, started = false, dirty = true;
 let selection = null, selectedCity = null, toastTimer = null, saveTick = 0;
@@ -37,6 +48,14 @@ const heroById = (id) => uiData?.heroes.find((h) => h.id === id) ?? null;
 const faction = () => cfg.factions.find((f) => f.id === state.playerFaction);
 const R = () => state.resources[state.playerFaction];
 const markDirty = () => { dirty = true; };
+/** 界面侧动作也进命令日志：以后接服务器时，所有状态变更都有同一条可重放入口。 */
+function record(type, payload = {}) {
+  if (!state?.commandLog) return;
+  appendCommand(state.commandLog, {
+    turn: state.turn, actor: state.playerFaction, type, payload,
+    rngBefore: state.rngCalls, rngAfter: state.rngCalls,
+  });
+}
 
 function toast(msg) {
   const n = $('toast');
@@ -61,7 +80,8 @@ function pushReport(r) {
 }
 
 // ── 新局初始化（boot / 新开一局 / 势力选择共用） ─────────────────────────
-function newCampaign(factionId) {
+function newCampaign(factionId = story.meta.faction) {
+  // 身份由序章给定（司空府参军事 · 曹操麾下），不做势力三选一。
   const s = createCampaign(cfg, { playerFaction: factionId, seed: cfg.terrain.seed });
   s.facilities = Object.fromEntries(uiData.facilities.map((f) => [f.id, f.lv]));
   const roster = {
@@ -79,6 +99,13 @@ function newCampaign(factionId) {
   s.claimedTasks = [];
   s.reports = [];
   collectResources(s, { apply: false });   // 只算流量，开局库存保持 0
+  applyOpening(s, story, openingChoice);
+  appendCommand(s.commandLog, {
+    turn: s.turn, actor: s.playerFaction, type: 'openingChoice',
+    payload: { option: openingChoice, role: story.meta.role },
+    rngBefore: 0, rngAfter: 0,
+  });
+  s.chapter = story.chapters[0].id;
   return s;
 }
 
@@ -103,7 +130,7 @@ function saveGame(silent = false) {
     ui: { auto, camera: { ...renderer.camera }, battleCityId },
   });
   const ok = saveToStorage(data);
-  if (!silent) toast(ok ? `已保存 · 第 ${state.turn} 旬` : '本机存储不可用，未能保存');
+  if (!silent) toast(ok ? `已保存 · ${formatCalendar(state.turn, cfg.calendar, 'short')}` : '本机存储不可用，未能保存');
   return ok;
 }
 function autoSave(force = false) {
@@ -123,6 +150,14 @@ function loadGame() {
   state.reports = reports;
   state.claimedTasks ??= [];
   state.settings ??= { idleStop: true, snap: true };
+  state.chapter ??= story.chapters[0].id;
+  state.storyMails ??= [];
+  state.storyFlags ??= {};
+  state.storyChoices ??= {};
+  state.chapterHistory ??= [];
+  state.commandLog ??= { v: 1, seq: 0, entries: [] };
+  state.exportedTicket = '';
+  state.syncReport = '';
   auto = r.ui?.auto ?? true;
   battleCityId = r.ui?.battleCityId ?? null;
   // terrain 换了实例，渲染器与城池视图都要重建。
@@ -144,8 +179,8 @@ function loadGame() {
 // ── UI 刷新 ─────────────────────────────────────────────────────────────
 function refreshUI() {
   if (!state) return;
-  $('date').textContent = dateLabel(state);
-  $('clock').textContent = `第 ${state.turn} 旬`;
+  $('date').textContent = dateLabel(state, 'short');
+  $('clock').textContent = chapterHeadline(story, state);
   const pf = faction();
   $('factionTag').textContent = pf.name;
   $('factionTag').style.borderColor = pf.color;
@@ -250,7 +285,7 @@ function showCity(cityId) {
   const intel = $('cityIntel');
   if (o.intel && o.intel.owner !== state.playerFaction) {
     intel.hidden = false;
-    intel.innerHTML = `斥候回报（第 ${o.intel.turn} 旬）：守军 ${o.intel.garrison.toLocaleString('zh-CN')} · 城防 ${o.intel.wall} · 士气 ${o.intel.morale}`;
+    intel.innerHTML = `斥候回报（${formatCalendar(o.intel.turn, cfg.calendar, 'short')}）：守军 ${o.intel.garrison.toLocaleString('zh-CN')} · 城防 ${o.intel.wall} · 士气 ${o.intel.morale}`;
   } else intel.hidden = true;
   $('recruitBtn').disabled = o.owner !== state.playerFaction;
   $('scoutCityBtn').disabled = o.owner === state.playerFaction;
@@ -264,8 +299,8 @@ function renderOrderList() {
   $('orderBody').innerHTML = list.map((o) => {
     const dest = o.to ? cityById(o.to)?.name : o.tile ? `(${o.tile.c},${o.tile.r})` : '—';
     return `<div class="orderItem">
-      <div class="head"><span>${CMD_LABEL[o.type] ?? o.type} → ${dest}</span><b>第 ${o.arriveTurn} 旬</b></div>
-      <div class="sub">${o.path?.length ?? 0} 格 · ${(o.km ?? 0).toFixed(0)} km · 第 ${o.issuedTurn} 旬下令</div>
+      <div class="head"><span>${CMD_LABEL[o.type] ?? o.type} → ${dest}</span><b>${formatCalendar(o.arriveTurn, cfg.calendar, 'date')} 抵达</b></div>
+      <div class="sub">${o.path?.length ?? 0} 格 · ${(o.km ?? 0).toFixed(0)} km · ${formatCalendar(o.issuedTurn, cfg.calendar, 'short')} 下令</div>
       <button data-cancel="${o.id}" type="button">撤令（退兵退资源）</button>
     </div>`;
   }).join('');
@@ -280,7 +315,7 @@ function renderOrderList() {
 
 function refreshBattleUI() {
   if (!session) return;
-  $('bTurn').textContent = state.turn;
+  $('bTurn').textContent = formatCalendar(state.turn, cfg.calendar, 'date');
   $('bCampaignSec').textContent = (state.turn * cfg.calendar.secPerTurn).toFixed(1);
   $('bSec').textContent = session.sec.toFixed(1);
   $('bSnapSec').textContent = snapshot ? snapshot.sec.toFixed(1) : '—';
@@ -297,17 +332,24 @@ function doTurn() {
   const evs = advanceTurn(state, rng);
   for (const e of evs.slice(0, 6)) {
     const fn = cfg.factions.find((f) => f.id === e.faction)?.name ?? '';
-    if (e.type === 'claim') { log(`${fn} 占据 (${e.c},${e.r})`); pushReport({ title: `占据土地 (${e.c},${e.r})`, tag: '占领', sub: fn, body: `第 ${state.turn} 旬，${fn} 于 (${e.c},${e.r}) 插旗，领地相连。` }); }
+    if (e.type === 'claim') { log(`${fn} 占据 (${e.c},${e.r})`); pushReport({ title: `占据土地 (${e.c},${e.r})`, tag: '占领', sub: fn, body: `${formatCalendar(state.turn, cfg.calendar, 'short')}，${fn} 于 (${e.c},${e.r}) 插旗，领地相连。` }); }
     else if (e.type === 'develop') { log(`${fn} 屯田 → ${e.level} 级地`); pushReport({ title: `屯田完成 · ${e.level} 级地`, tag: '内政', sub: `(${e.c},${e.r})`, body: '产出已按新等级重算。' }); }
     else if (e.type === 'fort') { log(`${fn} 筑垒寨 (${e.c},${e.r})`); pushReport({ title: '垒寨落成', tag: '内政', sub: `(${e.c},${e.r})`, body: '通行代价下降，可作为前进据点。' }); }
-    else if (e.type === 'scout') { log(`斥候回报 ${cityById(e.city)?.name}`); pushReport({ title: `斥候回报 · ${cityById(e.city)?.name}`, tag: '侦察', sub: '第 ' + state.turn + ' 旬', body: '守军、城防、士气与归属情报已写入军情卷。' }); }
-    else if (e.type === 'battleOpen') { log(`${cityById(e.city)?.name} 遭围`); pushReport({ title: `${cityById(e.city)?.name} 遭围`, tag: '战报', red: true, sub: '第 ' + state.turn + ' 旬', body: '先头部队已抵城外扎营，攻城子界面已开启。' }); }
+    else if (e.type === 'scout') { log(`斥候回报 ${cityById(e.city)?.name}`); pushReport({ title: `斥候回报 · ${cityById(e.city)?.name}`, tag: '侦察', sub: formatCalendar(state.turn, cfg.calendar, 'short'), body: '守军、城防、士气与归属情报已写入军情卷。' }); }
+    else if (e.type === 'battleOpen') { log(`${cityById(e.city)?.name} 遭围`); pushReport({ title: `${cityById(e.city)?.name} 遭围`, tag: '战报', red: true, sub: formatCalendar(state.turn, cfg.calendar, 'short'), body: '先头部队已抵城外扎营，攻城子界面已开启。' }); }
     else if (e.type === 'arriveEnemy') { log(`援军 ${e.count} 抵 ${cityById(e.city)?.name} 城外扎营`); pushReport({ title: `援军抵达 · ${cityById(e.city)?.name}`, tag: '行军', sub: `${e.count} 兵`, body: '部队在城外大营待命，可进入城池布阵派人进城。' }); }
     else if (e.type === 'arriveOwn') log(`部队 ${e.count} 入 ${cityById(e.city)?.name}`);
     else if (e.type === 'withdraw') log(`撤兵 ${e.count} 回营`);
     else if (e.type === 'aiClaim' || e.type === 'aiMarch') log(`${fn || '敌方'} 下令`);
   }
   refreshUI();
+  // 章回与军历月份对齐：只在「刚变得可推进」时提示一次，不每旬刷屏。
+  const gate = canAdvance(story, state);
+  if (gate.ok && !chapterGateWasReady) {
+    toast(`军务已竟 · 时至 ${gate.next.era}，可入「${gate.next.no} · ${gate.next.title}」`);
+    log(`纪事：${gate.next.no} · ${gate.next.title} 可推进`);
+  }
+  chapterGateWasReady = gate.ok;
   autoSave();
 }
 
@@ -324,7 +366,7 @@ function sendCommand(type) {
   const r = issueOrder(state, spec);
   if (!r.ok) { toast(r.reason); return; }
   const dest = d.cityId ? cityById(d.cityId).name : `(${selection.c},${selection.r})`;
-  toast(r.instant ? `${CMD_LABEL[type]}完成` : `${CMD_LABEL[type]} → ${dest}，第 ${r.order.arriveTurn} 旬抵达`);
+  toast(r.instant ? `${CMD_LABEL[type]}完成` : `${CMD_LABEL[type]} → ${dest}，${formatCalendar(r.order.arriveTurn, cfg.calendar, 'date')} 抵达`);
   log(`${CMD_LABEL[type]} ${dest}：${r.order.km?.toFixed(0) ?? 0} km / ${r.order.path?.length ?? 0} 格`);
   refreshUI();
 }
@@ -355,6 +397,7 @@ const actions = {
     }
     for (const [k, v] of Object.entries(cost)) pool[k] -= v;
     state.facilities[id] = lv + 1;
+    record('upgradeFacility', { id, from: lv, to: lv + 1, cost });
     collectResources(state, { apply: false });   // 只刷新流量，不重复入账
     toast(`${f.name} 升至 Lv.${lv + 1}`);
     pushReport({ title: `${f.name} 升级 · Lv.${lv + 1}`, tag: '内政', sub: f.effect, body: '升级效果立即生效，资源产量已按新等级重算。' });
@@ -370,6 +413,7 @@ const actions = {
       if (i >= 0) a.slots[i] = null;
     }
     state.armies[army].slots[slot] = heroId;
+    record('assignHero', { army, slot, heroId });
     toast(`${h.name} 已编入第 ${army + 1} 部队`);
     refreshUI();
   },
@@ -397,10 +441,10 @@ const actions = {
     const r = issueOrder(state, spec);
     if (!r.ok) return r;
     a.stamina = Math.max(0, (a.stamina ?? 100) - 20);
-    toast(`第 ${army + 1} 部队出征 ${destName}，第 ${r.order.arriveTurn} 旬抵达`);
+    toast(`第 ${army + 1} 部队出征 ${destName}，${formatCalendar(r.order.arriveTurn, cfg.calendar, 'date')} 抵达`);
     log(`出征 ${destName}：${troops} 兵 / ${(r.order.km ?? 0).toFixed(0)} km`);
     pushReport({ title: `出征 · ${destName}`, tag: '出征', sub: `第 ${army + 1} 部队 · ${troops} 兵`,
-      body: `${r.order.path?.length ?? 0} 格 / ${(r.order.km ?? 0).toFixed(0)} km，预计第 ${r.order.arriveTurn} 旬抵达。行军前三分钟可撤兵。` });
+      body: `${r.order.path?.length ?? 0} 格 / ${(r.order.km ?? 0).toFixed(0)} km，预计 ${formatCalendar(r.order.arriveTurn, cfg.calendar, 'short')} 抵达。行军前三分钟可撤兵。` });
     refreshUI();
     return { ok: true };
   },
@@ -413,6 +457,7 @@ const actions = {
     pool.grain = (pool.grain ?? 0) + 1200;
     state.copper = (state.copper ?? 0) + 500;
     state.claimedTasks.push(id);
+    record('claimTask', { id });
     toast('任务奖励已领取');
     refreshUI();
   },
@@ -466,6 +511,92 @@ const actions = {
   newGame() { clearStorage(); location.reload(); },
   deleteSave() { clearStorage(); toast('存档已删除'); },
   openHelp() { $('helpPanel').hidden = false; },
+
+  // ── 章回剧情 ──────────────────────────────────────────────────────────
+  advanceChapter() {
+    const r = advanceStory(state, story);
+    if (!r.ok) { toast(r.reason); return r; }
+    record('advanceChapter', { from: r.previous.id, to: r.chapter.id });
+    if (r.report) pushReport(r.report);
+    if (r.mail) (state.storyMails ??= []).push(r.mail);
+    toast(`${r.chapter.no} · ${r.chapter.title}`);
+    log(`纪事：入 ${r.chapter.no} · ${r.chapter.title}`);
+    chapterGateWasReady = false;
+    refreshUI();
+    autoSave(true);
+    return r;
+  },
+  chooseOption(id) {
+    const r = chooseStory(state, story, id);
+    if (!r.ok) { toast(r.reason); return r; }
+    record('chapterChoice', { option: id });
+    toast('行台议决已定');
+    refreshUI();
+    return r;
+  },
+  claimChapter(id) {
+    const r = claimStoryReward(state, story, id);
+    toast(r.ok ? `章回犒赏：${r.text}` : r.reason);
+    if (r.ok) { record('claimChapter', { id }); refreshUI(); }
+    return r;
+  },
+
+  // ── 零预算联机地基 ────────────────────────────────────────────────────
+  exportTicket() {
+    const fp = hashState(state);
+    const ticket = encodeTicket({
+      v: 1, game: 'sanguo-ce-guandu', version: cfg.meta.version,
+      date: formatCalendar(state.turn, cfg.calendar, 'short'), hash: fp,
+      save: serializeGame({ cfg, state, rng, snapshot,
+        ui: { auto, camera: { ...renderer.camera }, battleCityId } }),
+      logTail: state.commandLog.entries.slice(-80),
+    });
+    state.exportedTicket = ticket;
+    state.syncReport = `已导出 · ${formatCalendar(state.turn, cfg.calendar, 'short')} · 指纹 ${fp} · ${ticket.length} 字符。把整段口令交给对方，对方在「导入」处粘贴即可接着这局下命令。`;
+    toast('军令帖已生成，复制文本框里的整段口令即可');
+    refreshUI();
+    return ticket;
+  },
+  importTicket(text) {
+    const t = String(text ?? '').trim();
+    if (!t) { toast('请先把对方的口令粘进文本框'); return false; }
+    try {
+      const d = decodeTicket(t);
+      if (d.game !== 'sanguo-ce-guandu' || !d.save) throw new Error('不是本游戏的军令帖');
+      saveToStorage(d.save);
+      const ok = loadGame();
+      if (!ok) throw new Error('存档无法载入');
+      state.syncReport = `已导入对方军令帖 · ${d.date} · 对方指纹 ${d.hash} · 本地指纹 ${hashState(state)}${d.hash === hashState(state) ? '（一致）' : '（局面已推进，属正常）'}`;
+      toast('已载入对方的这一局');
+      refreshUI();
+      return true;
+    } catch (e) {
+      toast(`口令无法解析：${e.message}`);
+      return false;
+    }
+  },
+  verifyReplay() {
+    // 双路径对演：A 直接建局，B 由存档序列化往返而来；同一批命令逐步比对指纹。
+    const c = JSON.parse(JSON.stringify(cfg));
+    c.factions.forEach((f) => { f.ai = false; });
+    const base = createCampaign(c, { seed: cfg.terrain.seed, playerFaction: state.playerFaction });
+    const raw = serializeGame({ cfg: c, state: base, rng: createRng(cfg.terrain.seed), snapshot: null, ui: {} });
+    const restored = deserializeGame(c, JSON.parse(JSON.stringify(raw))).state;
+    const entries = Array.from({ length: 12 }, (_, i) => ({ seq: i, turn: i, actor: '__turn__', type: 'advanceTurn', payload: {} }));
+    const applyEntry = (st) => advanceTurn(st, createRng(cfg.terrain.seed + st.turn));
+    const r = verifyReplay({ createStateA: () => base, createStateB: () => restored, entries, applyEntry });
+    state.syncReport = r.ok
+      ? `确定性重放 ✓ 12 步双路径指纹一致：${r.hash}（A 直接建局 / B 存档往返）。命令日志 ${state.commandLog.entries.length} 条，RNG 状态随命令入日志。`
+      : `重放在第 ${r.mismatchAt} 步分叉：${r.expected} ≠ ${r.actual}`;
+    toast(r.ok ? '重放校验通过' : '重放分叉，请检查');
+    refreshUI();
+    return r;
+  },
+  syncInfo() {
+    state.syncReport = '无预算可做：确定性命令日志 / 状态指纹 / 本地双端对演 / 同浏览器 BroadcastChannel 多标签 / 军令帖手动交换（异步回合制）。做不了：跨设备常驻房间、服务器权威时间、账号匹配、防作弊、实时战斗同步——那需要一个常驻服务。当前 actor 三态 human / ai / remote 已预留，接服务器只换 Transport 与 applyEntry 的执行位置。';
+    toast('联机边界已写入');
+    refreshUI();
+  },
 };
 
 // ── 城池小地图（攻城子界面） ────────────────────────────────────────────
@@ -514,8 +645,8 @@ function openBattle(cityId = selectedCity ?? battleCityId ?? CITIES[0].id) {
   });
   cityView.resize();
   if (r.fastForwardSteps > 0) {
-    toast(`离开期间策略走了若干旬，已空跑 ${r.fastForwardSteps} 步补齐`);
-    log(`快进 ${r.fastForwardSteps} 步 → 战斗时刻 ${session.sec.toFixed(1)}s`);
+    toast('离营期间军情照常流转，已按同一军历补齐');
+    log(`离营数旬，军情已补齐`);
   }
   refreshBattleUI();
   markDirty();
@@ -526,7 +657,7 @@ function closeBattle() {
   snapshot = leaveSession(session, rng);
   $('battleOverlay').hidden = true;
   toast(`已拍快照 @ ${snapshot.sec.toFixed(1)}s，策略日历继续走`);
-  log(`退出城池，快照 ${snapshot.sec.toFixed(1)}s / 第 ${snapshot.campaignTurn} 旬`);
+  log(`退出城池 · 回大营整队`);
   refreshBattleUI();
   autoSave(true);
   markDirty();
@@ -693,7 +824,7 @@ function bindUI() {
     if (!selectedCity) return;
     const from = bestFromCity({ cityId: selectedCity }).id;
     const r = issueOrder(state, { faction: state.playerFaction, from, type: 'scout', to: selectedCity });
-    toast(r.ok ? `斥候出发，第 ${r.order.arriveTurn} 旬回报` : r.reason);
+    toast(r.ok ? `斥候出发，${formatCalendar(r.order.arriveTurn, cfg.calendar, 'date')} 回报` : r.reason);
     refreshUI();
   });
   for (const btn of $('tileCmds').querySelectorAll('button')) {
@@ -716,12 +847,14 @@ function bindUI() {
     if (e.key === 'b' || e.key === 'B') $('battleOverlay').hidden ? openBattle() : closeBattle();
   });
 
-  $('factionPick').addEventListener('change', () => {
-    const f = cfg.factions.find((v) => v.id === $('factionPick').value);
-    $('pickNote').textContent = `${f.name} · 都城 ${f.capital} · 起始城池 ${CITIES.filter((c) => c.owner === f.id).length} 座`;
+  $('proChoice').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-open]');
+    if (!b) return;
+    openingChoice = b.dataset.open;
+    for (const x of $('proChoice').querySelectorAll('.pcBtn')) x.classList.toggle('selected', x === b);
   });
   $('startBtn').addEventListener('click', () => {
-    const fid = $('factionPick').value;
+    const fid = story.meta.faction;
     state = newCampaign(fid);
     renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
     reports = []; state.reports = reports;
@@ -765,26 +898,28 @@ function frame(now) {
 
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
-  [cfg, uiData] = await Promise.all([
-    fetch('./config/campaign.json?v=0.3.0').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.3.0').then((r) => r.json()),
+  [cfg, uiData, story] = await Promise.all([
+    fetch('./config/campaign.json?v=0.4.0').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.4.0').then((r) => r.json()),
+    fetch('./config/story.json?v=0.4.0').then((r) => r.json()),
   ]);
   rng = createRng(cfg.terrain.seed);
   state = newCampaign('cao');
   renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
-  shell = createShell({ cfg, uiData, actions, getState: () => state, getReports: () => reports });
+  shell = createShell({ cfg, uiData, story, actions, getState: () => state, getReports: () => reports });
 
-  $('factionPick').innerHTML = cfg.factions.map((f) =>
-    `<option value="${f.id}">${f.name}（${f.capital}）</option>`).join('');
-  $('factionPick').value = 'cao';
-  $('pickNote').textContent = `曹操 · 都城 许都 · 起始城池 ${CITIES.filter((c) => c.owner === 'cao').length} 座`;
+  const ch0 = story.chapters[0];
+  $('proDate').textContent = formatCalendar(0, cfg.calendar, 'full');
+  $('proTitle').textContent = `${ch0.no} · ${ch0.title}`;
+  $('proBeat').textContent = story.meta.prologue;
+  $('proSource').textContent = `${ch0.historical} — ${ch0.source}`;
   $('menuSub').textContent = `${cfg.meta.subtitle} · ${cfg.terrain.cols}×${cfg.terrain.rows} 栅格 · v${cfg.meta.version}`;
 
   const raw = readFromStorage();
   if (raw && raw.v === 1) {
     const d = new Date(raw.savedAt ?? Date.now());
     $('saveTip').hidden = false;
-    $('saveTip').textContent = `本机存档：第 ${raw.turn} 旬 · ${raw.playerFaction === 'cao' ? '曹操' : raw.playerFaction === 'yuan' ? '袁绍' : '刘备'} · ${d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+    $('saveTip').textContent = `本机存档：${formatCalendar(raw.turn, cfg.calendar, 'short')} · ${raw.chapter ? story.chapters.find((c) => c.id === raw.chapter)?.title ?? '' : ''} · ${d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
     $('continueBtn').hidden = false;
   }
 
@@ -799,6 +934,10 @@ async function boot() {
     get state() { return state; },
     get cfg() { return cfg; },
     get uiData() { return uiData; },
+    get story() { return story; },
+    calendar: formatCalendar,
+    hashState, stateFingerprint, encodeTicket, decodeTicket,
+    createLoopbackTransport, createBroadcastTransport,
     get renderer() { return renderer; },
     get session() { return session; },
     get snapshot() { return snapshot; },

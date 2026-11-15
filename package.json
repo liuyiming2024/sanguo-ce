@@ -1,9 +1,9 @@
 {
   "name": "sanguo-ce-guandu",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
-  "description": "三国策·官渡：建安五年豫兖战线栅格沙盘 + 率式整套界面 + 城池布阵双时钟",
+  "description": "三国策·官渡：建安五年章回剧情 + 栅格沙盘 + 城池布阵双时钟 + 零预算联机地基",
   "scripts": {
     "test": "node --test tests/",
     "check": "node scripts/check-map.mjs",

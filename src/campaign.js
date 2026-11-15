@@ -3,6 +3,8 @@
 // 与战斗层唯一耦合是 mailbox：带 atSec 时间戳的事件队列，战斗层按累计秒数消费。
 import { CITIES, ROADS, cityById, routeByCities, neighbors } from './map-data.js';
 import { createTerrain } from './terrain.js';
+import { calendarLabel, calendarParts, formatCalendar } from './calendar.js';
+import { createCommandLog, createActorRegistry, appendCommand } from './sync.js';
 import {
   routeCities, findRoute, hasAdjacentTerritory, claimTile, tilesPerTurn,
 } from './pathfind.js';
@@ -42,6 +44,18 @@ export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } =
     copper: 0,
     claimedTasks: [],
     reports: [],
+    // 章回剧情：身份由剧情给定（司空府参军事），不做势力三选一。
+    chapter: 'ch1',
+    storyBaseline: { cities: Object.values(cities).filter((c) => c.owner === playerFaction).length,
+      land: terrain.tiles.filter((t) => t.owner === playerFaction).length },
+    storyFlags: {},
+    storyChoices: {},
+    chapterHistory: [],
+    storyMails: [],
+    // 多人地基：actor 注册 + 带序号的命令日志 + rng 调用数。
+    actors: createActorRegistry(cfg, playerFaction),
+    commandLog: createCommandLog(seed),
+    rngCalls: 0,
     settings: { idleStop: true, snap: true },
     nextOrderId: 1, nextForceId: 1, nextUnitId: 1, nextBattleId: 1,
     battles: {},
@@ -49,6 +63,7 @@ export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } =
       turns: 0, ordersIssued: 0, arrivals: 0, tilesClaimed: 0,
       battlesOpened: 0, battlesClosed: 0, recruits: 0, aiOrders: 0,
       scouts: 0, develops: 0, forts: 0, cancelled: 0, deployed: 0,
+      byType: {},
     },
   };
 
@@ -68,16 +83,10 @@ export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } =
 }
 
 /** 建安五年二月上旬起，1 回合 = 1 旬。 */
-export function dateLabel(state) {
-  const { xunPerMonth } = state.cfg.calendar;
-  const x = state.cfg.calendar.startXun - 1 + state.turn;
-  const monthOffset = Math.floor(x / xunPerMonth);
-  const xun = (x % xunPerMonth) + 1;
-  const m0 = state.cfg.calendar.startMonth - 1 + monthOffset;
-  const year = state.cfg.calendar.startYear + Math.floor(m0 / 12);
-  const month = (m0 % 12) + 1;
-  return `建安${year - 195}年 · ${month}月${['上旬', '中旬', '下旬'][xun - 1]}`;
+export function dateLabel(state, style = 'short') {
+  return calendarLabel(state, style);
 }
+export { calendarParts, formatCalendar };
 
 export function elapsedSec(state) {
   return state.turn * state.cfg.calendar.secPerTurn;
@@ -117,6 +126,17 @@ function syncCityOwner(state, cityId, faction) {
  * 下达命令。所有命令都带 arriveTurn，绝不即时生效（recruit 例外）。
  * claim = 率土式占地块（需连地）；march = 城→城出征，走 A* 逐格计时。
  */
+function recordOrder(state, spec, order) {
+  (state.stats.byType ??= {})[spec.type] = (state.stats.byType[spec.type] ?? 0) + 1;
+  appendCommand(state.commandLog, {
+    turn: state.turn,
+    actor: spec.faction ?? state.playerFaction,
+    type: 'issueOrder',
+    payload: { ...spec, orderId: order?.id ?? null },
+    rngBefore: state.rngCalls, rngAfter: state.rngCalls,
+  });
+}
+
 export function issueOrder(state, spec) {
   const { faction, from, units = {}, type = 'march' } = spec;
   const cfg = state.cfg;
@@ -138,6 +158,7 @@ export function issueOrder(state, spec) {
     src.garrison += total;
     state.stats.recruits++;
     state.stats.ordersIssued++;
+    recordOrder(state, spec, null);
     return { ok: true, instant: true, cost };
   }
 
@@ -154,6 +175,7 @@ export function issueOrder(state, spec) {
     };
     state.orders.push(order);
     state.stats.ordersIssued++;
+    recordOrder(state, spec, order);
     return { ok: true, order };
   }
 
@@ -233,6 +255,7 @@ export function issueOrder(state, spec) {
   };
   state.orders.push(order);
   state.stats.ordersIssued++;
+  recordOrder(state, spec, order);
   return { ok: true, order };
 }
 
@@ -250,6 +273,10 @@ export function cancelOrder(state, orderId) {
   }
   state.orders.splice(i, 1);
   state.stats.cancelled++;
+  appendCommand(state.commandLog, {
+    turn: state.turn, actor: o.faction ?? state.playerFaction, type: 'cancelOrder',
+    payload: { orderId }, rngBefore: state.rngCalls, rngAfter: state.rngCalls,
+  });
   return { ok: true, order: o, refunded: count };
 }
 
@@ -303,6 +330,11 @@ export function deployUnit(state, cityId, unitId, zone, col, row) {
   u.row = Math.max(0, Math.min(state.cfg.cityView.rows - 1, row | 0));
   (zone === 'inside' ? f.inside : f.camp).push(u);
   state.stats.deployed++;
+  appendCommand(state.commandLog, {
+    turn: state.turn, actor: state.playerFaction, type: 'deployUnit',
+    payload: { cityId, unitId, zone, col, row },
+    rngBefore: state.rngCalls, rngAfter: state.rngCalls,
+  });
   return { ok: true, unit: u, inside: f.inside.length, camp: f.camp.length };
 }
 
@@ -370,6 +402,11 @@ export function advanceTurn(state, rng) {
   const events = [];
   state.turn++;
   state.stats.turns++;
+  appendCommand(state.commandLog, {
+    turn: state.turn, actor: '__turn__', type: 'advanceTurn', payload: {},
+    rngBefore: state.rngCalls, rngAfter: state.rngCalls,
+  });
+  if (rng?.snapshot) state.rngCalls = rng.snapshot().calls;
   const yieldByOwner = collectResources(state);   // 同时把流量累加进库存
 
   for (const c of Object.values(state.cities)) {

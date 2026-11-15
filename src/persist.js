@@ -49,6 +49,15 @@ export function serializeGame({ cfg, state, rng, snapshot, ui }) {
     settings: state.settings,
     reports: state.reports ?? [],
     claimedTasks: state.claimedTasks ?? [],
+    chapter: state.chapter ?? 'ch1',
+    storyBaseline: state.storyBaseline ?? { cities: 0, land: 0 },
+    storyFlags: state.storyFlags ?? {},
+    storyChoices: state.storyChoices ?? {},
+    chapterHistory: state.chapterHistory ?? [],
+    storyMails: state.storyMails ?? [],
+    actors: state.actors ?? {},
+    commandLog: state.commandLog ?? { v: 1, seq: 0, entries: [] },
+    rngCalls: state.rngCalls ?? 0,
     nextIds: [state.nextOrderId, state.nextForceId, state.nextUnitId, state.nextBattleId],
     tiles,
     snapshot: snapshot ?? null,
@@ -80,7 +89,9 @@ export function deserializeGame(cfg, raw) {
   }
   const keys = ['cities', 'resources', 'yield', 'orders', 'mailbox',
     'forces', 'intel', 'forts', 'battles', 'stats',
-    'facilities', 'armies', 'copper', 'settings', 'reports', 'claimedTasks'];
+    'facilities', 'armies', 'copper', 'settings', 'reports', 'claimedTasks',
+    'chapter', 'storyBaseline', 'storyFlags', 'storyChoices', 'chapterHistory', 'storyMails',
+    'actors', 'commandLog', 'rngCalls'];
   for (const k of keys) if (raw[k] != null) state[k] = raw[k];
   if (Array.isArray(raw.nextIds)) {
     [state.nextOrderId, state.nextForceId, state.nextUnitId, state.nextBattleId] = raw.nextIds;
