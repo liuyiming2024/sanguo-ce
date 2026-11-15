@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0a0d0c">
 <link rel="icon" href="data:,">
 <title>三国策 · 官渡</title>
-<link rel="stylesheet" href="./styles/main.css?v=0.4.0">
+<link rel="stylesheet" href="./styles/main.css?v=0.5.0">
 </head>
 <body>
 
@@ -128,6 +128,13 @@
   </div>
 </section>
 
+<!-- 行台授简：遮罩不吃指针，只有简卡可点；高亮框用 box-shadow 挖洞 -->
+<section id="tutorialLayer" hidden aria-label="行台授简 · 新手引导">
+  <div class="tutVeil" aria-hidden="true"></div>
+  <div class="tutFocus" aria-hidden="true"></div>
+  <aside class="tutCard" role="dialog" aria-modal="false" aria-live="polite"></aside>
+</section>
+
 <section id="helpPanel" hidden aria-label="玩法说明">
   <button class="x" id="closeHelpX" type="button" aria-label="关闭玩法">×</button>
   <h2>玩法 · 建安五年</h2>
@@ -139,6 +146,7 @@
     <li>点地块弹信息卷轴；点城池可进「城池布阵」。己方部队在城内，敌方在城外扎营。</li>
     <li>小地图固定视口、不拖动，只调兵；圆框选后二次拖拽定方向，所有远程单位齐射。</li>
     <li>切到后台 / 锁屏 / 刷新会自动存档，主菜单可「继续上一局」；系统页可导出军令帖，无服务器也能异步对演。</li>
+    <li>初入行台有十二简授简，随时可跳过；系统页能「重看行台授简」。</li>
   </ul>
   <button class="closeBtn" id="closeHelp" type="button">关闭</button>
 </section>
@@ -167,11 +175,11 @@
 
     <button class="startBtn" id="continueBtn" type="button" hidden>继 续 上 一 局</button>
     <button class="startBtn ghost" id="startBtn" type="button">入 局 · 受 檄</button>
-    <p class="tiny">章回依《三国志·武帝纪》《资治通鉴》时序；身份由剧情给定，不再三选一。普天之下，莫非王土。</p>
+    <p class="tiny">章回依《三国志·武帝纪》《资治通鉴》时序；身份由剧情给定，不再三选一。入局后有「行台授简」十二简引导，可随时跳过。</p>
   </div>
 </section>
 
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-<script type="module" src="./src/main.js?v=0.4.0"></script>
+<script type="module" src="./src/main.js?v=0.5.0"></script>
 </body>
 </html>

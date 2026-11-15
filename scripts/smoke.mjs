@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.3.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.5.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.4.0 与栅格规模',
+  check('主菜单标注 v0.5.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.4.0'));
+    (await page.locator('#menuSub').innerText()).includes('0.5.0'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -73,7 +73,87 @@ try {
   check('界面外壳已接线', await page.evaluate(() => !!window.__sanguo.shell));
 
   await page.click('#startBtn');
-  await page.waitForTimeout(350);
+  await page.waitForTimeout(420);
+
+  // ── v0.5.0：行台授简 ──────────────────────────────────────────────────
+  check('入局后自动起授简，第一简是「受檄入局」',
+    await page.isVisible('#tutorialLayer') &&
+    (await page.locator('.tutCard').innerText()).includes('受檄入局') &&
+    (await page.locator('.tutCard').innerText()).includes('共 12 简'));
+  check('遮罩与高亮框都不吃指针（引导不锁死地图）', await page.evaluate(() => {
+    const l = document.getElementById('tutorialLayer');
+    const v = document.querySelector('.tutVeil');
+    const f = document.querySelector('.tutFocus');
+    const c = document.querySelector('.tutCard');
+    return getComputedStyle(l).pointerEvents === 'none' &&
+      getComputedStyle(v).pointerEvents === 'none' &&
+      getComputedStyle(f).pointerEvents === 'none' &&
+      getComputedStyle(c).pointerEvents === 'auto';
+  }));
+  check('简卡避开底部 Tab，不盖住 11 个入口', await page.evaluate(() => {
+    const c = document.querySelector('.tutCard').getBoundingClientRect();
+    const b = document.querySelector('#bottomBar').getBoundingClientRect();
+    return c.bottom < b.top + 2;
+  }));
+  await page.click('[data-tut="next"]');
+  check('下一简推进到「观军历」，进度条跟着走',
+    (await page.locator('.tutCard').innerText()).includes('观军历') &&
+    (await page.locator('.tutBar i').getAttribute('style')).includes('8%'));
+  check('无关事件不会把纯阅读简跳走', await page.evaluate(() => {
+    const w = window.__sanguo;
+    const before = w.tutUI.index;
+    w.tutNotify('tab:story');
+    return w.tutUI.index === before;
+  }));
+  await page.click('[data-tut="next"]');   // → 第三简「读纪事」
+  check('第三简等的是 tab:story', await page.evaluate(() =>
+    window.__sanguo.tutUI.step.await === 'tab:story'));
+  await tabClick('story');
+  await page.waitForTimeout(160);
+  check('点「纪事」自动进第四简（事件驱动，不是纯文本）', await page.evaluate(() =>
+    window.__sanguo.tutUI.step.id === 'map'));
+  check('引导状态不进局面 / 存档 / 命令日志', await page.evaluate(() => {
+    const w = window.__sanguo;
+    return !('tutorial' in w.state) &&
+      !JSON.stringify(w.state.commandLog).includes('tutorial') &&
+      !!localStorage.getItem('sanguo-ce:tutorial:v1');
+  }));
+  check('Esc 暂收授简，不标完成', await page.evaluate(() => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return !window.__sanguo.tutUI.active && !window.__sanguo.tutUI.done;
+  }));
+  check('系统页可「重看行台授简」', await page.evaluate(async () => {
+    window.__sanguo.shell.navigate('system');
+    document.querySelector('[data-act="tutorialReplay"]')?.click();
+    return window.__sanguo.tutUI.active && window.__sanguo.tutUI.index === 0 &&
+      !document.getElementById('tutorialLayer').hidden;
+  }));
+  check('跳过授简后不再自动重播', await page.evaluate(() => {
+    document.querySelector('[data-tut="skip"]')?.click();
+    return window.__sanguo.tutUI.done && document.getElementById('tutorialLayer').hidden;
+  }));
+
+  // ── v0.5.0：卷末留白 / 武备题头 ──────────────────────────────────────
+  await nav('reports');
+  check('墨底页有卷末题记，空场不再是一整块纯黑', await page.evaluate(() => {
+    const e = document.querySelector('#screen .scrBody .scrollEnd');
+    return !!e && e.textContent.includes('尚 无 战 报');
+  }));
+  check('武备页章节题头用语义朱，不把红撒回全局', await page.evaluate(() => {
+    const sc = document.getElementById('screen');
+    const t = document.querySelector('#screen .scrBody .secTitle');
+    return sc.dataset.route === 'reports' &&
+      getComputedStyle(t, '::before').backgroundColor.includes('208, 90, 75');
+  }));
+  await nav('interior');
+  check('文治页仍是纸底且组件变量自动继承', await page.evaluate(() => {
+    const sc = document.getElementById('screen');
+    const cs = getComputedStyle(sc.querySelector('.scrBody'));
+    return sc.dataset.tone === 'paper' &&
+      cs.getPropertyValue('--cardBg').trim().startsWith('rgba(255,255,255');
+  }));
+  await page.evaluate(() => window.__sanguo.shell.closeAll());
+
   check('开局进入沙盘', !(await page.isVisible('#mainMenu')));
   check('底部主菜单 Tab 齐全', (await page.locator('#bottomBar [data-tab]').count()) >= 11,
     `${await page.locator('#bottomBar [data-tab]').count()} 个`);
@@ -142,7 +222,7 @@ try {
     const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return !!el && !!el.closest('#bottomBar');
   }));
-  // ── v0.4.0：章回剧情与军历 ────────────────────────────────────────────
+  // ── v0.5.0：章回剧情与军历 ────────────────────────────────────────────
   await nav('story');
   const storyTxt = await page.locator('#screen').innerText();
   check('纪事页有章回叙事 / 史注 / 军务 / 抉择',

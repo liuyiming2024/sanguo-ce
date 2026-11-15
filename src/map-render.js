@@ -384,21 +384,26 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
       const owner = cityOwners[city.id] ?? city.owner;
       const f = cfg.factions.find((v) => v.id === owner);
       const lx = x0 + size + TP * 0.55, ly = y0 + 2;
-      ctx.font = `600 ${cityFont}px "WenQuanYi Micro Hei", serif`;
+      // 读图层级：都城 > 郡治 > 县邑/营垒。只差字号与明度，不加新颜色或纹样。
+      const rankFont = city.rank === 1 ? 17 : city.rank === 2 ? 14 : 12;
+      const cf = rankFont * k;
+      const ink = city.rank === 1 ? GOLD : city.rank === 2 ? TEXT : rgba(TEXT, 0.84);
+      ctx.font = `600 ${cf}px "WenQuanYi Micro Hei", serif`;
       [...city.name].forEach((ch, i) => {
-        const yy = ly + i * cityFont * 1.12;
-        ctx.strokeStyle = rgba('#080d0b', 0.95); ctx.lineWidth = 2.6 * k;
+        const yy = ly + i * cf * 1.12;
+        ctx.strokeStyle = rgba('#080d0b', 0.95); ctx.lineWidth = (city.rank === 1 ? 3.2 : 2.6) * k;
         ctx.strokeText(ch, lx, yy);
-        ctx.fillStyle = city.rank === 1 ? GOLD : TEXT;
+        ctx.fillStyle = ink;
         ctx.fillText(ch, lx, yy);
       });
       // 势力色小方章 + 等级
+      const foot = ly + city.name.length * cf * 1.12;
       ctx.fillStyle = f?.color ?? '#8899aa';
-      ctx.fillRect(lx, ly + city.name.length * cityFont * 1.12 + 3 * k, 9 * k, 3 * k);
+      ctx.fillRect(lx, foot + 3 * k, (city.rank === 1 ? 13 : 9) * k, 3 * k);
       ctx.font = `${smallFont}px "WenQuanYi Micro Hei", serif`;
       ctx.fillStyle = DIM;
       ctx.fillText(city.rank === 1 ? '都' : city.rank === 2 ? '郡' : city.rank === 3 ? '县' : '垒',
-        lx + 12 * k, ly + city.name.length * cityFont * 1.12);
+        lx + (city.rank === 1 ? 16 : 12) * k, foot);
     }
 
     // 关隘 / 津渡：符号 + 名称，符号尺寸固定屏幕像素

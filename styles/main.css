@@ -7,7 +7,7 @@
   --gold:#c8a86a; --gold2:#a08a58;
   --red:#a63129; --red2:#d05a4b; --redDeep:#79201b; --redTxt:#e9a99d;
   --jade:#5e9080;
-  --sealTxt:#f3e7d2; --dimDeep:#8b957f; --inputBg:#0d1210;
+  --sealTxt:#f3e7d2; --inputBg:#0d1210;
   --line:rgba(200,168,106,.26); --line2:rgba(200,168,106,.14);
   --txt:#ddd7c4; --dim:#8f998b; --dimDeep:#8b957f; --shadow:0 18px 60px rgba(0,0,0,.72);
   --redGrad:linear-gradient(180deg,#7c3027,#3b1814);
@@ -558,4 +558,87 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
   .prologue{padding:12px 13px}
   .chapterHero{padding:13px 14px}
   .chapterHero h3{font-size:19px;letter-spacing:3px}
+}
+
+/* ── v0.5.0：行台授简 ─────────────────────────────────────────────────── */
+/* 遮罩与高亮框都不吃指针：被引导的「拖地图 / 点地块」必须真的能操作。 */
+#tutorialLayer{position:fixed;inset:0;z-index:120;pointer-events:none}
+.tutVeil{position:absolute;inset:0;pointer-events:none;transition:background .2s ease}
+.tutVeil[data-mode="spot"]{background:rgba(4,7,6,.05)}
+.tutVeil[data-mode="soft"]{background:rgba(4,7,6,.20)}
+.tutFocus{position:absolute;pointer-events:none;border:1px solid rgba(200,168,106,.72);
+  border-radius:3px;box-shadow:0 0 0 9999px rgba(4,7,6,.66),
+    0 0 0 1px rgba(200,168,106,.16),0 0 26px rgba(200,168,106,.14);
+  transition:left .18s ease,top .18s ease,width .18s ease,height .18s ease,opacity .18s ease}
+.tutCard{position:absolute;pointer-events:auto;z-index:2;padding:17px 19px 14px;
+  border:1px solid #7a6033;border-radius:2px;
+  background:radial-gradient(ellipse at 50% 0%,rgba(255,255,255,.5),transparent 64%),
+    repeating-linear-gradient(0deg,rgba(90,80,55,.022) 0 1px,transparent 1px 4px),
+    linear-gradient(160deg,#e7e0cc,#d3ccb4);
+  color:#20251f;box-shadow:inset 0 0 0 1px rgba(122,96,51,.3),0 18px 48px rgba(0,0,0,.72);
+  animation:tutIn .2s ease-out}
+@keyframes tutIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.tutCard .tutSeal{position:absolute;top:14px;right:15px;width:30px;height:30px;
+  display:flex;align-items:center;justify-content:center;border:1px solid #7a2b22;
+  color:#7a2b22;background:rgba(122,43,34,.06);border-radius:2px;font-size:14px;
+  writing-mode:vertical-rl;text-orientation:upright;box-shadow:inset 0 0 0 2px rgba(122,43,34,.12)}
+.tutNo{font-size:10px;letter-spacing:3px;color:#6a5227;border-bottom:1px solid rgba(122,96,51,.34);
+  padding-bottom:7px;margin-bottom:9px;padding-right:38px}
+.tutCard h3{margin:0 0 9px;font-size:19px;letter-spacing:4px;color:#20251f;font-weight:600}
+.tutBeat{margin:0;font-size:12px;line-height:1.95;color:#33382e;white-space:pre-line;
+  max-height:min(30vh,230px);overflow-y:auto;padding-right:4px}
+.tutQuote{margin:10px 0 0;padding:7px 10px;border-left:2px solid #7a2b22;
+  background:rgba(122,43,34,.06);font-size:11px;line-height:1.7;color:#5c5b4c}
+.tutTip{margin:9px 0 0;font-size:11px;line-height:1.7;color:#6a5227;letter-spacing:.4px}
+.tutBar{height:3px;margin:12px 0 10px;background:rgba(122,96,51,.18);border-radius:2px;overflow:hidden}
+.tutBar i{display:block;height:100%;background:linear-gradient(90deg,#7a6033,#a08a58);transition:width .2s ease}
+.tutBtns{display:flex;gap:7px;align-items:stretch}
+.tutBtns button{flex:1;min-height:40px;padding:6px 4px;border:1px solid rgba(122,96,51,.5);
+  border-radius:2px;background:rgba(255,255,255,.4);color:#3a3b30;font-size:11px;
+  letter-spacing:1px;cursor:pointer;transition:background .15s,border-color .15s}
+.tutBtns button:hover:not(:disabled){border-color:#7a2b22;background:rgba(255,255,255,.8)}
+.tutBtns button:disabled{opacity:.42;cursor:not-allowed}
+.tutBtns button.btn-primary{flex:1.5;background:#20251f;border-color:#7a6033;color:#c8a86a;
+  box-shadow:inset 0 0 0 1px rgba(200,168,106,.22);font-size:11px;letter-spacing:2px}
+.tutBtns button.btn-primary:hover{background:rgba(122,96,51,.28);color:#f0e2b8}
+.tutBtns button:focus-visible{outline:2px solid #7a2b22;outline-offset:2px}
+
+/* ── v0.5.0：卷末留白 —— 空场要有人撑着，不是纯黑 ───────────────────── */
+.scrollEnd{position:relative;margin:26px 0 4px;padding:18px 0 10px;text-align:center;
+  border-top:1px solid transparent;
+  background:linear-gradient(90deg,transparent,var(--line2) 18%,var(--line2) 82%,transparent) top/100% 1px no-repeat}
+.scrollEnd .endSeal{display:inline-flex;width:30px;height:30px;align-items:center;justify-content:center;
+  border:1px solid var(--line);border-radius:2px;color:var(--gold2);font-size:13px;
+  writing-mode:vertical-rl;text-orientation:upright;opacity:.62}
+.scrollEnd h4{margin:9px 0 5px;font-size:13px;letter-spacing:4px;color:var(--paper2);font-weight:500}
+.scrollEnd p{margin:0;font-size:11px;line-height:1.9;color:var(--dim);letter-spacing:1px}
+.scrollEnd .endLine{margin:12px auto 0;width:52%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--line),transparent)}
+#screen[data-tone="paper"] .scrBody .scrollEnd{background:linear-gradient(90deg,transparent,var(--line2) 18%,var(--line2) 82%,transparent) top/100% 1px no-repeat}
+#screen[data-tone="paper"] .scrBody .scrollEnd .endSeal{border-color:var(--red2);color:var(--red2);opacity:.7}
+#screen[data-tone="paper"] .scrBody .scrollEnd h4{color:var(--gold)}
+#screen[data-tone="paper"] .scrBody .scrollEnd p{color:var(--dim)}
+
+/* 武备页：朱砂只点在「战」语义的章节题头，不撒回全局 */
+#screen[data-route="march"] .scrBody .secTitle::before,
+#screen[data-route="reports"] .scrBody .secTitle::before,
+#screen[data-route="report"] .scrBody .secTitle::before,
+#screen[data-route="army"] .scrBody .secTitle::before{background:var(--red2);opacity:.8}
+
+/* 系统页：重看授简 */
+.tutReplay{width:100%;min-height:44px;margin:8px 0 0;border:1px solid var(--gold2);
+  border-radius:2px;background:var(--ink);color:var(--gold);font-size:12px;
+  letter-spacing:2px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(200,168,106,.2)}
+.tutReplay:hover{background:rgba(200,168,106,.14);color:var(--paper)}
+
+@media (max-width:720px){
+  .tutCard{padding:14px 15px 12px}
+  .tutCard h3{font-size:17px;letter-spacing:3px}
+  .tutBeat{max-height:22vh;font-size:11.5px}
+  .tutBtns button{min-height:44px}
+  .scrollEnd{margin:20px 0 2px}
+}
+@media (prefers-reduced-motion:reduce){
+  .tutCard{animation:none}
+  .tutFocus,.tutVeil,.tutBar i{transition:none}
 }

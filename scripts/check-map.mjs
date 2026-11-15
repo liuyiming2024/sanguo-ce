@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.4.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.5.0', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,14 +81,16 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.4.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.4.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.5.0'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.5.0"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
   'src/rng.js', 'src/ui-shell.js', 'src/persist.js',
   'src/calendar.js', 'src/story.js', 'src/sync.js',
-  'config/campaign.json', 'config/ui-data.json', 'config/story.json', 'styles/main.css',
+  'config/campaign.json', 'config/ui-data.json', 'config/story.json',
+  'config/tutorial.json', 'src/tutorial.js', 'src/tutorial-ui.js',
+  'tests/tutorial.test.mjs', 'styles/main.css',
   'tests/commands.test.mjs', 'tests/persist.test.mjs',
   'tests/calendar.test.mjs', 'tests/story.test.mjs', 'tests/sync.test.mjs',
   'scripts/smoke.mjs', 'scripts/serve.mjs', '.nojekyll']) {
@@ -153,7 +155,7 @@ ok(main3.includes('visibilitychange') && main3.includes('pagehide'), '切后台 
 ok(main3.includes('pointers.size === 2') && main3.includes('snapTile'), '移动端缺捏合缩放 / 地块吸附');
 ok(main3.includes('idleStop'), '静止停绘未接线');
 
-// ── v0.4.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
+// ── v0.5.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
 ok(cfg.calendar.startMonth === 1 && cfg.calendar.xunPerMonth === 3,
   '军历须自正月起，3 旬进一月，才能与史实章回月份对齐');
 ok(formatCalendar(0, cfg.calendar) === '建安五年 正月初一', '开局日期不是建安五年正月初一');
@@ -187,7 +189,7 @@ ok(main4.includes('exportTicket') && main4.includes('verifyReplay') && main4.inc
 ok(main4.includes('chapterHeadline(story, state)'), '顶栏未显示章回名');
 ok(!/第 \$\{[^}]*turn\} 旬/.test(main4), '装配层仍有「第 N 旬」文案');
 
-// ── v0.4.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
+// ── v0.5.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
 const mrender = readFileSync(join(root, 'src/map-render.js'), 'utf8');
 ok(/lineWidth = 5;/.test(mrender) && /lineWidth = 2\.4;/.test(mrender),
   '官道仍是 8/4.2 金带');
@@ -203,4 +205,46 @@ ok(html4.includes('class="battleDebug"') && html4.includes('军情细目 · 展�
 ok(!/已拍快照 @/.test(readFileSync(join(root, 'src/main.js'), 'utf8')),
   'toast 仍在报调试数字');
 
-console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾自检全绿');
+// ── v0.5.0：行台授简 / 卷末留白 / 武备题头 ─────────────────────────────
+const tutDef = JSON.parse(readFileSync(join(root, 'config/tutorial.json'), 'utf8'));
+const tutCss = readFileSync(join(root, 'styles/main.css'), 'utf8');
+const tutUi = readFileSync(join(root, 'src/tutorial-ui.js'), 'utf8');
+const shell5 = readFileSync(join(root, 'src/ui-shell.js'), 'utf8');
+const persist5 = readFileSync(join(root, 'src/persist.js'), 'utf8');
+const sync5 = readFileSync(join(root, 'src/sync.js'), 'utf8');
+const main5 = readFileSync(join(root, 'src/main.js'), 'utf8');
+
+ok(tutDef.steps.length === 12, '授简不是十二简');
+ok(tutDef.steps.every((x) => x.id && x.no && x.title && x.beat && x.quote && x.tip && x.place),
+  '授简某简缺叙事/引文/提示/位置');
+ok(tutDef.steps.every((x, i, a) => i === 0 || a[i - 1].id !== x.id), '授简 id 重复');
+const awaits = tutDef.steps.map((x) => x.await).filter(Boolean);
+ok(new Set(awaits).size === awaits.length, '两简等同一事件会互相抢');
+ok(awaits.every((e) => main5.includes(`tutNotify('${e}')`) || e.startsWith('tab:')),
+  '存在未接线的授简事件');
+ok(main5.includes('onRoute: (route) => tutNotify(`tab:${route}`)'), 'tab 事件缺路由回调');
+ok(html4.includes('id="tutorialLayer"') && html4.includes('class="tutCard"') &&
+   html4.includes('class="tutFocus"'), '缺授简层 DOM');
+ok(/#tutorialLayer\{[^}]*pointer-events:none/.test(tutCss) &&
+   /\.tutCard\{[^}]*pointer-events:auto/.test(tutCss),
+  '遮罩必须不吃指针，简卡必须可点');
+ok(/bottomBar = 66/.test(tutUi) && /#screen\{position:absolute;top:0;left:0;right:0;bottom:58px/.test(tutCss),
+  '简卡定位必须避开底部 Tab');
+ok(/data-tut="skip"/.test(tutUi) && /data-tut="prev"/.test(tutUi) &&
+   /onKey/.test(tutUi), '缺跳过 / 上一简 / Esc 三条退路');
+ok(tutUi.includes("sanguo-ce:tutorial:v1"), '缺独立存储 key');
+ok(!/tutorial/i.test(persist5) && !/tutorial/i.test(sync5) &&
+   !/state\.tutorial\s*=/.test(main5), '引导状态污染了存档 / 指纹 / 军令帖');
+ok(shell5.includes('const scrollEnd') && shell5.includes('const emptyScroll'),
+  '缺卷末留白与空态组件');
+ok(shell5.includes("screen.dataset.route = cur.route") &&
+   /#screen\[data-route="march"\]/.test(tutCss), '武备页缺语义朱题头');
+ok(shell5.includes('data-act="tutorialReplay"') && main5.includes('replayTutorial()'),
+  '系统页缺「重看行台授简」');
+ok(shell5.includes("emptyScroll('尚 无 战 报'") &&
+   main5.includes('尚 无 在 途 军 令'), '空态仍是两行小字加纯黑');
+ok(/tutNotify\('battleOpened'\)/.test(main5) && /tutNotify\('battleClosed'\)/.test(main5),
+  '进出城池未联动授简');
+ok(!/已拍快照 @/.test(main5) && !/快进 .*步/.test(main5), 'toast/log 仍在报调试数字');
+
+console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾/授简自检全绿');

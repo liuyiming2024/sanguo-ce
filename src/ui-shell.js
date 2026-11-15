@@ -14,6 +14,25 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fmt = (n) => Math.round(n ?? 0).toLocaleString('zh-CN');
 
+/** 卷末题记：墨底页下方不再是一整块纯黑，留白要有人撑着。 */
+const scrollEnd = (line = '建安五年 · 官渡行台') => `
+  <div class="scrollEnd">
+    <div class="endSeal">记</div>
+    <h4>卷 末</h4>
+    <p>${esc(line)}</p>
+    <div class="endLine"></div>
+  </div>`;
+
+/** 空态不是两行小字加 800px 黑：给一枚淡印、一句题记、一条渐隐线。 */
+const emptyScroll = (title, note) => `
+  <div class="scrollEnd" style="margin-top:34px;padding-top:26px">
+    <div class="endSeal">待</div>
+    <h4>${esc(title)}</h4>
+    <p>${esc(note)}</p>
+    <div class="endLine"></div>
+  </div>`;
+
+
 const TABS = [
   { id: 'map', name: '地图', glyph: '舆' },
   { id: 'interior', name: '内政', glyph: '城' },
@@ -62,7 +81,7 @@ export function facilityCost(f, lv) {
 const PAPER_ROUTES = new Set(['interior', 'facility', 'story', 'tasks', 'mail', 'mailRead',
   'alliance', 'world', 'system', 'help']);
 
-export function createShell({ cfg, uiData, story, actions, getState, getReports }) {
+export function createShell({ cfg, uiData, story, actions, getState, getReports, onRoute }) {
   const screen = document.getElementById('screen');
   const tabsEl = document.getElementById('bottomBar');
   let stack = [];
@@ -361,7 +380,7 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
         <span class="tag ${r.red ? 'red' : ''}">${esc(r.tag)}</span>
         <div><div class="t">${esc(r.title)}</div><div class="s">${esc(formatCalendar(r.turn, state().cfg.calendar, 'short'))} · ${esc(r.sub)}</div></div>
         <span class="arrow">›</span></div>`).join('')
-        : '<p class="hintLine">暂无战报。出征、占领、侦察与屯田之后，这里会逐条记录。</p>'}`;
+        : emptyScroll('尚 无 战 报', '出征、占领、侦察与屯田之后，这里会逐条记下。')}`;
   }
   function pageReport(p) {
     const r = getReports()[Number(p.id)];
@@ -373,10 +392,11 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
   function pageMail() {
     const mailList = allMails(uiData, state());
     return `${sec('邮件', `${mailList.length} 封`)}
-      ${mailList.map((m) => `<div class="listRow" data-act="mailRead" data-id="${m.id}">
+      ${mailList.length ? mailList.map((m) => `<div class="listRow" data-act="mailRead" data-id="${m.id}">
         <span class="tag">${esc(m.tag)}</span>
         <div><div class="t">${esc(m.title)}</div><div class="s">${esc(m.from)}</div></div>
-        <span class="arrow">›</span></div>`).join('')}`;
+        <span class="arrow">›</span></div>`).join('')
+        : emptyScroll('尚 无 书 信', '章回推进时，行台会收到私信与军情露布。')}`;
   }
   function pageMailRead(p) {
     const m = allMails(uiData, state()).find((x) => x.id === p.id);
@@ -549,6 +569,10 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
       <div class="listRow" style="cursor:default"><span class="tag">辅助</span>
         <div style="flex:1"><div class="t">地块吸附</div><div class="s">窄屏点选自动吸附到最近可通行格</div></div>
         <button class="bigBtn ghost" style="width:auto;min-height:36px;margin:0;padding:5px 14px" data-act="toggleSnap">${actions.getSetting('snap') ? '关闭' : '开启'}</button></div>
+      ${sec('行台授简', '初入官渡十二简 · 可随时重看')}
+      <p class="hintLine">授简是本机界面状态，不进局面、不进命令日志、不进军令帖；遮罩不挡指针，每一简都可手动跳过。当前：${esc(actions.getTutorialLabel?.() ?? '未读')}。</p>
+      <button class="tutReplay" type="button" data-act="tutorialReplay">重 看 行 台 授 简</button>
+
       ${sec('存档', '手机切走 / 锁屏 / 刷新后仍是这一局')}
       <p class="hintLine">按「保存」写入本机；下次打开主菜单会出现「继续上一局」。</p>
       <div class="cmdGroup" style="max-width:420px">
@@ -573,7 +597,7 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
   }
 
   function pageHelp() {
-    return `<p class="readBody">一、大地图可拖动、双指捏合缩放、滚轮缩放，右下「全图」看整幅，缩略图定位。\n\n二、1 回合 = 1 旬。点「结束下一旬」或开「自动推进」；日历不因进入城池而冻结，两端并行。\n\n三、底部主菜单：内政（设施升级）、武将、战法、部队（大营/中军/前锋编成）、战报、邮件、任务、同盟、天下、系统。每一层都能用 × 或 Esc 逐级退出。\n\n四、点地块弹出信息卷轴：占领需连地，另有屯田、筑垒、侦察、调动、驻守、撤兵。点城池可进「城池布阵」；出征前有胜负预判与行军时间。\n\n五、城池布阵是固定视口的小地图，不拖动，只调兵：己方城部队在城内，敌方城部队在城外扎营；把大营的兵拖进城里＝派人进去打。圆框选后二次拖拽定方向，所有远程单位齐射。\n\n六、退出城池拍快照，隔几旬再进入用同一固定步长空跑补齐，不另写结算公式。切到后台会自动存档。</p>
+    return `<p class="readBody">一、大地图可拖动、双指捏合缩放、滚轮缩放，右下「全图」看整幅，缩略图定位。\n\n二、1 回合 = 1 旬。点「结束下一旬」或开「自动推进」；日历不因进入城池而冻结，两端并行。\n\n三、底部主菜单：内政（设施升级）、武将、战法、部队（大营/中军/前锋编成）、战报、邮件、纪事（八回章回与日常陈情）、同盟、天下、系统。每一层都能用 × 或 Esc 逐级退出。\n\n四、点地块弹出信息卷轴：占领需连地，另有屯田、筑垒、侦察、调动、驻守、撤兵。点城池可进「城池布阵」；出征前有胜负预判与行军时间。\n\n五、城池布阵是固定视口的小地图，不拖动，只调兵：己方城部队在城内，敌方城部队在城外扎营；把大营的兵拖进城里＝派人进去打。圆框选后二次拖拽定方向，所有远程单位齐射。\n\n六、退出城池拍快照，隔几旬再进入用同一固定步长空跑补齐，不另写结算公式。切到后台会自动存档。</p>
     <button class="bigBtn ghost" data-act="back">返回</button>`;
   }
 
@@ -603,8 +627,14 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
     renderTabs();
     if (!stack.length) { screen.hidden = true; screen.innerHTML = ''; onChange(); return; }
     const [title, sub] = TITLE[cur.route] ?? [cur.route, ''];
-    const body = (PAGES[cur.route] ?? (() => '<p class="hintLine">页面建设中。</p>'))(cur.params ?? {});
-    screen.dataset.tone = PAPER_ROUTES.has(cur.route) ? 'paper' : 'ink';
+    let body = (PAGES[cur.route] ?? (() => '<p class="hintLine">页面建设中。</p>'))(cur.params ?? {});
+    const tone = PAPER_ROUTES.has(cur.route) ? 'paper' : 'ink';
+    screen.dataset.tone = tone;
+    screen.dataset.route = cur.route;
+    // 墨底页末尾补一卷末题记：留白有人撑着，不靠加纹样。
+    if (tone === 'ink' && !body.includes('class="scrollEnd"')) {
+      body += scrollEnd(cur.route === 'reports' ? '官渡战报 · 逐条而书' : undefined);
+    }
     screen.hidden = false;
     screen.innerHTML = `
       <div class="scrHead">
@@ -623,6 +653,7 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
       el.setAttribute('tabindex', '0');
       el.setAttribute('aria-label', (el.querySelector('h3,.t,.fn')?.textContent ?? el.textContent ?? '').trim().slice(0, 24) || '操作');
     }
+    onRoute?.(cur.route);
     onChange();
   }
 
@@ -685,6 +716,7 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports 
       case 'load': actions.loadGame(); break;
       case 'newgame': actions.newGame(); break;
       case 'delsave': actions.deleteSave(); break;
+      case 'tutorialReplay': actions.replayTutorial(); break;
       case 'exportTicket': actions.exportTicket(); render(); break;
       case 'importTicket': actions.importTicket(screen.querySelector('#ticketBox')?.value ?? ''); render(); break;
       case 'verifyReplay': actions.verifyReplay(); render(); break;

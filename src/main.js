@@ -1,35 +1,37 @@
-// 装配层 v0.4.0：唯一引用 DOM / rAF / localStorage 的地方。
+// 装配层 v0.5.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.4.0';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.5.0';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.4.0';
+} from './campaign.js?v=0.5.0';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.4.0';
-import { createMapRenderer } from './map-render.js?v=0.4.0';
-import { createCityView } from './city-view.js?v=0.4.0';
+} from './pathfind.js?v=0.5.0';
+import { createMapRenderer } from './map-render.js?v=0.5.0';
+import { createCityView } from './city-view.js?v=0.5.0';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.4.0';
-import { CITIES, cityById } from './map-data.js?v=0.4.0';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.4.0';
+} from './battle-session.js?v=0.5.0';
+import { CITIES, cityById } from './map-data.js?v=0.5.0';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.5.0';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.4.0';
+} from './story.js?v=0.5.0';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.4.0';
-import { TYPE_LABEL } from './terrain.js?v=0.4.0';
-import { createShell, facilityCost } from './ui-shell.js?v=0.4.0';
+} from './sync.js?v=0.5.0';
+import { TYPE_LABEL } from './terrain.js?v=0.5.0';
+import { createTutorialUI } from './tutorial-ui.js?v=0.5.0';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.5.0';
+import { createShell, facilityCost } from './ui-shell.js?v=0.5.0';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.4.0';
+} from './persist.js?v=0.5.0';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -37,7 +39,7 @@ const ctx = canvas.getContext('2d');
 const cityCanvas = $('cityCanvas');
 const LON_MIN = 112.75, LON_MAX = 116.15, LAT_MIN = 32.65, LAT_MAX = 36.65;
 
-let cfg, uiData, story, state, rng, renderer, cityView = null, shell = null;
+let cfg, uiData, story, tutorialDef, state, rng, renderer, cityView = null, shell = null, tutUI = null;
 let openingChoice = 'farm', chapterGateWasReady = false;
 let session = null, snapshot = null, battleCityId = null;
 let auto = true, accTurn = 0, last = 0, started = false, dirty = true;
@@ -49,6 +51,12 @@ const faction = () => cfg.factions.find((f) => f.id === state.playerFaction);
 const R = () => state.resources[state.playerFaction];
 const markDirty = () => { dirty = true; };
 /** 界面侧动作也进命令日志：以后接服务器时，所有状态变更都有同一条可重放入口。 */
+/** 授简事件只发给当前那一简；不进命令日志、不进存档、不进军令帖。 */
+function tutNotify(event) {
+  if (!tutUI?.active) return;
+  tutUI.notify(event);
+}
+
 function record(type, payload = {}) {
   if (!state?.commandLog) return;
   appendCommand(state.commandLog, {
@@ -171,6 +179,7 @@ function loadGame() {
   started = true;
   refreshUI();
   markDirty();
+  tutUI?.resumeOrStart({ toast });
   toast(`已继续上一局 · ${dateLabel(state)}`);
   log(`读取存档：${dateLabel(state)}，领地 ${state.terrain.tiles.filter((t) => t.owner === state.playerFaction).length} 格`);
   return true;
@@ -230,6 +239,7 @@ function showInfo(c, r) {
   selectedCity = null;
   const ownerF = cfg.factions.find((f) => f.id === d.owner);
   $('infoTitle').textContent = d.name ? `${d.name} · ${d.label}` : `${d.label}（${c},${r}）`;
+  queueMicrotask(() => tutNotify('tileSelected'));
   const rows = [
     ['地形', d.label], ['底层地貌', TYPE_LABEL[d.base] ?? d.base],
     ['土地等级', `${d.level} 级`], ['通行代价', d.cost >= 90 ? '不可通行' : d.cost.toFixed(2)],
@@ -295,7 +305,12 @@ function showCity(cityId) {
 
 function renderOrderList() {
   const list = state.orders.filter((o) => o.faction === state.playerFaction);
-  if (!list.length) { $('orderBody').innerHTML = '<div class="empty">暂无在途命令。</div>'; return; }
+  if (!list.length) {
+    $('orderBody').innerHTML = `<div class="scrollEnd" style="margin:18px 0 6px"><div class="endSeal">待</div>
+      <h4>尚 无 在 途 军 令</h4><p>从信息卷轴或城池详情下令，这里按抵达军历逐条列出。</p>
+      <div class="endLine"></div></div>`;
+    return;
+  }
   $('orderBody').innerHTML = list.map((o) => {
     const dest = o.to ? cityById(o.to)?.name : o.tile ? `(${o.tile.c},${o.tile.r})` : '—';
     return `<div class="orderItem">
@@ -350,6 +365,7 @@ function doTurn() {
     log(`纪事：${gate.next.no} · ${gate.next.title} 可推进`);
   }
   chapterGateWasReady = gate.ok;
+  tutNotify('turnAdvanced');
   autoSave();
 }
 
@@ -367,6 +383,7 @@ function sendCommand(type) {
   if (!r.ok) { toast(r.reason); return; }
   const dest = d.cityId ? cityById(d.cityId).name : `(${selection.c},${selection.r})`;
   toast(r.instant ? `${CMD_LABEL[type]}完成` : `${CMD_LABEL[type]} → ${dest}，${formatCalendar(r.order.arriveTurn, cfg.calendar, 'date')} 抵达`);
+  tutNotify('orderIssued');
   log(`${CMD_LABEL[type]} ${dest}：${r.order.km?.toFixed(0) ?? 0} km / ${r.order.path?.length ?? 0} 格`);
   refreshUI();
 }
@@ -511,6 +528,17 @@ const actions = {
   newGame() { clearStorage(); location.reload(); },
   deleteSave() { clearStorage(); toast('存档已删除'); },
   openHelp() { $('helpPanel').hidden = false; },
+  getTutorialLabel() {
+    if (!tutUI) return '未读';
+    if (tutUI.done) return `已合卷（${stepCount(tutUI.state._def)} 简）`;
+    if (tutUI.skipped) return '已跳过，可重看';
+    return `第 ${tutUI.index + 1} / ${stepCount(tutUI.state._def)} 简${tutUI.active ? ' · 进行中' : ' · 暂收'}`;
+  },
+  replayTutorial() {
+    tutUI?.replay({ toast });
+    shell?.render?.();
+    toast('行台授简 · 自第一简重看');
+  },
 
   // ── 章回剧情 ──────────────────────────────────────────────────────────
   advanceChapter() {
@@ -618,6 +646,7 @@ function openBattle(cityId = selectedCity ?? battleCityId ?? CITIES[0].id) {
     ? '固定视口，不拖动：把城内部队拖到城外大营，或在城内重新布阵。'
     : '固定视口，不拖动：把城外大营的部队拖进城里 = 派人进去打；拖回大营 = 撤出。';
   $('battleOverlay').hidden = false;
+  tutNotify('battleOpened');
 
   if (!cityView) {
     cityView = createCityView(cityCanvas, {
@@ -656,8 +685,9 @@ function closeBattle() {
   if (!session) return;
   snapshot = leaveSession(session, rng);
   $('battleOverlay').hidden = true;
-  toast(`已拍快照 @ ${snapshot.sec.toFixed(1)}s，策略日历继续走`);
+  toast('已退回大营，各城照常运转');
   log(`退出城池 · 回大营整队`);
+  tutNotify('battleClosed');
   refreshBattleUI();
   autoSave(true);
   markDirty();
@@ -727,7 +757,10 @@ function bindPointer() {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX; drag.y = e.clientY;
     drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy));
-    if (drag.moved > 12) { canvas.classList.add('dragging'); renderer.pan(dx, dy); markDirty(); }
+    if (drag.moved > 12) {
+      canvas.classList.add('dragging'); renderer.pan(dx, dy); markDirty();
+      if (drag.moved > 26) tutNotify('mapPanned');
+    }
   });
 
   canvas.addEventListener('pointerup', (e) => {
@@ -802,6 +835,7 @@ function bindUI() {
   $('closeOrderX').addEventListener('click', () => { $('orderList').hidden = true; });
   $('orderBtn').addEventListener('click', () => {
     renderOrderList(); $('orderList').hidden = !$('orderList').hidden;
+    if (!$('orderList').hidden) tutNotify('orderPanelOpened');
   });
   $('enterCityBtn').addEventListener('click', () => openBattle(selectedCity));
   $('marchCityBtn').addEventListener('click', () => {
@@ -832,6 +866,7 @@ function bindUI() {
   }
 
   document.addEventListener('keydown', (e) => {
+    if (tutUI?.active && tutUI.onKey(e)) return;
     if (e.key === 'Escape') {
       if (!$('helpPanel').hidden) { $('helpPanel').hidden = true; return; }
       if (!$('battleOverlay').hidden) { closeBattle(); return; }
@@ -864,6 +899,7 @@ function bindUI() {
     started = true;
     refreshUI();
     toast(`${faction().name} · ${dateLabel(state)} · 点城池进布阵`);
+    setTimeout(() => tutUI?.resumeOrStart({ toast }), 260);
   });
   $('continueBtn').addEventListener('click', () => loadGame());
 
@@ -898,15 +934,18 @@ function frame(now) {
 
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
-  [cfg, uiData, story] = await Promise.all([
-    fetch('./config/campaign.json?v=0.4.0').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.4.0').then((r) => r.json()),
-    fetch('./config/story.json?v=0.4.0').then((r) => r.json()),
+  [cfg, uiData, story, tutorialDef] = await Promise.all([
+    fetch('./config/campaign.json?v=0.5.0').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.5.0').then((r) => r.json()),
+    fetch('./config/story.json?v=0.5.0').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.5.0').then((r) => r.json()),
   ]);
+  tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);
   state = newCampaign('cao');
   renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
-  shell = createShell({ cfg, uiData, story, actions, getState: () => state, getReports: () => reports });
+  shell = createShell({ cfg, uiData, story, actions, getState: () => state,
+    getReports: () => reports, onRoute: (route) => tutNotify(`tab:${route}`) });
 
   const ch0 = story.chapters[0];
   $('proDate').textContent = formatCalendar(0, cfg.calendar, 'full');
@@ -935,6 +974,8 @@ async function boot() {
     get cfg() { return cfg; },
     get uiData() { return uiData; },
     get story() { return story; },
+    get tutorial() { return tutorialDef; },
+    get tutUI() { return tutUI; },
     calendar: formatCalendar,
     hashState, stateFingerprint, encodeTicket, decodeTicket,
     createLoopbackTransport, createBroadcastTransport,
@@ -949,7 +990,8 @@ async function boot() {
     issueOrder: (s) => issueOrder(state, s),
     cancelOrder: (id) => cancelOrder(state, id),
     deployUnit: (cityId, id, zone, col, row) => deployUnit(state, cityId, id, zone, col, row),
-    openBattle, closeBattle, saveGame, loadGame,
+    openBattle, closeBattle, saveGame, loadGame, tutNotify,
+    awaitedEvents,
     describe: (c, r) => renderer.describe(c, r),
     reachable: () => reachableTiles(state.terrain, state.playerFaction, 1400),
     cityOverview: (id) => cityOverview(state, id),
