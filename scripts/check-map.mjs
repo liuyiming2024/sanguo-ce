@@ -13,7 +13,10 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.1.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.2.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
+ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
+ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
 ok(cfg.terrain.cols * cfg.terrain.rows >= 10000, '栅格规模不足，称不上「足够复杂」');
 ok(cfg.calendar.secPerTurn > 0 && cfg.battle.fixedStepSec > 0, '时间参数不合法');
 ok(cfg.gems === undefined, '新库不该带宝石/矿工系统');
@@ -61,8 +64,9 @@ ok(yield0.grain > 0 && yield0.tiles > 100, '初始地块产出为空');
 const near = s.terrain.tiles.find((x) => !x.owner && x.cost < 90 && x.y.grain > 1 &&
   hasAdjacentTerritory(s.terrain, 'cao', x.c, x.r));
 ok(!!near, '找不到可铺路的相邻高产田');
+collectResources(s);
 const r = issueOrder(s, { faction: 'cao', from: 'xudu', to: 'chenliu',
-  type: 'march', units: { daodun: 500 } });
+  type: 'transfer', units: { daodun: 500 } });
 ok(r.ok, `许都→陈留出征失败: ${r.reason}`);
 ok(r.order?.arriveTurn > 0, '命令不应即时生效');
 
@@ -70,15 +74,18 @@ ok(r.order?.arriveTurn > 0, '命令不应即时生效');
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 const main = readFileSync(join(root, 'src/main.js'), 'utf8');
 for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
-  'closeBattleX', 'leaveBattle', 'helpPanel', 'closeHelpX', 'mainMenu', 'startBtn']) {
+  'closeBattleX', 'leaveBattle', 'helpPanel', 'closeHelpX', 'mainMenu', 'startBtn',
+  'cityCanvas', 'cityPanel', 'closeCityX', 'orderList', 'closeOrderX', 'tileCmds',
+  'enterCityBtn', 'fitBtn', 'orderBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.1.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.1.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.2.0'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.2.0"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
-  'src/campaign.js', 'src/battle-session.js', 'src/map-data.js', 'src/rng.js',
-  'config/campaign.json', 'styles/main.css', '.nojekyll']) {
+  'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
+  'src/rng.js', 'config/campaign.json', 'styles/main.css', 'tests/commands.test.mjs',
+  'scripts/smoke.mjs', 'scripts/serve.mjs', '.nojekyll']) {
   ok(existsSync(join(root, f)), `缺少文件 ${f}`);
 }
 

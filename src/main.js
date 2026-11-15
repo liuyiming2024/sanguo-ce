@@ -1,30 +1,37 @@
-// 装配层：唯一引用 DOM / rAF / localStorage 的地方。
-// 策略层（回合）与战斗层（固定步长实时）并行推进，互不阻塞。
-import { createRng } from './rng.js?v=0.1.0';
-import { createCampaign, dateLabel, advanceTurn, issueOrder, collectResources, isHostile } from './campaign.js?v=0.1.0';
-import { reachableTiles, hasAdjacentTerritory, tilesPerTurn } from './pathfind.js?v=0.1.0';
-import { createMapRenderer } from './map-render.js?v=0.1.0';
-import { createSession, enterSession, leaveSession, tickSession, restoreSession } from './battle-session.js?v=0.1.0';
-import { CITIES, cityById } from './map-data.js?v=0.1.0';
-import { TYPE_LABEL } from './terrain.js?v=0.1.0';
+// 装配层：唯一引用 DOM / rAF 的地方。
+// 大地图（可拖动、可缩放、只下指令）与城池小地图（固定视口、只调兵）是两个界面；
+// 策略层回合日历与攻城会话的双时钟并行推进，互不阻塞。
+import { createRng } from './rng.js?v=0.2.0';
+import {
+  createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
+  collectResources, isHostile, cityOverview, getForces, deployUnit, makeUnits,
+} from './campaign.js?v=0.2.0';
+import { reachableTiles, hasAdjacentTerritory, routeCities, findRoute } from './pathfind.js?v=0.2.0';
+import { createMapRenderer } from './map-render.js?v=0.2.0';
+import { createCityView } from './city-view.js?v=0.2.0';
+import {
+  createSession, enterSession, leaveSession, tickSession, restoreSession,
+} from './battle-session.js?v=0.2.0';
+import { CITIES, cityById } from './map-data.js?v=0.2.0';
+import { TYPE_LABEL } from './terrain.js?v=0.2.0';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
 const ctx = canvas.getContext('2d');
+const cityCanvas = $('cityCanvas');
 
-let cfg, state, rng, renderer, session = null, snapshot = null;
+let cfg, state, rng, renderer, cityView = null;
+let session = null, snapshot = null, battleCityId = null;
 let auto = true, accTurn = 0, last = 0, started = false;
-let selection = null, pendingSelection = null;
-let toastTimer = null;
+let selection = null, selectedCity = null, toastTimer = null;
 
 function toast(msg) {
   const n = $('toast');
   n.textContent = msg;
   n.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => n.classList.remove('show'), 2400);
+  toastTimer = setTimeout(() => n.classList.remove('show'), 2600);
 }
-
 function log(msg) {
   const box = $('log');
   const d = document.createElement('div');
@@ -32,6 +39,21 @@ function log(msg) {
   box.prepend(d);
   while (box.children.length > 5) box.lastChild.remove();
 }
+
+// ── 出发城选择：直线距离最近的己方城（不每次跑 A*） ─────────────────────
+function bestFromCity(tile) {
+  const own = Object.values(state.cities).filter((c) => c.owner === state.playerFaction);
+  if (!own.length) return { id: CITIES[0].id };
+  const target = tile.cityId ? cityById(tile.cityId) : tile;
+  const lon = target?.lon ?? (LON_MIN + tile.c / (state.terrain.cols - 1) * (LON_MAX - LON_MIN));
+  const lat = target?.lat ?? (LAT_MAX - tile.r / (state.terrain.rows - 1) * (LAT_MAX - LAT_MIN));
+  own.sort((a, b) => {
+    const ca = cityById(a.id), cb = cityById(b.id);
+    return Math.hypot(ca.lon - lon, ca.lat - lat) - Math.hypot(cb.lon - lon, cb.lat - lat);
+  });
+  return { id: own[0].id };
+}
+const LON_MIN = 112.75, LON_MAX = 116.15, LAT_MIN = 32.65, LAT_MAX = 36.65;
 
 // ── UI 刷新 ─────────────────────────────────────────────────────────────
 function refreshUI() {
@@ -48,14 +70,24 @@ function refreshUI() {
   $('rIron').textContent = Math.round(r.iron);
   $('rGrain').textContent = Math.round(r.grain);
   $('rTiles').textContent = r.tiles;
+  $('orderCount').textContent = state.orders.filter((o) => o.faction === state.playerFaction).length;
   const owners = {};
   for (const c of CITIES) owners[c.id] = state.cities[c.id].owner;
   renderer.setCityOwners(owners);
   renderer.invalidateBorders();
   renderer.setOrders(state.orders);
-  renderer.setReachable(reachableTiles(state.terrain, state.playerFaction, 1200));
+  renderer.setReachable(reachableTiles(state.terrain, state.playerFaction, 1400));
   if (selection) showInfo(selection.c, selection.r);
+  if (selectedCity) showCity(selectedCity);
+  renderOrderList();
+  refreshBattleUI();
 }
+
+const CMD_LABEL = {
+  claim: '占领', develop: '屯田', buildFort: '筑垒', scout: '侦察',
+  march: '出征', transfer: '调动', garrison: '驻守', withdraw: '撤兵',
+  recruit: '征兵', fireDirectional: '齐射', stratagem: '计策',
+};
 
 function showInfo(c, r) {
   const d = renderer.describe(c, r);
@@ -63,6 +95,8 @@ function showInfo(c, r) {
   selection = { c, r };
   renderer.setSelection(selection);
   $('infoCard').hidden = false;
+  $('cityPanel').hidden = true;
+  selectedCity = null;
   const ownerF = cfg.factions.find((f) => f.id === d.owner);
   $('infoTitle').textContent = d.name ? `${d.name} · ${d.label}` : `${d.label}（${c},${r}）`;
   const rows = [
@@ -75,14 +109,84 @@ function showInfo(c, r) {
     rows.map(([k, v]) => `<div class="row"><span>${k}</span><b>${v}</b></div>`).join('') +
     `<div class="yields">${['wood', 'stone', 'iron', 'grain'].map((k) =>
       `<div>${{ wood: '木', stone: '石', iron: '铁', grain: '粮' }[k]} <b>${d.yield[k].toFixed(1)}</b>/旬</div>`).join('')}</div>` +
-    `<div class="note">${d.cityId ? `${cityById(d.cityId)?.note ?? ''}` :
-      (d.cost >= 90 ? '山河阻隔，须经关隘或津渡。' : '占领需与己方领地相连，行军按地形逐格计时。')}</div>`;
+    `<div class="note">${d.cityId ? (cityById(d.cityId)?.note ?? '') :
+      d.cost >= 90 ? '山河阻隔，须经关隘或津渡。' : '占领需与己方领地相连；屯田/筑垒只能对己方地块。'}</div>`;
 
-  const canClaim = !d.cityId && d.cost < 90 && d.owner !== state.playerFaction &&
-    hasAdjacentTerritory(state.terrain, state.playerFaction, c, r);
-  $('claimBtn').disabled = !canClaim;
-  $('marchBtn').disabled = !d.cityId || !isHostile(state, d.cityId, state.playerFaction);
-  $('marchBtn').textContent = d.cityId ? `向${cityById(d.cityId).name}出征` : '向此城出征';
+  const adjacent = hasAdjacentTerritory(state.terrain, state.playerFaction, c, r);
+  const ownTile = d.owner === state.playerFaction;
+  const hostileCity = d.cityId && isHostile(state, d.cityId, state.playerFaction);
+  const ownCity = d.cityId && !hostileCity;
+  const enable = {
+    claim: !d.cityId && d.cost < 90 && !ownTile && adjacent,
+    develop: ownTile && !d.cityId && d.cost < 90 && d.level < cfg.terrain.maxLandLevel,
+    buildFort: ownTile && !d.cityId && d.cost < 90,
+    scout: !!d.cityId,
+    march: !!hostileCity,
+    transfer: !!ownCity,
+    garrison: !!ownCity,
+    withdraw: !!d.cityId && (getForces(state, d.cityId).camp
+      .some((u) => u.faction === state.playerFaction)),
+  };
+  for (const btn of $('tileCmds').querySelectorAll('button')) {
+    btn.disabled = !enable[btn.dataset.cmd];
+    const cost = cfg.orders.cost?.[btn.dataset.cmd];
+    btn.title = cost ? Object.entries(cost).map(([k, v]) =>
+      `${{ wood: '木', stone: '石', iron: '铁', grain: '粮' }[k]} ${v}`).join(' · ') : '';
+  }
+}
+
+function showCity(cityId) {
+  const o = cityOverview(state, cityId);
+  if (!o) return;
+  selectedCity = cityId;
+  $('cityPanel').hidden = false;
+  $('infoCard').hidden = true;
+  const ownerF = cfg.factions.find((f) => f.id === o.owner);
+  const meta = cityById(cityId);
+  $('cityTitle').textContent = `${meta.name} · ${ownerF?.name ?? ''}`;
+  const rows = [
+    ['城池等级', meta.rank === 1 ? '都城' : meta.rank === 2 ? '郡治' : meta.rank === 3 ? '县邑' : '营垒'],
+    ['人口', o.pop.toLocaleString()],
+    ['守军', o.garrison.toLocaleString()],
+    ['城防', Math.round(o.wall)],
+    ['士气', o.morale],
+    ['粮草', o.grain.toLocaleString()],
+    ['城内部队', `${o.inside} 队`],
+    ['城外大营', `${o.camp} 队`],
+    ['垒寨', o.forts],
+    ['状态', o.besieged ? '被围' : '安定'],
+  ];
+  $('cityBody').innerHTML = rows.map(([k, v]) =>
+    `<div class="row"><span>${k}</span><b>${v}</b></div>`).join('') +
+    `<div class="note" style="margin-top:8px;color:#8e9a8b;line-height:1.5">${meta.note}</div>`;
+  const intel = $('cityIntel');
+  if (o.intel && o.intel.owner !== state.playerFaction) {
+    intel.hidden = false;
+    intel.innerHTML = `斥候回报（第 ${o.intel.turn} 旬）：守军 ${o.intel.garrison.toLocaleString()} · 城防 ${o.intel.wall} · 士气 ${o.intel.morale}`;
+  } else intel.hidden = true;
+  $('recruitBtn').disabled = o.owner !== state.playerFaction;
+  $('scoutCityBtn').disabled = o.owner === state.playerFaction;
+  $('battleBtn').textContent = `进入${meta.name}`;
+}
+
+function renderOrderList() {
+  const list = state.orders.filter((o) => o.faction === state.playerFaction);
+  if (!list.length) { $('orderBody').innerHTML = '<div class="empty">暂无在途命令。</div>'; return; }
+  $('orderBody').innerHTML = list.map((o) => {
+    const dest = o.to ? cityById(o.to)?.name : o.tile ? `(${o.tile.c},${o.tile.r})` : '—';
+    return `<div class="orderItem">
+      <div class="head"><span>${CMD_LABEL[o.type] ?? o.type} → ${dest}</span><b>第 ${o.arriveTurn} 旬</b></div>
+      <div class="sub">${o.path?.length ?? 0} 格 · ${(o.km ?? 0).toFixed(0)} km · 第 ${o.issuedTurn} 旬下令</div>
+      <button data-cancel="${o.id}" type="button">撤令（退兵退资源）</button>
+    </div>`;
+  }).join('');
+  for (const b of $('orderBody').querySelectorAll('[data-cancel]')) {
+    b.addEventListener('click', () => {
+      const r = cancelOrder(state, Number(b.dataset.cancel));
+      toast(r.ok ? `已撤令，退还 ${r.refunded} 兵` : r.reason);
+      refreshUI();
+    });
+  }
 }
 
 function refreshBattleUI() {
@@ -93,40 +197,98 @@ function refreshBattleUI() {
   $('bSnapSec').textContent = snapshot ? snapshot.sec.toFixed(1) : '—';
   $('bFastSteps').textContent = session._lastFast ?? 0;
   $('bSteps').textContent = session.stepsRun;
-  $('bMorale').textContent = Math.round(session.morale);
-  $('bWall').textContent = Math.round(session.cityWall);
+  const f = getForces(state, session.cityId);
+  $('bForces').textContent = `${f.inside.length} / ${f.camp.length}`;
+  $('bMorale').textContent = `${Math.round(session.morale)} / ${Math.round(session.cityWall)}`;
   $('bMail').textContent = session.pendingOrders.length;
 }
 
 // ── 回合推进 ────────────────────────────────────────────────────────────
 function doTurn() {
   const evs = advanceTurn(state, rng);
-  for (const e of evs.slice(0, 4)) {
-    if (e.type === 'claim') log(`${cfg.factions.find((f) => f.id === e.faction)?.name} 占据 (${e.c},${e.r})`);
-    else if (e.type === 'battleOpen') log(`${cityById(e.city)?.name} 遭围，攻城子界面已开启`);
-    else if (e.type === 'arriveEnemy') log(`援军 ${e.count} 抵达 ${cityById(e.city)?.name}`);
-    else if (e.type === 'arriveOwn') log(`友军 ${e.count} 抵达 ${cityById(e.city)?.name}`);
+  for (const e of evs.slice(0, 5)) {
+    const fn = cfg.factions.find((f) => f.id === e.faction)?.name;
+    if (e.type === 'claim') log(`${fn} 占据 (${e.c},${e.r})`);
+    else if (e.type === 'develop') log(`${fn} 屯田 → ${e.level} 级地`);
+    else if (e.type === 'fort') log(`${fn} 筑垒寨 (${e.c},${e.r})`);
+    else if (e.type === 'scout') log(`斥候回报 ${cityById(e.city)?.name}`);
+    else if (e.type === 'battleOpen') log(`${cityById(e.city)?.name} 遭围`);
+    else if (e.type === 'arriveEnemy') log(`援军 ${e.count} 抵 ${cityById(e.city)?.name} 城外扎营`);
+    else if (e.type === 'arriveOwn') log(`部队 ${e.count} 入 ${cityById(e.city)?.name}`);
+    else if (e.type === 'withdraw') log(`撤兵 ${e.count} 回营`);
     else if (e.type === 'aiClaim' || e.type === 'aiMarch') log(`${e.faction === 'yuan' ? '袁绍' : '刘备'} 下令`);
   }
   refreshUI();
-  refreshBattleUI();
 }
 
-// ── 攻城子界面：进入 / 退出 / 隔月再进 ──────────────────────────────────
-function openBattle() {
-  const target = CITIES.find((c) => state.cities[c.id].besieged) ??
-    CITIES.find((c) => isHostile(state, c.id, state.playerFaction)) ?? CITIES[0];
-  if (!session) {
-    session = snapshot ? restoreSession(cfg, state, snapshot)
-      : createSession(cfg, state, target.id, { rngSnapshot: rng.snapshot() });
+// ── 大地图下命令 ────────────────────────────────────────────────────────
+function sendCommand(type) {
+  if (!selection) return;
+  const d = renderer.describe(selection.c, selection.r);
+  const from = bestFromCity(d.cityId ? { cityId: d.cityId } : { c: selection.c, r: selection.r }).id;
+  const spec = { faction: state.playerFaction, from, type };
+  if (d.cityId) spec.to = d.cityId; else spec.tile = { c: selection.c, r: selection.r };
+  const TROOPS = { daodun: 500, gongnu: 300 };
+  if (['march', 'transfer', 'garrison'].includes(type)) spec.units = { ...TROOPS };
+  if (type === 'scout') spec.units = {};
+  const r = issueOrder(state, spec);
+  if (!r.ok) { toast(r.reason); return; }
+  const dest = d.cityId ? cityById(d.cityId).name : `(${selection.c},${selection.r})`;
+  toast(r.instant ? `${CMD_LABEL[type]}完成` :
+    `${CMD_LABEL[type]} → ${dest}，第 ${r.order.arriveTurn} 旬抵达（${r.order.path.length} 格）`);
+  log(`${CMD_LABEL[type]} ${dest}：${r.order.km?.toFixed(0) ?? 0}km / ${r.order.path?.length ?? 0} 格`);
+  refreshUI();
+}
+
+// ── 城池小地图（攻城子界面） ────────────────────────────────────────────
+function openBattle(cityId = selectedCity ?? battleCityId ?? CITIES[0].id) {
+  battleCityId = cityId;
+  if (!session || session.cityId !== cityId) {
+    session = snapshot && snapshot.cityId === cityId
+      ? restoreSession(cfg, state, snapshot)
+      : createSession(cfg, state, cityId, { rngSnapshot: rng.snapshot() });
   }
   const r = enterSession(session, rng);
   if (!r.ok) { toast(r.reason); return; }
   session._lastFast = r.fastForwardSteps;
-  $('battleCity').textContent = cityById(session.cityId)?.name ?? '—';
+  const meta = cityById(cityId);
+  const own = state.cities[cityId].owner === state.playerFaction;
+  $('battleCity').textContent = meta.name;
+  $('battleSide').textContent = own ? '我方城池 · 部队在城内' : '敌方城池 · 部队在城外扎营';
+  $('battleTip').textContent = own
+    ? '固定视口，不拖动：把城内部队拖到城外大营，或在城内重新布阵。'
+    : '固定视口，不拖动：把城外大营的部队拖进城里 = 派人进去打；拖回大营 = 撤出。';
   $('battleOverlay').hidden = false;
+
+  if (!cityView) {
+    cityView = createCityView(cityCanvas, {
+      cfg, campaign: state, getCityId: () => battleCityId,
+      playerFaction: state.playerFaction,
+    });
+  }
+  cityView.setCallbacks({
+    onDeploy: (id, zone, col, row) => {
+      const res = deployUnit(state, cityId, id, zone, col, row);
+      toast(res.ok
+        ? (zone === 'inside' ? '已投入城内' : '已撤回城外大营')
+        : res.reason);
+      refreshBattleUI();
+    },
+    onSelect: (ids) => { if (ids.length) toast(`框选 ${ids.length} 队 · 再拖一次指定方向`); },
+    onDirection: (vec, ids) => {
+      const from = bestFromCity({ cityId }).id;
+      const res = issueOrder(state, {
+        faction: state.playerFaction, from, type: 'fireDirectional',
+        to: cityId, selection: ids, direction: vec,
+      });
+      toast(res.ok ? `定向指令下发 ${ids.length} 队（远程齐射 / 近战突击）` : res.reason);
+      refreshUI();
+    },
+    onChampion: (id) => { if (id) toast('单兵接管：该单位已标记为主控'); },
+  });
+  cityView.resize();
   if (r.fastForwardSteps > 0) {
-    toast(`离开期间策略走了 ${state.turn - (snapshot?.campaignTurn ?? state.turn)} 旬，已空跑 ${r.fastForwardSteps} 步补齐`);
+    toast(`离开期间策略走了若干旬，已空跑 ${r.fastForwardSteps} 步补齐`);
     log(`快进 ${r.fastForwardSteps} 步 → 战斗时刻 ${session.sec.toFixed(1)}s`);
   }
   refreshBattleUI();
@@ -137,11 +299,11 @@ function closeBattle() {
   snapshot = leaveSession(session, rng);
   $('battleOverlay').hidden = true;
   toast(`已拍快照 @ ${snapshot.sec.toFixed(1)}s，策略日历继续走`);
-  log(`退出战场，快照 ${snapshot.sec.toFixed(1)}s / 第 ${snapshot.campaignTurn} 旬`);
+  log(`退出城池，快照 ${snapshot.sec.toFixed(1)}s / 第 ${snapshot.campaignTurn} 旬`);
   refreshBattleUI();
 }
 
-// ── 交互 ────────────────────────────────────────────────────────────────
+// ── 大地图交互 ──────────────────────────────────────────────────────────
 let drag = null;
 function bindPointer() {
   canvas.addEventListener('pointerdown', (e) => {
@@ -156,16 +318,9 @@ function bindPointer() {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX; drag.y = e.clientY;
     drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy));
-    // 长距离拖动 = 平移；短距离先画圆预览
-    if (drag.moved > 140) {
+    if (drag.moved > 40) {
       canvas.classList.add('dragging');
       renderer.pan(dx, dy);
-      renderer.setCircle(null);
-    } else if (drag.moved > 12) {
-      const w = renderer.worldFromScreen(drag.sx - drag.rect.left, drag.sy - drag.rect.top);
-      const cur = renderer.worldFromScreen(e.clientX - drag.rect.left, e.clientY - drag.rect.top);
-      renderer.setCircle({ x: (w.x + cur.x) / 2, y: (w.y + cur.y) / 2,
-        r: Math.max(12, Math.hypot(cur.x - w.x, cur.y - w.y) / 2) });
     }
   });
   canvas.addEventListener('pointerup', (e) => {
@@ -173,61 +328,22 @@ function bindPointer() {
     const d = drag; drag = null;
     canvas.classList.remove('dragging');
     const dist = Math.hypot(e.clientX - d.sx, e.clientY - d.sy);
-    const dur = e.timeStamp - d.t;
-    if (dist > 140 || dur > 900) { renderer.setCircle(null); return; }  // 平移结束
-    if (dist > 12) {
-      // 短拖 = 圆框选；若上一次已有框选，这次拖的向量作为「往哪方向」
-      const w = renderer.worldFromScreen(d.sx - d.rect.left, d.sy - d.rect.top);
-      const cur = renderer.worldFromScreen(e.clientX - d.rect.left, e.clientY - d.rect.top);
-      if (pendingSelection) {
-        const dir = { x: cur.x - w.x, y: cur.y - w.y };
-        const r = issueOrder(state, {
-          faction: state.playerFaction, from: fromCityForSelection().id,
-          to: state.cities[pendingSelection.cityId] ? pendingSelection.cityId : null,
-          type: 'fireDirectional', selection: pendingSelection.ids,
-          direction: dir, units: {},
-        });
-        toast(r.ok ? `定向指令已下发（${pendingSelection.ids.length} 个单位）` : r.reason);
-        pendingSelection = null;
-        renderer.setCircle(null);
-        refreshUI();
-        return;
-      }
-      const cx = (w.x + cur.x) / 2, cy = (w.y + cur.y) / 2;
-      const rr = Math.max(14, Math.hypot(cur.x - w.x, cur.y - w.y) / 2);
-      const TP = renderer.size.TP;
-      const ids = [];
-      const c0 = Math.floor((cx - rr) / TP), c1 = Math.ceil((cx + rr) / TP);
-      const r0 = Math.floor((cy - rr) / TP), r1 = Math.ceil((cy + rr) / TP);
-      for (let c = Math.max(0, c0); c <= Math.min(state.terrain.cols - 1, c1); c++) {
-        for (let r = Math.max(0, r0); r <= Math.min(state.terrain.rows - 1, r1); r++) {
-          const tc = c * TP + TP / 2, tr = r * TP + TP / 2;
-          if (Math.hypot(tc - cx, tr - cy) <= rr) ids.push(`${c},${r}`);
-        }
-      }
-      pendingSelection = { ids, cityId: null };
-      toast(`圈选 ${ids.length} 格 · 再拖一次指定方向（所有远程单位齐射）`);
-      setTimeout(() => renderer.setCircle(null), 700);
-      return;
-    }
-    // 单击选格
-    renderer.setCircle(null);
+    if (dist > 9) return;                 // 拖动 = 平移，不选中
     const p = renderer.screenToTile(e.clientX - d.rect.left, e.clientY - d.rect.top);
-    if (state.terrain.inBounds(p.c, p.r)) showInfo(p.c, p.r);
+    if (!state.terrain.inBounds(p.c, p.r)) return;
+    const tile = renderer.describe(p.c, p.r);
+    if (tile.cityId) showCity(tile.cityId);
+    else showInfo(p.c, p.r);
+    renderer.setSelection({ c: p.c, r: p.r });
   });
   for (const ev of ['pointercancel', 'lostpointercapture']) {
-    canvas.addEventListener(ev, () => { drag = null; canvas.classList.remove('dragging'); renderer.setCircle(null); });
+    canvas.addEventListener(ev, () => { drag = null; canvas.classList.remove('dragging'); });
   }
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
-    renderer.zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
+    renderer.zoom(e.deltaY < 0 ? 1.14 : 1 / 1.14, e.clientX - rect.left, e.clientY - rect.top);
   }, { passive: false });
-}
-
-function fromCityForSelection() {
-  return Object.values(state.cities).find((c) => c.owner === state.playerFaction) ??
-    { id: CITIES[0].id };
 }
 
 function bindUI() {
@@ -240,12 +356,22 @@ function bindUI() {
   $('zoomIn').addEventListener('click', () => renderer.zoom(1.2));
   $('zoomOut').addEventListener('click', () => renderer.zoom(1 / 1.2));
   $('centerBtn').addEventListener('click', () => {
-    renderer.camera.scale = Math.max(0.55, Math.min(1.1, canvas.clientHeight / renderer.size.H * 1.4));
-    renderer.camera.x = (renderer.size.W - canvas.clientWidth / renderer.camera.scale) / 2;
-    renderer.camera.y = (renderer.size.H - canvas.clientHeight / renderer.camera.scale) / 2;
+    renderer.camera.scale = 1.0;
+    const home = CITIES.find((c) => c.owner === state.playerFaction) ?? CITIES[0];
+    const p = state.terrain.tileAtGeo(home.lon, home.lat);
+    renderer.camera.x = p.c * renderer.size.TP - canvas.clientWidth / 2;
+    renderer.camera.y = p.r * renderer.size.TP - canvas.clientHeight / 2;
     renderer.clampCamera();
   });
-  $('battleBtn').addEventListener('click', openBattle);
+  $('fitBtn').addEventListener('click', () => {
+    const s = Math.min(canvas.clientWidth / renderer.size.W,
+      canvas.clientHeight / renderer.size.H) * 0.97;
+    renderer.camera.scale = Math.max(0.2, s);
+    renderer.camera.x = (renderer.size.W - canvas.clientWidth / s) / 2;
+    renderer.camera.y = (renderer.size.H - canvas.clientHeight / s) / 2;
+    renderer.clampCamera();
+  });
+  $('battleBtn').addEventListener('click', () => openBattle());
   $('leaveBattle').addEventListener('click', closeBattle);
   $('closeBattleX').addEventListener('click', closeBattle);
   $('helpBtn').addEventListener('click', () => { $('helpPanel').hidden = false; });
@@ -255,38 +381,43 @@ function bindUI() {
   $('closeInfoX').addEventListener('click', () => {
     $('infoCard').hidden = true; renderer.setSelection(null); selection = null;
   });
-  $('claimBtn').addEventListener('click', () => {
-    if (!selection) return;
-    const from = fromCityForSelection();
-    const r = issueOrder(state, {
-      faction: state.playerFaction, from: from.id, type: 'claim',
-      tile: { c: selection.c, r: selection.r }, units: { daodun: 300 },
-    });
-    if (!r.ok) { toast(r.reason); return; }
-    toast(`已下令占地，预计第 ${r.order.arriveTurn} 旬抵达（${r.order.path.length} 格）`);
-    log(`铺路命令 → (${selection.c},${selection.r})，${r.order.km.toFixed(0)}km / ${r.order.turns} 旬`);
+  $('closeCityX').addEventListener('click', () => {
+    $('cityPanel').hidden = true; selectedCity = null;
+  });
+  $('closeOrderX').addEventListener('click', () => { $('orderList').hidden = true; });
+  $('orderBtn').addEventListener('click', () => {
+    renderOrderList();
+    $('orderList').hidden = !$('orderList').hidden;
+  });
+  $('enterCityBtn').addEventListener('click', () => openBattle(selectedCity));
+  $('recruitBtn').addEventListener('click', () => {
+    if (!selectedCity) return;
+    const r = issueOrder(state, { faction: state.playerFaction, from: selectedCity,
+      type: 'recruit', units: { daodun: 500 } });
+    toast(r.ok ? '征兵 +500（即时）' : r.reason);
     refreshUI();
   });
-  $('marchBtn').addEventListener('click', () => {
-    if (!selection) return;
-    const d = renderer.describe(selection.c, selection.r);
-    if (!d?.cityId) return;
-    const from = fromCityForSelection();
-    const r = issueOrder(state, {
-      faction: state.playerFaction, from: from.id, to: d.cityId, type: 'march',
-      units: { daodun: 800, gongnu: 500 },
-    });
-    if (!r.ok) { toast(r.reason); return; }
-    toast(`出征令已下，预计第 ${r.order.arriveTurn} 旬抵达`);
-    log(`出征 ${cityById(d.cityId).name}：${r.order.km.toFixed(0)}km / ${r.order.turns} 旬 / ${r.order.path.length} 格`);
+  $('scoutCityBtn').addEventListener('click', () => {
+    if (!selectedCity) return;
+    const from = bestFromCity({ cityId: selectedCity }).id;
+    const r = issueOrder(state, { faction: state.playerFaction, from,
+      type: 'scout', to: selectedCity });
+    toast(r.ok ? `斥候出发，第 ${r.order.arriveTurn} 旬回报` : r.reason);
     refreshUI();
   });
+  for (const btn of $('tileCmds').querySelectorAll('button')) {
+    btn.addEventListener('click', () => sendCommand(btn.dataset.cmd));
+  }
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (!$('helpPanel').hidden) { $('helpPanel').hidden = true; return; }
       if (!$('battleOverlay').hidden) { closeBattle(); return; }
-      if (!$('infoCard').hidden) { $('infoCard').hidden = true; renderer.setSelection(null); selection = null; return; }
+      if (!$('orderList').hidden) { $('orderList').hidden = true; return; }
+      if (!$('cityPanel').hidden) { $('cityPanel').hidden = true; selectedCity = null; return; }
+      if (!$('infoCard').hidden) {
+        $('infoCard').hidden = true; renderer.setSelection(null); selection = null; return;
+      }
     }
     if (!started) return;
     if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); accTurn = 0; doTurn(); }
@@ -301,19 +432,12 @@ function bindUI() {
   });
   $('startBtn').addEventListener('click', () => {
     state.playerFaction = $('factionPick').value;
-    // 视角对准玩家都城
-    const home = CITIES.find((c) => c.owner === state.playerFaction) ?? CITIES[0];
-    const p = state.terrain.tileAtGeo(home.lon, home.lat);
-    renderer.camera.scale = 1.15;
-    renderer.camera.x = p.c * renderer.size.TP - canvas.clientWidth / 2 / 1.15;
-    renderer.camera.y = p.r * renderer.size.TP - canvas.clientHeight / 2 / 1.15;
-    renderer.clampCamera();
+    $('centerBtn').click();
     $('mainMenu').hidden = true;
     started = true;
-    rng.resume?.();
     collectResources(state);
     refreshUI();
-    toast(`${cfg.factions.find((f) => f.id === state.playerFaction).name} · ${dateLabel(state)}`);
+    toast(`${cfg.factions.find((f) => f.id === state.playerFaction).name} · ${dateLabel(state)} · 点城池进布阵`);
   });
 }
 
@@ -328,34 +452,39 @@ function frame(now) {
       let guard = 0;
       while (accTurn >= per && guard++ < 4) { accTurn -= per; doTurn(); }
     }
-    // 战斗层：只有子界面打开时才实时跑；退出后完全静止，靠 enterSession 快进补齐。
     if (session?.active) {
       tickSession(session, realDt);
       refreshBattleUI();
     }
   }
   renderer.draw(ctx);
+  // 城池小地图：固定视口、不拖动，相位取模拟时间（不用墙钟）
+  if (cityView && !$('battleOverlay').hidden) cityView.draw(session?.sec ?? 0);
   requestAnimationFrame(frame);
 }
 
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
-  cfg = await fetch('./config/campaign.json?v=0.1.0').then((r) => r.json());
+  cfg = await fetch('./config/campaign.json?v=0.2.0').then((r) => r.json());
   rng = createRng(cfg.terrain.seed);
   state = createCampaign(cfg, { seed: cfg.terrain.seed });
   renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
-  // 渲染层补一个屏幕→世界像素的换算，供框选圆使用
   renderer.worldFromScreen = (sx, sy) => ({
     x: renderer.camera.x + sx / renderer.camera.scale,
     y: renderer.camera.y + sy / renderer.camera.scale,
   });
+
   $('factionPick').innerHTML = cfg.factions.map((f) =>
     `<option value="${f.id}">${f.name}（${f.capital}）</option>`).join('');
   $('factionPick').value = 'cao';
   $('pickNote').textContent = `曹操 · 都城 许都 · 起始城池 ${CITIES.filter((c) => c.owner === 'cao').length} 座`;
-  $('menuSub').textContent = `${cfg.meta.subtitle} · ${cfg.terrain.cols}×${cfg.terrain.rows} 栅格`;
+  $('menuSub').textContent = `${cfg.meta.subtitle} · ${cfg.terrain.cols}×${cfg.terrain.rows} 栅格 · v${cfg.meta.version}`;
   renderer.resize();
-  window.addEventListener('resize', () => renderer.resize());
+  renderer.camera.scale = 1.0;
+  window.addEventListener('resize', () => {
+    renderer.resize();
+    if (cityView) cityView.resize();
+  });
   bindPointer();
   bindUI();
   collectResources(state);
@@ -367,12 +496,15 @@ async function boot() {
     get cfg() { return cfg; },
     get session() { return session; },
     get snapshot() { return snapshot; },
+    get cityView() { return cityView; },
     renderer,
     doTurn, issueOrder: (s) => issueOrder(state, s),
+    cancelOrder: (id) => cancelOrder(state, id),
+    deployUnit: (cityId, id, zone, col, row) => deployUnit(state, cityId, id, zone, col, row),
     openBattle, closeBattle,
     describe: (c, r) => renderer.describe(c, r),
-    reachable: () => reachableTiles(state.terrain, state.playerFaction, 1200),
-    tilesPerTurn: () => tilesPerTurn(cfg, state.terrain),
+    reachable: () => reachableTiles(state.terrain, state.playerFaction, 1400),
+    cityOverview: (id) => cityOverview(state, id),
   };
 }
 

@@ -11,7 +11,8 @@ const PAL = {
   road: '#8a7c5c', city: '#6a6757', wall: '#56574b', gate: '#8d846a',
   ford: '#6c8c8f', pass: '#8a7a58',
 };
-const INK = '#101614', TEXT = '#ded7bd', TEXT_DIM = '#a9b19c', GOLD = '#d8b46a';
+const INK = '#101614', TEXT = '#ded7bd', TEXT_DIM = '#a9b19c',
+  DIM = '#aab6a2', GOLD = '#d8b46a';
 
 function hash(x, y, s = 1) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s | 0, 2246822519);
@@ -82,7 +83,7 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
       g.closePath(); g.fill();
       if (big && hash(t.c, t.r, 9) > 0.62) {
         g.strokeStyle = rgba('#c8d2b4', 0.16);
-        g.lineWidth = 0.7;
+        g.lineWidth = 1.1;
         g.beginPath();
         g.moveTo(x + TP * 0.5, y + TP - h + 2);
         g.lineTo(x + TP * 0.86, y + TP - 1);
@@ -119,7 +120,7 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
     for (const t of terrain.tiles) {
       if (t.type !== T.MARSH) continue;
       const x = t.c * TP, y = t.r * TP;
-      g.strokeStyle = rgba('#7f9a6c', 0.42); g.lineWidth = 0.8;
+      g.strokeStyle = rgba('#9fbd86', 0.62); g.lineWidth = 1.3;
       for (let k = 0; k < 3; k++) {
         const px = x + 2 + hash(t.c * 7 + k, t.r, 17) * (TP - 4);
         const py = y + TP - 2;
@@ -136,8 +137,8 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
       const lake = t.type === T.LAKE;
       g.fillStyle = lake ? rgba('#6fa0a6', 0.16) : rgba('#6fa0a6', 0.10);
       g.fillRect(x, y, TP, TP);
-      g.strokeStyle = lake ? rgba('#9fc9c7', 0.22) : rgba('#8fb8bd', 0.30);
-      g.lineWidth = 0.7;
+      g.strokeStyle = lake ? rgba('#bfe2e0', 0.34) : rgba('#b2d6d8', 0.46);
+      g.lineWidth = 1.2;
       for (let k = 0; k < 2; k++) {
         const yy = y + 3 + k * 5 + hash(t.c, t.r, 23) * 2;
         g.beginPath();
@@ -178,11 +179,11 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
       if (nb(-1, 1)) links.push([cx, cy, x, y + TP]);
       if (!links.length) links.push([x + 2, cy, x + TP - 2, cy]);
       for (const [a, b, c, d] of links) {
-        g.strokeStyle = rgba('#181b14', 0.55); g.lineWidth = 5;
+        g.strokeStyle = rgba('#181b14', 0.62); g.lineWidth = 8;
         g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
-        g.strokeStyle = rgba('#b3a274', 0.72); g.lineWidth = 2.6;
+        g.strokeStyle = rgba('#cbb98a', 0.88); g.lineWidth = 4.2;
         g.beginPath(); g.moveTo(a, b); g.lineTo(c, d); g.stroke();
-        g.strokeStyle = rgba('#e0d0a2', 0.26); g.lineWidth = 0.7;
+        g.strokeStyle = rgba('#f0e2b8', 0.34); g.lineWidth = 1.1;
         g.beginPath(); g.moveTo(a, b - 1.6); g.lineTo(c, d - 1.6); g.stroke();
       }
       if (t.type === T.FORD) {
@@ -244,70 +245,8 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
       g.strokeStyle = rgba('#0d1210', 0.6); g.lineWidth = 0.8;
       g.beginPath(); g.moveTo(fx, fy); g.lineTo(fx + 12, fy + 4); g.lineTo(fx, fy + 9); g.stroke();
 
-      // 城名：竖排小字压在城郭右侧，带描边保证可读，不是居中大字
-      const labelX = x0 + size + 16, labelY = y0 + 4;
-      g.font = '600 12px "WenQuanYi Micro Hei", serif';
-      g.textBaseline = 'top';
-      [...city.name].forEach((ch, i) => {
-        g.strokeStyle = rgba('#0b100e', 0.9); g.lineWidth = 2.4;
-        g.strokeText(ch, labelX, labelY + i * 13);
-        g.fillStyle = city.rank === 1 ? GOLD : TEXT;
-        g.fillText(ch, labelX, labelY + i * 13);
-      });
-      if (city.rank <= 2) {
-        g.font = '9px "WenQuanYi Micro Hei", serif';
-        g.fillStyle = TEXT_DIM;
-        g.fillText(city.rank === 1 ? '都' : '郡', labelX + 1, labelY + city.name.length * 13 + 1);
-      }
+      // 城名/注记改为屏幕空间绘制（见 drawAnnotations），不进离屏位图。
     }
-
-    // 10) 关隘 / 津渡小标记 + 名称
-    for (const p of PASSES) {
-      const q = geoToTile(p.lon, p.lat, terrain.cols, terrain.rows);
-      const x = q.c * TP, y = q.r * TP;
-      g.fillStyle = p.kind === 'ford' ? rgba('#9fc9c7', 0.9) : rgba(GOLD, 0.9);
-      if (p.kind === 'ford') {
-        g.beginPath(); g.arc(x + TP / 2, y + TP / 2, 3, 0, Math.PI * 2); g.fill();
-      } else {
-        g.beginPath();
-        g.moveTo(x + 2, y + TP - 2); g.lineTo(x + TP / 2, y + 2);
-        g.lineTo(x + TP - 2, y + TP - 2); g.closePath(); g.fill();
-      }
-      g.font = '9px "WenQuanYi Micro Hei", serif';
-      g.strokeStyle = rgba('#0b100e', 0.9); g.lineWidth = 2;
-      g.strokeText(p.name, x + TP + 1, y + 1);
-      g.fillStyle = TEXT_DIM; g.fillText(p.name, x + TP + 1, y + 1);
-    }
-
-    // 11) 地理注记：山名 / 水名 / 泽名，沿锚点小字排布
-    g.font = 'italic 10px "WenQuanYi Micro Hei", serif';
-    const note = (text, lon, lat, color, rot = 0) => {
-      const p = project(lon, lat, W, H);
-      g.save(); g.translate(p.x, p.y); g.rotate(rot);
-      g.strokeStyle = rgba('#0b100e', 0.85); g.lineWidth = 2.2;
-      g.strokeText(text, 0, 0); g.fillStyle = color; g.fillText(text, 0, 0);
-      g.restore();
-    };
-    for (const rg of RIDGES) {
-      const mid = rg.pts[Math.floor(rg.pts.length / 2)];
-      note(rg.name, mid[0], mid[1], rgba('#c8d2b4', 0.72), -0.5);
-    }
-    for (const rv of RIVERS_MINOR) {
-      const mid = rv.pts[Math.floor(rv.pts.length / 2)];
-      note(rv.name, mid[0], mid[1], rgba('#9fc9c7', 0.8), 0.18);
-    }
-    for (const lk of LAKES) note(lk.name, lk.lon, lk.lat, rgba('#a9d0cf', 0.8), 0);
-    note('黄 河', 113.72, 35.02, rgba('#bfe0e0', 0.9), -0.15);
-    note('官 渡', 113.93, 34.48, rgba(GOLD, 0.85), 0);
-
-    // 12) 图廓与比例尺
-    g.strokeStyle = rgba(GOLD, 0.35); g.lineWidth = 2;
-    g.strokeRect(3, 3, W - 6, H - 6);
-    g.strokeStyle = rgba(GOLD, 0.2); g.lineWidth = 1;
-    g.strokeRect(9, 9, W - 18, H - 18);
-    g.font = '9px "WenQuanYi Micro Hei", serif';
-    g.fillStyle = rgba(TEXT_DIM, 0.8);
-    g.fillText(`建安五年 · 豫兖战线 · ${terrain.cols}×${terrain.rows} 里格`, 14, H - 20);
   }
 
   buildBase();
@@ -428,6 +367,133 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
     }
   }
 
+  /** 信息层：世界坐标定位，但字号/线宽按 1/scale 换算 → 永远是固定屏幕像素。 */
+  function drawAnnotations(ctx) {
+    const k = 1 / camera.scale;
+    const cityFont = 13 * k, noteFont = 11 * k, smallFont = 9 * k;
+    ctx.textBaseline = 'top';
+    ctx.lineJoin = 'round';
+
+    // 城名：竖排压在城郭右侧，带描边；不是居中大字，也不是圆圈里一个汉字
+    for (const city of CITIES) {
+      const info = terrain.cityTiles[city.id];
+      const size = (info.rad * 2 + 1) * TP;
+      const x0 = (info.c - info.rad) * TP, y0 = (info.r - info.rad) * TP;
+      const owner = cityOwners[city.id] ?? city.owner;
+      const f = cfg.factions.find((v) => v.id === owner);
+      const lx = x0 + size + TP * 0.55, ly = y0 + 2;
+      ctx.font = `600 ${cityFont}px "WenQuanYi Micro Hei", serif`;
+      [...city.name].forEach((ch, i) => {
+        const yy = ly + i * cityFont * 1.12;
+        ctx.strokeStyle = rgba('#080d0b', 0.95); ctx.lineWidth = 2.6 * k;
+        ctx.strokeText(ch, lx, yy);
+        ctx.fillStyle = city.rank === 1 ? GOLD : TEXT;
+        ctx.fillText(ch, lx, yy);
+      });
+      // 势力色小方章 + 等级
+      ctx.fillStyle = f?.color ?? '#8899aa';
+      ctx.fillRect(lx, ly + city.name.length * cityFont * 1.12 + 3 * k, 9 * k, 3 * k);
+      ctx.font = `${smallFont}px "WenQuanYi Micro Hei", serif`;
+      ctx.fillStyle = DIM;
+      ctx.fillText(city.rank === 1 ? '都' : city.rank === 2 ? '郡' : city.rank === 3 ? '县' : '垒',
+        lx + 12 * k, ly + city.name.length * cityFont * 1.12);
+    }
+
+    // 关隘 / 津渡：符号 + 名称，符号尺寸固定屏幕像素
+    for (const p of PASSES) {
+      const q = geoToTile(p.lon, p.lat, terrain.cols, terrain.rows);
+      const x = (q.c + 0.5) * TP, y = (q.r + 0.5) * TP;
+      const col = p.kind === 'ford' ? '#a8d8d6' : GOLD;
+      ctx.fillStyle = col; ctx.strokeStyle = rgba('#080d0b', 0.9); ctx.lineWidth = 1.2 * k;
+      ctx.beginPath();
+      if (p.kind === 'ford') ctx.arc(x, y, 4 * k, 0, Math.PI * 2);
+      else {
+        ctx.moveTo(x, y - 5 * k); ctx.lineTo(x + 4.5 * k, y + 4 * k);
+        ctx.lineTo(x - 4.5 * k, y + 4 * k); ctx.closePath();
+      }
+      ctx.fill(); ctx.stroke();
+      ctx.font = `600 ${smallFont}px "WenQuanYi Micro Hei", serif`;
+      ctx.strokeStyle = rgba('#080d0b', 0.95); ctx.lineWidth = 2.4 * k;
+      ctx.strokeText(p.name, x + 8 * k, y - 5 * k);
+      ctx.fillStyle = col;
+      ctx.fillText(p.name, x + 8 * k, y - 5 * k);
+    }
+
+    // 地理注记：山名 / 水名 / 泽名，沿锚点小字排布
+    const note = (text, lon, lat, color, rot = 0) => {
+      const p = project(lon, lat, W, H);
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rot);
+      ctx.font = `italic ${noteFont}px "WenQuanYi Micro Hei", serif`;
+      ctx.strokeStyle = rgba('#080d0b', 0.9); ctx.lineWidth = 2.4 * k;
+      ctx.strokeText(text, 0, 0);
+      ctx.fillStyle = color; ctx.fillText(text, 0, 0);
+      ctx.restore();
+    };
+    for (const rg of RIDGES) {
+      const mid = rg.pts[Math.floor(rg.pts.length / 2)];
+      note(rg.name, mid[0], mid[1], rgba('#d2dcbf', 0.9), -0.5);
+    }
+    for (const rv of RIVERS_MINOR) {
+      const mid = rv.pts[Math.floor(rv.pts.length / 2)];
+      note(rv.name, mid[0], mid[1], rgba('#b6e0e0', 0.92), 0.18);
+    }
+    for (const lk of LAKES) note(lk.name, lk.lon, lk.lat, rgba('#bfe6e4', 0.92), 0);
+    note('黄 河', 113.72, 35.02, rgba('#d2eeee', 0.95), -0.15);
+    note('官 渡', 113.93, 34.48, rgba(GOLD, 0.95), 0);
+  }
+
+  /** 土地等级角标：只在放大到能看清时画，字号固定屏幕像素。 */
+  function drawLevels(ctx) {
+    if (camera.scale < 1.25) return;
+    ctx.font = '9px sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = rgba(TEXT, 0.8);
+    ctx.strokeStyle = rgba('#080d0b', 0.8); ctx.lineWidth = 2 / camera.scale;
+    const k = 1 / camera.scale;
+    for (const t of terrain.tiles) {
+      if (t.level < 5 || t.cityId || t.type === T.RIVER) continue;
+      const x = t.c * TP + 2, y = t.r * TP + 2;
+      ctx.strokeText(String(t.level), x, y);
+      ctx.fillText(String(t.level), x, y);
+    }
+  }
+
+  /** 屏幕空间 HUD：图廓、比例尺、缩略导航（右下角）。完全不受缩放影响。 */
+  function drawScreenHud(ctx) {
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = rgba(GOLD, 0.28); ctx.lineWidth = 2;
+    ctx.strokeRect(3, 3, cssW - 6, cssH - 6);
+
+    // 缩略导航：全图 + 当前视口框，解决「放大后不知道自己在哪」
+    const mw = Math.min(190, cssW * 0.24), mh = mw * (H / W);
+    const mx = cssW - mw - 14, my = cssH - mh - 58;
+    ctx.fillStyle = rgba('#0b100e', 0.9);
+    ctx.fillRect(mx - 3, my - 3, mw + 6, mh + 6);
+    ctx.strokeStyle = rgba(GOLD, 0.4); ctx.lineWidth = 1;
+    ctx.strokeRect(mx - 3, my - 3, mw + 6, mh + 6);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(off, mx, my, mw, mh);
+    const vx = mx + (camera.x / W) * mw, vy = my + (camera.y / H) * mh;
+    const vw = (cssW / camera.scale / W) * mw, vh = (cssH / camera.scale / H) * mh;
+    ctx.strokeStyle = rgba(GOLD, 0.95); ctx.lineWidth = 1.5;
+    ctx.strokeRect(vx, vy, Math.max(3, vw), Math.max(3, vh));
+    ctx.font = '9px "WenQuanYi Micro Hei", serif';
+    ctx.fillStyle = rgba(TEXT, 0.85);
+    ctx.fillText(`全图 ${terrain.cols}×${terrain.rows}`, mx, my - 12);
+
+    // 比例尺
+    ctx.font = '10px "WenQuanYi Micro Hei", serif';
+    ctx.fillStyle = rgba(TEXT, 0.7);
+    ctx.fillText(`建安五年 · 豫兖战线 · 1 格 ≈ ${kmPerTileLabel()} km · 缩放 ${camera.scale.toFixed(2)}×`,
+      14, cssH - 20);
+    ctx.restore();
+  }
+  function kmPerTileLabel() {
+    const lonStep = (114.0 - 113.0) * 111 * Math.cos(34.5 * Math.PI / 180);
+    return (lonStep / terrain.cols * 3.4).toFixed(1);
+  }
+
   function draw(ctx) {
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -435,55 +501,45 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale,
       -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
-    ctx.imageSmoothingEnabled = true;
+    // 接近 1:1 时用高质量插值；缩到很小则最近邻保住细线锐度。
+    ctx.imageSmoothingEnabled = camera.scale >= 0.8;
+    ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(off, 0, 0);
 
     drawBorders(ctx);
     drawCityFlags(ctx);
+    drawAnnotations(ctx);      // 文字/注记在屏幕空间，不随离屏缩放糊掉
+    drawLevels(ctx);
 
     if (reachable.length) {
-      ctx.fillStyle = rgba(GOLD, 0.30);
+      ctx.fillStyle = rgba(GOLD, 0.42);
       for (const p of reachable) {
         ctx.beginPath();
-        ctx.arc(p.c * TP + TP / 2, p.r * TP + TP / 2, 1.6 / camera.scale, 0, Math.PI * 2);
+        ctx.arc(p.c * TP + TP / 2, p.r * TP + TP / 2, 2.4 / camera.scale, 0, Math.PI * 2);
         ctx.fill();
       }
     }
     drawOrders(ctx);
 
     if (selection) {
-      ctx.strokeStyle = GOLD; ctx.lineWidth = 2 / camera.scale;
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 2.2 / camera.scale;
       ctx.strokeRect(selection.c * TP + 1, selection.r * TP + 1, TP - 2, TP - 2);
-      ctx.strokeStyle = rgba(GOLD, 0.35); ctx.lineWidth = 1 / camera.scale;
+      ctx.strokeStyle = rgba(GOLD, 0.4); ctx.lineWidth = 1 / camera.scale;
       ctx.strokeRect((selection.c - 1) * TP, (selection.r - 1) * TP, TP * 3, TP * 3);
     }
     if (circle) {
-      ctx.strokeStyle = rgba('#e8d9a8', 0.95); ctx.lineWidth = 1.6 / camera.scale;
-      ctx.setLineDash([4 / camera.scale, 3 / camera.scale]);
+      ctx.strokeStyle = rgba('#e8d9a8', 0.95); ctx.lineWidth = 1.8 / camera.scale;
+      ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
       ctx.beginPath(); ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = rgba('#e8d9a8', 0.10); ctx.fill();
     }
     ctx.restore();
-  }
-
-  // 高缩放下补画土地等级角标（只在 scale≥1.7，避免密集数字糊屏）
-  function drawLevels(ctx) {
-    if (camera.scale < 1.7) return;
-    ctx.save();
-    ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale,
-      -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
-    ctx.font = `${7 / camera.scale}px sans-serif`;
-    ctx.fillStyle = rgba(TEXT, 0.75);
-    for (const t of terrain.tiles) {
-      if (t.level < 4 || t.cityId || t.type === T.RIVER) continue;
-      ctx.fillText(String(t.level), t.c * TP + 1.5, t.r * TP + 6.5 / camera.scale);
-    }
-    ctx.restore();
+    drawScreenHud(ctx);
   }
 
   return {
-    resize, draw: (ctx) => { draw(ctx); drawLevels(ctx); },
+    resize, draw,
     zoom, pan, screenToTile, tileToScreen, clampCamera,
     camera, get dpr() { return dpr; },
     setSelection(p) { selection = p; },

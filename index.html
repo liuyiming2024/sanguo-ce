@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#111815">
 <link rel="icon" href="data:,">
 <title>三国策 · 官渡</title>
-<link rel="stylesheet" href="./styles/main.css?v=0.1.0">
+<link rel="stylesheet" href="./styles/main.css?v=0.2.0">
 </head>
 <body>
 
@@ -14,7 +14,7 @@
 
 <header id="topBar">
   <div class="brand"><b>三国策</b><span>· 官渡</span></div>
-  <div class="date" id="date">建安四年 · 2月上旬</div>
+  <div class="date" id="date">建安五年 · 2月上旬</div>
   <div class="faction" id="factionTag">曹操</div>
   <div class="res" id="res">
     <span title="木材">木 <b id="rWood">0</b></span>
@@ -26,14 +26,41 @@
   <div class="clock" id="clock">第 0 旬</div>
 </header>
 
+<!-- 地块信息 + 大地图指令 -->
 <aside id="infoCard" hidden aria-label="地块信息">
   <button class="x" id="closeInfoX" type="button" aria-label="关闭信息卡">×</button>
   <h2 id="infoTitle">地块</h2>
   <div id="infoBody"></div>
-  <div class="infoActions">
-    <button id="claimBtn" type="button">占领此地</button>
-    <button id="marchBtn" type="button">向此城出征</button>
+  <div class="cmdGroup" id="tileCmds">
+    <button data-cmd="claim" type="button">占领此地</button>
+    <button data-cmd="develop" type="button">屯田升级</button>
+    <button data-cmd="buildFort" type="button">筑垒寨</button>
+    <button data-cmd="scout" type="button">侦察</button>
+    <button data-cmd="march" type="button">向此城出征</button>
+    <button data-cmd="transfer" type="button">调动</button>
+    <button data-cmd="garrison" type="button">驻守</button>
+    <button data-cmd="withdraw" type="button">撤兵回营</button>
   </div>
+</aside>
+
+<!-- 城池详情 -->
+<aside id="cityPanel" hidden aria-label="城池详情">
+  <button class="x" id="closeCityX" type="button" aria-label="关闭城池详情">×</button>
+  <h2 id="cityTitle">城池</h2>
+  <div id="cityBody"></div>
+  <div class="intel" id="cityIntel" hidden></div>
+  <div class="cmdGroup">
+    <button id="enterCityBtn" type="button" class="primary">进入城池布阵 →</button>
+    <button id="recruitBtn" type="button">征兵 +500</button>
+    <button id="scoutCityBtn" type="button">派斥候侦察</button>
+  </div>
+</aside>
+
+<!-- 在途军情 -->
+<aside id="orderList" hidden aria-label="在途军情">
+  <button class="x" id="closeOrderX" type="button" aria-label="关闭军情">×</button>
+  <h2>在途军情</h2>
+  <div id="orderBody"></div>
 </aside>
 
 <div id="log" aria-label="事件记录"></div>
@@ -44,14 +71,20 @@
   <button id="zoomOut" type="button" aria-label="缩小">−</button>
   <button id="zoomIn" type="button" aria-label="放大">＋</button>
   <button id="centerBtn" type="button">回中</button>
-  <button id="battleBtn" type="button" class="primary">进入战场</button>
+  <button id="fitBtn" type="button">全图</button>
+  <button id="orderBtn" type="button">军情 <b id="orderCount">0</b></button>
+  <button id="battleBtn" type="button" class="primary">进入当前城池</button>
   <button id="helpBtn" type="button">玩法</button>
 </footer>
 
-<section id="battleOverlay" hidden aria-label="攻城子界面">
-  <button class="x" id="closeBattleX" type="button" aria-label="退出战场">×</button>
-  <h2>攻城 · <span id="battleCity">—</span></h2>
-  <p class="sub">两端并行：退出后策略日历照常走，再进入时用同一固定步长空跑补齐，不另写结算公式。</p>
+<!-- 城池小地图：固定视口、不拖动，只有调兵 -->
+<section id="battleOverlay" hidden aria-label="城池布阵界面">
+  <button class="x" id="closeBattleX" type="button" aria-label="退出城池">×</button>
+  <div class="battleHead">
+    <h2>城池 · <span id="battleCity">—</span> <small id="battleSide">—</small></h2>
+    <span class="sub" id="battleTip">固定视口，不拖动：把兵从城外大营拖进城里，或撤回大营。</span>
+  </div>
+  <canvas id="cityCanvas" aria-label="城内小地图"></canvas>
   <div class="battleGrid">
     <div class="cell">策略回合<b id="bTurn">0</b></div>
     <div class="cell">策略时刻 / 秒<b id="bCampaignSec">0</b></div>
@@ -59,12 +92,12 @@
     <div class="cell">上次快照 / 秒<b id="bSnapSec">—</b></div>
     <div class="cell">快进步数<b id="bFastSteps">0</b></div>
     <div class="cell">累计逻辑步<b id="bSteps">0</b></div>
-    <div class="cell">士气<b id="bMorale">0</b></div>
-    <div class="cell">城防<b id="bWall">0</b></div>
+    <div class="cell">城内 / 大营<b id="bForces">0 / 0</b></div>
+    <div class="cell">士气 / 城防<b id="bMorale">0</b></div>
     <div class="cell">邮箱待办<b id="bMail">0</b></div>
   </div>
-  <div class="battleNote" id="battleNote">第一轮骨架：城内网格与真实战斗结算尚未接入。这里只验证「进入 / 退出 / 隔月再进」的时间一致性。</div>
-  <button class="closeBattle" id="leaveBattle" type="button">退出战场（拍快照）</button>
+  <div class="battleNote" id="battleNote">两端并行：退出后策略日历照常走，再进入时用同一固定步长空跑补齐；部署状态随快照保留。</div>
+  <button class="closeBattle" id="leaveBattle" type="button">退出城池（拍快照）</button>
 </section>
 
 <section id="helpPanel" hidden aria-label="玩法说明">
@@ -72,10 +105,11 @@
   <h2>玩法 · 建安五年</h2>
   <ul>
     <li>1 回合 = 1 旬；点「结束回合」或开「自动推进」，日历不因战斗暂停。</li>
-    <li>地图是 144×108 栅格：山地/大河不可通行，关隘与津渡是唯一通道，官道行军更快。</li>
-    <li>点格子看地形、土地等级与四资源时产；<b>占领地块需与己方领地相连</b>（连地铺路）。</li>
-    <li>短拖画圆可框选，长拖平移地图，滚轮 / ＋− 缩放。</li>
-    <li>点「进入战场」打开攻城子界面；退出拍快照，隔几旬再进来会空跑补齐到当前时刻。</li>
+    <li>144×108 栅格：山地/大河不可通行，关隘与津渡是唯一通道，官道行军更快。拖动平移、滚轮缩放、「全图」看整幅、右下角缩略图定位。</li>
+    <li><b>大地图指令</b>：占地（需连地）、屯田升级、筑垒寨、侦察、出征、调动、驻守、撤兵、征兵。全部需要行军时间，可在「军情」里撤令。</li>
+    <li><b>点城池</b>打开详情，再「进入城池布阵」：己方城部队在城内，敌方城部队在城外扎营。小地图固定视口、不拖动，只用来调兵。</li>
+    <li>小地图里拖单位部署；短拖画圆框选，再拖一次给方向（所有远程单位齐射 / 近战突击）；单击单位单兵接管。</li>
+    <li>退出的界面都能用 × 或 Esc 回来；「隔几旬再进来」会用同一固定步长空跑补齐，不另写结算公式。</li>
   </ul>
   <button class="closeBtn" id="closeHelp" type="button">关闭</button>
 </section>
@@ -89,11 +123,11 @@
     </label>
     <p class="pickNote" id="pickNote"></p>
     <button class="startBtn" id="startBtn" type="button">进入沙盘</button>
-    <p class="tiny">单方但可任选；其余势力由 AI 每两旬决策。真实城名 · 汉末黄河故道 · 官道与津渡。</p>
+    <p class="tiny">单方但可任选；其余势力由 AI 每两旬决策。真实城名 · 汉末黄河故道 · 官道与津渡 · 城池布阵。</p>
   </div>
 </section>
 
 <div id="toast" role="status"></div>
-<script type="module" src="./src/main.js?v=0.1.0"></script>
+<script type="module" src="./src/main.js?v=0.2.0"></script>
 </body>
 </html>

@@ -16,7 +16,10 @@ export function createSession(cfg, campaign, cityId, { rngSnapshot = null } = {}
     stepsRun: 0,
     rngSnapshot: rngSnapshot ?? { state: 0, calls: 0 },
     pendingOrders: [],
-    units: [],            // 占位：后续接城内网格与单兵实体
+    // 城池小地图的单位实体：直接引用 campaign.forces[cityId]，
+    // 退出时拍深拷贝进快照，页面刷新/再次进入可原样恢复部署。
+    forcesRef: campaign.forces?.[cityId] ?? null,
+    units: [],            // 兼容占位
     morale: campaign.cities[cityId]?.morale ?? cfg.hidden.moraleStart,
     cityWall: campaign.cities[cityId]?.wall ?? cfg.city.wallStart,
     commanderState: campaign.cities[cityId]?.commander.state ?? 'inOffice',
@@ -66,6 +69,8 @@ export function enterSession(session, rng) {
   if (session.rngSnapshot && rng?.restore) rng.restore(session.rngSnapshot);
   session.active = true;
   session.turnAtEnter = session.campaign.turn;
+  // 若策略层部队池被清空（例如刷新后重建），用快照恢复部署。
+  // 部署恢复统一由 restoreSession 的按 id 合并处理，这里不再覆盖策略层部队池。
   return { ok: true, fastForwardSteps: steps, sec: session.sec, pending: session.pendingOrders.length };
 }
 
@@ -97,6 +102,10 @@ export function leaveSession(session, rng) {
     rngSnapshot: rng?.snapshot ? rng.snapshot() : session.rngSnapshot,
     pendingOrders: session.pendingOrders.slice(),
     units: session.units.slice(),
+    forces: {
+      inside: (session.forcesRef?.inside ?? []).map((u) => ({ ...u })),
+      camp: (session.forcesRef?.camp ?? []).map((u) => ({ ...u })),
+    },
     morale: session.morale,
     cityWall: session.cityWall,
     commanderState: session.commanderState,
@@ -111,6 +120,24 @@ export function restoreSession(cfg, campaign, snap) {
   s.stepsRun = snap.stepsRun;
   s.pendingOrders = snap.pendingOrders?.slice() ?? [];
   s.units = snap.units?.slice() ?? [];
+  s.forcesSnapshot = snap.forces ?? null;
+  if (snap.forces && campaign.forces) {
+    // 两端并行：离开期间策略层可能又到了援军（已写进 campaign.forces）。
+    // 快照只负责恢复「旧单位的部署位置」，不能把新单位冲掉；按 id 合并。
+    const cur = campaign.forces[snap.cityId] ?? { inside: [], camp: [] };
+    const snapUnits = [...snap.forces.inside, ...snap.forces.camp];
+    const byId = new Map(cur.inside.concat(cur.camp).map((u) => [u.id, u]));
+    for (const u of snapUnits) {
+      if (byId.has(u.id)) Object.assign(byId.get(u.id), u);   // 恢复部署/血量
+      else cur[ u.zone === 'inside' ? 'inside' : 'camp' ].push({ ...u });  // 刷新页面后补回
+    }
+    // 按 zone 重新归位，避免快照与当前 zone 不一致
+    const all = cur.inside.concat(cur.camp);
+    cur.inside = all.filter((u) => u.zone === 'inside');
+    cur.camp = all.filter((u) => u.zone === 'camp');
+    campaign.forces[snap.cityId] = cur;
+  }
+  s.forcesRef = campaign.forces?.[snap.cityId] ?? null;
   s.morale = snap.morale;
   s.cityWall = snap.cityWall;
   s.commanderState = snap.commanderState;

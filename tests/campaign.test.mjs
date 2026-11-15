@@ -57,7 +57,7 @@ test('资源按已占领地块时产聚合，占领新地会提高产量', () =>
 test('命令不即时生效：arriveTurn > 当前回合，且路径来自 A*', () => {
   const s = mk();
   const r = issueOrder(s, {
-    faction: 'cao', from: 'xudu', to: 'chenliu', type: 'march',
+    faction: 'cao', from: 'xudu', to: 'liyang', type: 'march',
     units: { daodun: 500, gongnu: 300 },
   });
   assert.equal(r.ok, true, r.reason);
@@ -65,12 +65,14 @@ test('命令不即时生效：arriveTurn > 当前回合，且路径来自 A*', (
   assert.ok(r.order.path.length > 2);
   assert.ok(r.order.atSec > elapsedSec(s));
   assert.equal(r.order.from, 'xudu');
+  assert.equal(r.order.to, 'liyang');
   assert.ok(s.orders.length === 1);
 });
 
 test('铺路命令必须连地：远离领地的格子直接拒绝', () => {
   const s = mk();
   s.cfg.factions.forEach((f) => { f.ai = false; });
+  collectResources(s);   // 资源池按领地计算，命令要扣粮
   const far = s.terrain.tiles.find((x) => !x.owner && x.cost < 90 &&
     x.c > s.terrain.cols * 0.72 && !hasAdjacentTerritory(s.terrain, 'cao', x.c, x.r));
   assert.ok(far);
