@@ -1,0 +1,112 @@
+{
+  "meta": {
+    "title": "三国策 · 官渡",
+    "version": "0.1.0",
+    "subtitle": "建安五年 · 豫兖战线 · 双时钟骨架"
+  },
+  "calendar": {
+    "startYear": 200,
+    "startMonth": 2,
+    "startXun": 1,
+    "xunPerMonth": 3,
+    "secPerTurn": 4,
+    "fastForwardStepSec": 0.016666666666666666,
+    "maxFastForwardSteps": 200000,
+    "_note": "1 回合 = 1 旬（10 日）。策略层 secPerTurn 秒折算一旬；战斗层用同一固定步长，快进只是不渲染地空跑。"
+  },
+  "factions": [
+    { "id": "cao", "name": "曹操", "color": "#6fa8c4", "colorDark": "#2b4d5e", "capital": "许都", "ai": false },
+    { "id": "yuan", "name": "袁绍", "color": "#c9a35a", "colorDark": "#6b5227", "capital": "邺", "ai": true },
+    { "id": "liu", "name": "刘备", "color": "#8fb56d", "colorDark": "#3d5c32", "capital": "汝南", "ai": true }
+  ],
+  "units": {
+    "daodun": { "name": "刀盾兵", "kind": "melee", "support": false, "projectile": null, "hp": 100, "dmg": 12, "range": 18, "speed": 26, "cost": 12 },
+    "changqiang": { "name": "长枪兵", "kind": "melee", "support": false, "projectile": null, "hp": 110, "dmg": 14, "range": 30, "speed": 24, "cost": 14 },
+    "gongnu": { "name": "弓弩手", "kind": "ranged", "support": false, "projectile": "arrow", "hp": 70, "dmg": 10, "range": 150, "speed": 25, "cost": 16 },
+    "chuangnu": { "name": "床弩", "kind": "ranged", "support": false, "projectile": "bolt", "hp": 90, "dmg": 22, "range": 220, "speed": 12, "cost": 28 },
+    "paoshi": { "name": "抛石机", "kind": "ranged", "support": false, "projectile": "stone", "hp": 120, "dmg": 30, "range": 260, "speed": 8, "cost": 40 },
+    "zhongjia": { "name": "重甲步", "kind": "siege", "support": false, "projectile": null, "hp": 220, "dmg": 16, "range": 20, "speed": 14, "cost": 34 },
+    "junshi": { "name": "军师", "kind": "support", "support": true, "projectile": null, "hp": 60, "dmg": 0, "range": 0, "speed": 24, "cost": 30,
+      "skills": ["鼓舞", "疑兵", "火攻"],
+      "_note": "辅助，不直接伤害；计策只改士气/城防/警觉等隐藏属性，不改物理法则。" }
+  },
+  "hidden": {
+    "moraleStart": 72,
+    "moraleMin": 0,
+    "moraleMax": 100,
+    "moraleDriftPerSec": 0.05,
+    "fatiguePerMarchTurn": 8,
+    "fatigueRecoverPerTurn": 3,
+    "grainPerPopTurn": 0.9,
+    "grainUpkeepPerUnitTurn": 0.12,
+    "alertStart": 55,
+    "formationStart": 80,
+    "_note": "士气 / 疲劳 / 粮草 / 警觉 / 阵型完整度：均不直接显示，只通过溃散、被擒、征兵上限、行军速度间接生效。"
+  },
+  "city": {
+    "wallStart": 100,
+    "wallRepairPerTurn": 1.2,
+    "popToTroopRatio": 0.06,
+    "garrisonRecruitPerTurn": 0.02,
+    "siegeWallDrainPerSec": 0.06,
+    "moraleRoutThreshold": 28,
+    "commanderCaptureThreshold": 18,
+    "_note": "破城条件走城门/府衙 + 主帅状态机，不用「雕像血量归零」。"
+  },
+  "orders": {
+    "marchKmPerTurn": 42,
+    "minArriveTurn": 1,
+    "maxConcurrentPerFaction": 6,
+    "types": ["claim", "march", "reinforce", "withdraw", "recruit", "fireDirectional", "stratagem"]
+  },
+  "terrain": {
+    "cols": 144,
+    "rows": 108,
+    "tilePx": 12,
+    "seed": 20261114,
+    "noiseOctaves": 5,
+    "riverWidthTiles": 2,
+    "roadWidthTiles": 1,
+    "cityRadiusTiles": 2,
+    "maxLandLevel": 9,
+    "fordCost": 1.8,
+    "mountainPassCost": 2.4,
+    "moveCost": {
+      "plain": 1, "farmland": 0.9, "road": 0.55, "forest": 1.6,
+      "hill": 2.2, "marsh": 2.6, "ford": 1.8, "pass": 2.4,
+      "city": 1.2, "gate": 1, "mountain": 99, "river": 99, "lake": 99, "wall": 99
+    },
+    "yield": {
+      "wood":  { "plain": 0.2, "forest": 2.4, "hill": 0.9, "farmland": 0.3 },
+      "stone": { "plain": 0.2, "hill": 1.4, "mountain": 2.8, "forest": 0.4 },
+      "iron":  { "plain": 0.2, "hill": 1.6, "mountain": 2.2, "marsh": 0.5 },
+      "grain": { "plain": 0.8, "farmland": 3.2, "marsh": 0.6, "forest": 0.3 }
+    },
+    "_note": "144×108 确定性栅格，锚点用真实经纬度（黄河、嵩山/太行、城池、汉末道路、泽薮）。每格有地形/等级/四资源产出/通行代价/归属；连地铺路 + A* 寻路。不是抽象城点连线。"
+  },
+  "battle": {
+    "fixedStepSec": 0.016666666666666666,
+    "gridCols": 24,
+    "gridRows": 16,
+    "gate": { "col": 0, "row": 8 },
+    "yamen": { "col": 19, "row": 8 },
+    "_note": "城内俯视网格（子界面）。第一轮只留接口，不实现真实战斗结算。"
+  },
+  "presentation": {
+    "parchment": "#1b211f",
+    "parchmentLight": "#2a312c",
+    "ink": "#0d1312",
+    "line": "#4a564c",
+    "mountain": "#38463c",
+    "mountainLight": "#4c5c4d",
+    "river": "#3c6570",
+    "riverLight": "#6fa0a6",
+    "road": "#8a7c5c",
+    "text": "#c9d2c6",
+    "textDim": "#8e9a8b",
+    "gold": "#d8b46a",
+    "selection": "#e8d9a8",
+    "camp": "#6fa8c4",
+    "_note": "分层程序化地形：绢帛底 + 山脊 + 河道 + 道路 + 城郭角楼 + 旗纛，不做「圆圈中间写汉字」。"
+  }
+}

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#111815">
+<link rel="icon" href="data:,">
+<title>三国策 · 官渡</title>
+<link rel="stylesheet" href="./styles/main.css?v=0.1.0">
+</head>
+<body>
+
+<canvas id="map" aria-label="建安五年豫兖战线地图"></canvas>
+
+<header id="topBar">
+  <div class="brand"><b>三国策</b><span>· 官渡</span></div>
+  <div class="date" id="date">建安四年 · 2月上旬</div>
+  <div class="faction" id="factionTag">曹操</div>
+  <div class="res" id="res">
+    <span title="木材">木 <b id="rWood">0</b></span>
+    <span title="石料">石 <b id="rStone">0</b></span>
+    <span title="铁矿">铁 <b id="rIron">0</b></span>
+    <span title="粮草">粮 <b id="rGrain">0</b></span>
+    <span title="已占领地块">地 <b id="rTiles">0</b></span>
+  </div>
+  <div class="clock" id="clock">第 0 旬</div>
+</header>
+
+<aside id="infoCard" hidden aria-label="地块信息">
+  <button class="x" id="closeInfoX" type="button" aria-label="关闭信息卡">×</button>
+  <h2 id="infoTitle">地块</h2>
+  <div id="infoBody"></div>
+  <div class="infoActions">
+    <button id="claimBtn" type="button">占领此地</button>
+    <button id="marchBtn" type="button">向此城出征</button>
+  </div>
+</aside>
+
+<div id="log" aria-label="事件记录"></div>
+
+<footer id="bottomBar">
+  <button id="endTurn" type="button">结束回合 <small>→</small></button>
+  <button id="autoBtn" type="button" aria-pressed="true">自动推进 开</button>
+  <button id="zoomOut" type="button" aria-label="缩小">−</button>
+  <button id="zoomIn" type="button" aria-label="放大">＋</button>
+  <button id="centerBtn" type="button">回中</button>
+  <button id="battleBtn" type="button" class="primary">进入战场</button>
+  <button id="helpBtn" type="button">玩法</button>
+</footer>
+
+<section id="battleOverlay" hidden aria-label="攻城子界面">
+  <button class="x" id="closeBattleX" type="button" aria-label="退出战场">×</button>
+  <h2>攻城 · <span id="battleCity">—</span></h2>
+  <p class="sub">两端并行：退出后策略日历照常走，再进入时用同一固定步长空跑补齐，不另写结算公式。</p>
+  <div class="battleGrid">
+    <div class="cell">策略回合<b id="bTurn">0</b></div>
+    <div class="cell">策略时刻 / 秒<b id="bCampaignSec">0</b></div>
+    <div class="cell">战斗时刻 / 秒<b id="bSec">0</b></div>
+    <div class="cell">上次快照 / 秒<b id="bSnapSec">—</b></div>
+    <div class="cell">快进步数<b id="bFastSteps">0</b></div>
+    <div class="cell">累计逻辑步<b id="bSteps">0</b></div>
+    <div class="cell">士气<b id="bMorale">0</b></div>
+    <div class="cell">城防<b id="bWall">0</b></div>
+    <div class="cell">邮箱待办<b id="bMail">0</b></div>
+  </div>
+  <div class="battleNote" id="battleNote">第一轮骨架：城内网格与真实战斗结算尚未接入。这里只验证「进入 / 退出 / 隔月再进」的时间一致性。</div>
+  <button class="closeBattle" id="leaveBattle" type="button">退出战场（拍快照）</button>
+</section>
+
+<section id="helpPanel" hidden aria-label="玩法说明">
+  <button class="x" id="closeHelpX" type="button" aria-label="关闭玩法">×</button>
+  <h2>玩法 · 建安五年</h2>
+  <ul>
+    <li>1 回合 = 1 旬；点「结束回合」或开「自动推进」，日历不因战斗暂停。</li>
+    <li>地图是 144×108 栅格：山地/大河不可通行，关隘与津渡是唯一通道，官道行军更快。</li>
+    <li>点格子看地形、土地等级与四资源时产；<b>占领地块需与己方领地相连</b>（连地铺路）。</li>
+    <li>短拖画圆可框选，长拖平移地图，滚轮 / ＋− 缩放。</li>
+    <li>点「进入战场」打开攻城子界面；退出拍快照，隔几旬再进来会空跑补齐到当前时刻。</li>
+  </ul>
+  <button class="closeBtn" id="closeHelp" type="button">关闭</button>
+</section>
+
+<section id="mainMenu" aria-label="开局选择势力">
+  <div class="menuCard">
+    <h1>三国策 <span>· 官渡</span></h1>
+    <p class="menuSub" id="menuSub">建安五年 · 豫兖战线 · 栅格沙盘</p>
+    <label class="pick">选择势力
+      <select id="factionPick"></select>
+    </label>
+    <p class="pickNote" id="pickNote"></p>
+    <button class="startBtn" id="startBtn" type="button">进入沙盘</button>
+    <p class="tiny">单方但可任选；其余势力由 AI 每两旬决策。真实城名 · 汉末黄河故道 · 官道与津渡。</p>
+  </div>
+</section>
+
+<div id="toast" role="status"></div>
+<script type="module" src="./src/main.js?v=0.1.0"></script>
+</body>
+</html>

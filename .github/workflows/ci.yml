@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 全部模块语法检查
+        run: |
+          for f in src/*.js scripts/*.mjs tests/*.mjs; do node --check "$f"; done
+
+      - name: 单元测试
+        run: npm test
+
+      - name: 地图 / 连通性 / 导航 / 版本指纹静态自检
+        run: npm run check
+
+      - name: Pages 静态入口自检
+        run: |
+          test -f index.html
+          test -f .nojekyll
+          test -f config/campaign.json
+          test -f src/main.js
+          grep -q 'type="module"' index.html
+          grep -q '?v=0.1.0' index.html
+          grep -q '?v=0.1.0' src/main.js
