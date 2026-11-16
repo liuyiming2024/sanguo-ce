@@ -8,7 +8,7 @@
 //     ③ 点景：树丛、田埂、芦苇、楼阁按区域锚点成组画，不逐格铺。
 //   等级角标、可达点阵、方格选框这些「沙盘仪表」也随之柔化。
 //
-// 零位图、零 Math.random、零 ctx.filter；全部确定性 hash，同 seed 逐字节一致。
+// 零位图、零随机源、零 ctx.filter；全部确定性 hash，同 seed 逐字节一致。
 import {
   CITIES, RIVER_HUANGHE, RIVERS_MINOR, RIDGES, LAKES, PASSES, ROADS, project,
 } from './map-data.js';

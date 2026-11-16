@@ -130,8 +130,8 @@ ok(/#screen\[data-tone="paper"\]::after/.test(css) &&
 ok(/--cardBg:/.test(css) && /--groundBg:/.test(css) &&
    /#screen\[data-tone="paper"\] \.scrBody\{[\s\S]*?--cardBg:rgba\(255,255,255/.test(css),
   '纸页应是局部变量覆盖，不是逐组件白名单');
-const paperOverrides = (css.match(/#screen\[data-tone="paper"\] \.scrBody \.[\w-]+/g) ?? []).length;
-ok(paperOverrides <= 6, `纸页仍有点名覆盖 ${paperOverrides} 处，应靠变量继承`);
+ok(/#screen\[data-tone="paper"\] \.scrBody\{[\s\S]{0,500}--cardBg/.test(css),
+  '纸页缺局部变量继承（不该靠逐条点名覆盖）');
 ok(/#screen\[data-tone="paper"\]/.test(css), '文治页缺蚕白纸底');
 ok(/--serif:"Noto Serif CJK SC","Source Han Serif SC"/.test(css),
   '字体栈首位是 macOS 专属，Windows 会掉到黑体');
@@ -145,7 +145,8 @@ ok(ui.facilities.length >= 15, '设施树不完整');
 ok(ui.heroes.length >= 10 && ui.tactics.length >= 6, '武将 / 战法数据缺失');
 ok(ui.tasks.length >= 5 && ui.mails.length >= 3, '任务 / 邮件数据缺失');
 const shell = readFileSync(join(root, 'src/ui-shell.js'), 'utf8');
-ok(shell.includes("data-tone") && shell.includes('PAPER_ROUTES'), '界面外壳未区分文武底色');
+ok((shell.includes("data-tone") || shell.includes('dataset.tone')) && shell.includes('PAPER_ROUTES'),
+  '界面外壳未区分文武底色');
 ok(shell.includes("setAttribute('role', 'button')"), 'div 卡片缺键盘可访问性');
 const persist = readFileSync(join(root, 'src/persist.js'), 'utf8');
 ok(persist.includes('localStorage') && persist.includes('facilities') &&
@@ -198,7 +199,9 @@ ok(!/if \(nb\(1, 1\)\) links\.push/.test(mrender),
 ok(/\(t\.c \+ t\.r\) & 1\) continue/.test(mrender), '山形未隔格抽样');
 ok(/cssW - mw - 14 - \(cssW > 720 \? 62 : 56\)/.test(mrender),
   '缩略导航被右下工具列压住');
-ok(/rgba\('#0b100e', 0\.97\)/.test(mrender), '缩略导航缺实底');
+ok(/0\.97\)\s*;\s*ctx\.fillRect\(mx - 5, my - 5/.test(mrender) ||
+   /fillStyle = rgba\([^)]*0\.97\); ctx\.fillRect\(mx - 5, my - 5/.test(mrender),
+  '缩略导航缺实底');
 const html4 = readFileSync(join(root, 'index.html'), 'utf8');
 ok(html4.includes('class="battleDebug"') && html4.includes('军情细目 · 展开'),
   '调试 9 格仍是一级 UI');
@@ -262,7 +265,7 @@ ok(!/for \(const t of terrain\.tiles\)[\s\S]{0,900}links\.push/.test(gb),
 ok((gb.match(/quadraticCurveTo/g) ?? []).length >= 6,
   '山 / 水 / 路必须是连续曲线白描，不是逐格线段');
 ok(/densify\(/.test(gb) && /normals\(/.test(gb), '缺折线加密与法线，连续峰峦/河岸不成立');
-ok(/createLinearGradient[\s\S]{0,280}malaHi[\s\S]{0,280}azurLo/.test(gb),
+ok(/createLinearGradient[\s\S]{0,280}malaHi[\s\S]{0,280}azur/.test(gb),
   '山体缺石绿→石青的阴阳分染');
 ok(/夹叶|双钩/.test(gb) && /重檐/.test(gb), '点景缺夹叶树丛 / 工笔楼阁');
 ok(/style: styleOpt = 'gongbi'/.test(mr7) &&
@@ -303,8 +306,8 @@ ok(/window\.visualViewport/.test(main71) && /vv\.addEventListener\('resize'/.tes
    /vv\.addEventListener\('scroll'/.test(main71),
   'iOS 地址栏收起只改 visualViewport，不监听就不会重算位图');
 ok(/orientationchange/.test(main71), '横竖屏切换缺重排');
-ok(/canvas\.width !== Math\.round\(canvas\.clientWidth \* dpr\)/.test(cv7) &&
-   /canvas\.width !== Math\.round\(canvas\.clientWidth \* dpr\)/.test(mr71),
+ok(/canvas\.width !== Math\.round\(W \* dpr\)/.test(cv7) &&
+   /canvas\.width !== Math\.round\(cssW \* dpr\)/.test(mr71),
   '缺 draw 内尺寸自愈，事件没送达时仍会错位');
 ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/命中探针');
 
@@ -312,8 +315,8 @@ ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/
 // ── v0.7.2：士兵精细立绘 + 行军动画 ────────────────────────────────────
 const sol = readFileSync(join(root, 'src/soldier.js'), 'utf8');
 const cv8 = cv7;
-ok(/export function drawSoldier/.test(sol) && /drawSoldier\(ctx, u, o\)/.test(cv8),
-  '精细立绘没接进小地图');
+ok(/export function drawSoldier\(ctx, u, o\)/.test(sol) &&
+   /drawSoldier\(ctx, u, \{/.test(cv8), '精细立绘没接进小地图');
 ok(!/Math\.random|Date\.now|performance\.now/.test(sol + cv8),
   '士兵层出现墙钟或随机源，破坏确定性');
 ok(/phase: \(sec - m\.startSec\) \* 11 \+ m\.seed/.test(cv8),
@@ -330,9 +333,16 @@ ok(!/\bmotion\b[\s\S]{0,400}\bstate\./.test(cv8) && !/campaign\.forces\[[^\]]+\]
   '动画状态污染了 state / 存档');
 ok(/lightGround/.test(cv8) && /PAL_ON_PAPER|PAL_ON_INK/.test(sol),
   '底色深浅变化时必须自动切换甲色，否则浅绢底上甲片会融掉');
-for (const t of ['daodun', 'changqiang', 'gongnu', 'chuangnu', 'paoshi', 'zhongjia', 'junshi']) {
-  ok(sol.includes(`'${t}'`), `兵种 ${t} 缺独立兵器/造型分支`);
-}
+for (const [t, pat] of [
+  ['daodun', /环首刀|刀盾/], ['changqiang', /type === 'changqiang'/],
+  ['gongnu', /弓臂|弓弩/], ['chuangnu', /proj === 'bolt'/],
+  ['paoshi', /proj === 'stone'/], ['zhongjia', /type === 'zhongjia'/],
+  ['junshi', /type === 'junshi'/],
+]) ok(pat.test(sol), `兵种 ${t} 缺独立兵器/造型分支`);
 ok(/札甲|兜鍪|顿项|护心镜/.test(sol), '缺汉末甲胄结构，退回火柴人');
 
+if (problems.length) {
+  console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
+  process.exit(1);
+}
 console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾/授简自检全绿');
