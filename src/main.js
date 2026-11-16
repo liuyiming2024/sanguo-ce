@@ -1,37 +1,37 @@
 // 装配层 v0.7.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.7.2';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.7.3';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.7.2';
+} from './campaign.js?v=0.7.3';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.7.2';
-import { createMapRenderer } from './map-render.js?v=0.7.2';
-import { createCityView } from './city-view.js?v=0.7.2';
+} from './pathfind.js?v=0.7.3';
+import { createMapRenderer } from './map-render.js?v=0.7.3';
+import { createCityView } from './city-view.js?v=0.7.3';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.7.2';
-import { CITIES, cityById } from './map-data.js?v=0.7.2';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.7.2';
+} from './battle-session.js?v=0.7.3';
+import { CITIES, cityById } from './map-data.js?v=0.7.3';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.7.3';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.7.2';
+} from './story.js?v=0.7.3';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.7.2';
-import { TYPE_LABEL } from './terrain.js?v=0.7.2';
-import { createTutorialUI } from './tutorial-ui.js?v=0.7.2';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.7.2';
-import { createShell, facilityCost } from './ui-shell.js?v=0.7.2';
+} from './sync.js?v=0.7.3';
+import { TYPE_LABEL } from './terrain.js?v=0.7.3';
+import { createTutorialUI } from './tutorial-ui.js?v=0.7.3';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.7.3';
+import { createShell, facilityCost } from './ui-shell.js?v=0.7.3';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.7.2';
+} from './persist.js?v=0.7.3';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -958,10 +958,10 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.7.2').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.7.2').then((r) => r.json()),
-    fetch('./config/story.json?v=0.7.2').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.7.2').then((r) => r.json()),
+    fetch('./config/campaign.json?v=0.7.3').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.7.3').then((r) => r.json()),
+    fetch('./config/story.json?v=0.7.3').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.7.3').then((r) => r.json()),
   ]);
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);

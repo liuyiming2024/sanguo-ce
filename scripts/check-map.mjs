@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.7.2', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.7.3', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.7.2'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.7.2"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.7.3'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.7.3"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -283,7 +283,7 @@ ok(!/strokeRidge|BRUSH_|setBrush|brushOn/.test(mr7 + main7),
 ok(!/绢帛|宣纸|毛笔|界画那头是/.test(gb), '工笔层不该再拿材质给平铺找说法');
 
 
-// ── v0.7.2：移动端竖屏点击适配 ─────────────────────────────────────────
+// ── v0.7.3：移动端竖屏点击适配 ─────────────────────────────────────────
 const cv7 = readFileSync(join(root, 'src/city-view.js'), 'utf8');
 const main71 = readFileSync(join(root, 'src/main.js'), 'utf8');
 const mr71 = readFileSync(join(root, 'src/map-render.js'), 'utf8');
@@ -312,13 +312,13 @@ ok(/canvas\.width !== Math\.round\(W \* dpr\)/.test(cv7) &&
 ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/命中探针');
 
 
-// ── v0.7.2：士兵精细立绘 + 行军动画 ────────────────────────────────────
+// ── v0.7.3 / v0.7.3：立绘 + 行军动画 + 器械为主体 ─────────────────────
 const sol = readFileSync(join(root, 'src/soldier.js'), 'utf8');
 const cv8 = cv7;
 ok(/export function drawSoldier\(ctx, u, o\)/.test(sol) &&
    /drawSoldier\(ctx, u, \{/.test(cv8), '精细立绘没接进小地图');
-ok(!/Math\.random|Date\.now|performance\.now/.test(sol + cv8),
-  '士兵层出现墙钟或随机源，破坏确定性');
+ok(!/Math\.random|Date\.now|performance\.now|new Image|drawImage/.test(sol + cv8),
+  '士兵层出现墙钟/随机源/位图，破坏确定性与零位图架构');
 ok(/phase: \(sec - m\.startSec\) \* 11 \+ m\.seed/.test(cv8),
   '行军相位必须只取模拟时间 sec + id 派生种子');
 ok(/function syncMotion/.test(cv8) && /function tweenAt/.test(cv8) &&
@@ -333,10 +333,36 @@ ok(!/\bmotion\b[\s\S]{0,400}\bstate\./.test(cv8) && !/campaign\.forces\[[^\]]+\]
   '动画状态污染了 state / 存档');
 ok(/lightGround/.test(cv8) && /PAL_ON_PAPER|PAL_ON_INK/.test(sol),
   '底色深浅变化时必须自动切换甲色，否则浅绢底上甲片会融掉');
+
+// v0.7.3：器械为主体，不再人举小弩；遮面去呆萌；器械不摆腿
+ok(/export function unitKind/.test(sol) && /unitKind,/.test(cv8),
+  '缺器械/人形分派接口');
+ok(/type === 'chuangnu'\) drawBedCrossbow/.test(sol) && /drawTrebuchet/.test(sol),
+  '床弩 / 抛石机没有画成军械主体');
+ok(/function drawWheel/.test(sol) && /function drawCrew/.test(sol),
+  '军械缺带轮底座或比例尺操作兵');
+ok(/drawCrew\(ctx, P, -9\.4/.test(sol) && /drawCrew\(ctx, P, -8\.8/.test(sol),
+  '两具军械都必须只留极小操作兵，不能画成主体人形');
+ok(/面甲/.test(sol) && /眼缝|一道极细冷光眼缝/.test(sol) &&
+   !/P\.skin|skin:|肤色：#|脸[色颊]? =/.test(sol),
+  '面甲遮脸不到位，或又露出肤色 → 呆萌回归');
+ok(/function rectShield/.test(sol) && /矩形木盾/.test(sol),
+  '盾必须是矩形木盾，圆盾是 Q 版来源');
+ok(!/盔缨|长缨|两根/.test(sol) && /盔顶不立缨/.test(sol),
+  '盔缨/天线是呆萌残留');
+ok(/const engine = unitKind\(type\) === 'engine'/.test(sol) &&
+   /const legSw = !engine && walk/.test(sol) &&
+   /const wheel = engine && walk/.test(sol) &&
+   /const jolt = engine && walk/.test(sol),
+  '器械类必须转轮 + 颠簸、不摆腿；人形才摆腿');
+ok(/if \(hp < 0\.999 \|\| o\.selected \|\| o\.champion\)/.test(sol),
+  '满血不该画亮绿血条，否则默认画面被 UI 抢戏');
+ok(!/ref-sheet|ref-trooper|\.webp|\.png['"]/.test(sol + readFileSync(join(root, 'index.html'), 'utf8')),
+  'AI 参考图只能当造型参考，不能作为运行时位图贴进游戏');
 for (const [t, pat] of [
-  ['daodun', /环首刀|刀盾/], ['changqiang', /type === 'changqiang'/],
-  ['gongnu', /弓臂|弓弩/], ['chuangnu', /proj === 'bolt'/],
-  ['paoshi', /proj === 'stone'/], ['zhongjia', /type === 'zhongjia'/],
+  ['daodun', /环首直刀/], ['changqiang', /type === 'changqiang'/],
+  ['gongnu', /横持长弩/], ['chuangnu', /type === 'chuangnu'/],
+  ['paoshi', /drawTrebuchet/], ['zhongjia', /type === 'zhongjia'/],
   ['junshi', /type === 'junshi'/],
 ]) ok(pat.test(sol), `兵种 ${t} 缺独立兵器/造型分支`);
 ok(/札甲|兜鍪|顿项|护心镜/.test(sol), '缺汉末甲胄结构，退回火柴人');
