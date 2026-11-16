@@ -3,15 +3,13 @@
 // → 城郭（城墙垛口 + 角楼 + 城门 + 旗纛）→ 地名注记 → 领地边界与动态层。
 // 全部离屏预渲染一次，主画布只做视口 blit + 动态叠加；不使用 ctx.filter / Math.random。
 //
-// v0.6.0 实拍结论：单条山脊的一笔不成立，默认仍是界画。
-//   曾试过把 RIDGES[0] 沿折线连成一条路径、笔压 3.2→0.8 / .55→.08 叠上去，
-//   一格未删、一格未改。实拍里全图气没变（默认视口只多 17 个像素），
-//   把镜头推近后那一笔读成划痕而非山脊：墨色比皴暗、与等宽等浓的格状山形
-//   异质。按预案整体退回，不推广到河与官道。
-//   ?brush=on 仅保留作 A/B 复核开关，默认关闭；想让笔成立得先解决
-//   「笔与皴的明度/朝向关系」，那已经不是最小一步了。
+// v0.7.0：默认改为「工笔青绿设色」（见 gongbi.js）。
+//   不再是遍历 tiles 画符号：格只管判定，画面由连续分染 / 白描勾线 / 点景构成。
+//   失败的「单条山脊一笔」实验已移除；?style=jiehua 保留整套旧画法作 A/B 复核。
+//   terrain.js / map-data.js / A* / 存档 / 策略层一行未动。
 import { CITIES, RIVERS_MINOR, RIDGES, LAKES, PASSES, geoToTile, project } from './map-data.js';
 import { T, TYPE_LABEL } from './terrain.js';
+import { paintGongbi, GONGBI } from './gongbi.js';
 
 const PAL = {
   plain: '#3f4c3c', farmland: '#5d6641', forest: '#2c4133', hill: '#4a4e3c',
@@ -21,6 +19,15 @@ const PAL = {
 };
 const INK = '#101614', TEXT = '#ded7bd', TEXT_DIM = '#a9b19c',
   DIM = '#aab6a2', GOLD = '#d8b46a';
+
+// 浅绢底上原来的亮字会隐形，注记/HUD 换一套墨色；界画分支仍用旧色。
+const TH_DARK = { stroke: '#080d0b', text: '#e9e3d1', gold: '#d8b46a', dim: '#a9b19c',
+  pass: '#a8d8d6', ridge: '#d2dcbf', water: '#b6e0e0', lake: '#bfe6e4', huanghe: '#d2eeee',
+  frame: '#d8b46a', hud: '#0b100e', reach: '#d8b46a' };
+const TH_LIGHT = { stroke: '#efe8d2', text: '#26302a', gold: '#8a6b34', dim: '#5c6b5a',
+  pass: '#3c6f78', ridge: '#3f5a48', water: '#37636b', lake: '#37636b', huanghe: '#2f5f66',
+  frame: '#2f3a33', hud: '#cdc4a7', reach: '#a6483a' };
+function theme(st) { return st === 'jiehua' ? TH_DARK : TH_LIGHT; }
 
 function hash(x, y, s = 1) {
   let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(s | 0, 2246822519);
@@ -32,7 +39,7 @@ const rgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
-export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
+export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gongbi' }) {
   const TP = cfg.terrain.tilePx;
   const W = terrain.cols * TP, H = terrain.rows * TP;
   const off = document.createElement('canvas');
@@ -40,76 +47,12 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
   const g = off.getContext('2d');
 
   const camera = { x: 0, y: 0, scale: 1 };
-  let brushOn = brush;                 // 默认 false：界画；?brush=on 才启用实验笔
+  let style = styleOpt === 'jiehua' ? 'jiehua' : 'gongbi';   // 默认工笔；?style=jiehua 复核旧画法
   let selection = null, circle = null, reachable = [], orders = [], cityOwners = {};
   let dpr = 1, cssW = 1, cssH = 1;
 
-  // ── 一次运笔（实验范围：仅 RIDGES[0] 嵩山，默认关闭） ────────────────────────────
-  const BRUSH_RIDGE = 0;
-  const BRUSH_SCALE = TP / 6;      // 3.2→0.8 是格尺度，换算到离屏像素
-
-  /**
-   * 一条路径，quadraticCurveTo 连完；再按「运笔进度」分带重复描同一路径，
-   * 每带换一次笔压（线宽 3.2→0.8、浓 .55→.08）。路径从头到尾只有一条，
-   * 不是 N 段独立线段——所以叫一次运笔，不是给整齐找说法。
-   */
-  function strokeRidge(g, rg) {
-    const P = rg.pts.map(([lon, lat]) => project(lon, lat, W, H));
-    const n = P.length;
-    if (n < 3) return;
-
-    const path = new Path2D();
-    path.moveTo(P[0].x, P[0].y);
-    for (let i = 1; i < n - 1; i++) {
-      const mx = (P[i].x + P[i + 1].x) / 2, my = (P[i].y + P[i + 1].y) / 2;
-      path.quadraticCurveTo(P[i].x, P[i].y, mx, my);
-    }
-    path.quadraticCurveTo(P[n - 2].x, P[n - 2].y, P[n - 1].x, P[n - 1].y);
-
-    // 运笔方向按首尾 y 定（这几条山脊在图上都是南北向，y 单调）。
-    const yFrom = P[0].y, yTo = P[n - 1].y;
-    const N = 28;
-    g.save();
-    g.lineCap = 'round'; g.lineJoin = 'round';
-    for (let k = 0; k < N; k++) {
-      const t0 = k / N, t1 = (k + 1) / N, t = (t0 + t1) / 2;
-      const ya = yFrom + (yTo - yFrom) * t0, yb = yFrom + (yTo - yFrom) * t1;
-      const top = Math.min(ya, yb) - 1, h = Math.abs(yb - ya) + 2;
-      g.save();
-      g.beginPath(); g.rect(0, top, W, h); g.clip();
-      g.strokeStyle = rgba(INK, 0.55 + (0.08 - 0.55) * t);
-      g.lineWidth = (3.2 + (0.8 - 3.2) * t) * BRUSH_SCALE;
-      g.stroke(path);                       // 同一条路径，只换笔压
-      g.restore();
-    }
-    g.restore();
-
-    // 折点处一次分叉枯笔：极细、极淡、中间带两处飞白断口。
-    for (let i = 1; i < n - 1; i++) {
-      const a = P[i - 1], p = P[i], b = P[i + 1];
-      const va = { x: p.x - a.x, y: p.y - a.y }, vb = { x: b.x - p.x, y: b.y - p.y };
-      const la = Math.hypot(va.x, va.y) || 1, lb = Math.hypot(vb.x, vb.y) || 1;
-      let dx = va.x / la - vb.x / lb, dy = va.y / la - vb.y / lb;
-      const dl = Math.hypot(dx, dy) || 1;
-      dx /= dl; dy /= dl;
-      const len = TP * 1.5;
-      g.save();
-      g.lineCap = 'round';
-      g.lineWidth = 0.7 * BRUSH_SCALE;
-      // 三段短笔，中间留白 —— 枯笔不是一条实线
-      for (const [u0, u1, alpha] of [[0, 0.28, 0.26], [0.40, 0.66, 0.17], [0.78, 1, 0.08]]) {
-        g.strokeStyle = rgba(INK, alpha);
-        g.beginPath();
-        g.moveTo(p.x + dx * len * u0, p.y + dy * len * u0);
-        g.lineTo(p.x + dx * len * u1, p.y + dy * len * u1);
-        g.stroke();
-      }
-      g.restore();
-    }
-  }
-
   // ── 离屏静态地形 ──────────────────────────────────────────────────────
-  function buildBase() {
+  function buildJiehuaBase() {
     // 1) 底纹 + 细颗粒
     const bg = g.createLinearGradient(0, 0, W, H);
     bg.addColorStop(0, '#212823'); bg.addColorStop(0.5, '#1b211f'); bg.addColorStop(1, '#242b25');
@@ -324,17 +267,37 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
     }
   }
 
+  function buildGongbiBase() {
+    paintGongbi(g, { W, H, TP, terrain, cfg });
+  }
+  function buildBase() {
+    // 每次重建前把离屏上下文恢复到同一基线：lineCap / alpha / dash 等状态
+    // 会被两种画法互相留下，否则 gongbi→jiehua→gongbi 无法逐像素复原。
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalAlpha = 1;
+    g.globalCompositeOperation = 'source-over';
+    g.setLineDash([]);
+    g.lineCap = 'butt'; g.lineJoin = 'miter'; g.lineWidth = 1;
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.clearRect(0, 0, W, H);
+    if (style === 'jiehua') { buildJiehuaBase(); return; }
+    buildGongbiBase();
+  }
   buildBase();
-  if (brushOn) strokeRidge(g, RIDGES[BRUSH_RIDGE]);   // 叠在全部格状静态层之上
 
   // ── 主画布 ────────────────────────────────────────────────────────────
   function resize() {
     dpr = Math.min(3, window.devicePixelRatio || 1);
     const rect = canvas.getBoundingClientRect();
-    cssW = rect.width || 800; cssH = rect.height || 600;
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    // 与 city-view 同理：属性尺寸必须严格等于 CSS 尺寸 × DPR。
+    // 用 800/600 兜底会在真机地址栏动画期间把位图拉伸，导致点击错位。
+    if (rect.width < 1 || rect.height < 1) return false;
+    cssW = rect.width; cssH = rect.height;
+    const aw = Math.round(cssW * dpr), ah = Math.round(cssH * dpr);
+    if (canvas.width !== aw) canvas.width = aw;
+    if (canvas.height !== ah) canvas.height = ah;
     clampCamera();
+    return true;
   }
 
   function clampCamera() {
@@ -393,9 +356,15 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
   }
   function drawBorders(ctx) {
     if (!borderPaths) rebuildBorders();
-    ctx.lineWidth = 1.1 / camera.scale;
+    const gongbi = style === 'gongbi';
     for (const b of borderPaths) {
-      ctx.strokeStyle = rgba(b.color, 0.55);
+      if (gongbi) {
+        ctx.lineWidth = 9 / camera.scale;
+        ctx.strokeStyle = rgba(b.color, 0.075);
+        ctx.stroke(b.path);
+      }
+      ctx.lineWidth = 1.1 / camera.scale;
+      ctx.strokeStyle = rgba(b.color, gongbi ? 0.30 : 0.55);
       ctx.stroke(b.path);
     }
   }
@@ -420,7 +389,7 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
     for (const o of orders) {
       if (!o.path?.length) continue;
       const f = cfg.factions.find((v) => v.id === o.faction);
-      ctx.strokeStyle = rgba(f?.color ?? GOLD, 0.8);
+      ctx.strokeStyle = rgba(f?.color ?? GOLD, style === 'gongbi' ? 0.62 : 0.8);
       ctx.lineWidth = 2 / camera.scale;
       ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
       ctx.beginPath();
@@ -449,6 +418,7 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
     const cityFont = 13 * k, noteFont = 11 * k, smallFont = 9 * k;
     ctx.textBaseline = 'top';
     ctx.lineJoin = 'round';
+    const th = theme(style);
 
     // 城名：竖排压在城郭右侧，带描边；不是居中大字，也不是圆圈里一个汉字
     for (const city of CITIES) {
@@ -461,11 +431,11 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
       // 读图层级：都城 > 郡治 > 县邑/营垒。只差字号与明度，不加新颜色或纹样。
       const rankFont = city.rank === 1 ? 17 : city.rank === 2 ? 14 : 12;
       const cf = rankFont * k;
-      const ink = city.rank === 1 ? GOLD : city.rank === 2 ? TEXT : rgba(TEXT, 0.84);
+      const ink = city.rank === 1 ? th.gold : city.rank === 2 ? th.text : rgba(th.text, 0.82);
       ctx.font = `600 ${cf}px "WenQuanYi Micro Hei", serif`;
       [...city.name].forEach((ch, i) => {
         const yy = ly + i * cf * 1.12;
-        ctx.strokeStyle = rgba('#080d0b', 0.95); ctx.lineWidth = (city.rank === 1 ? 3.2 : 2.6) * k;
+        ctx.strokeStyle = rgba(th.stroke, 0.95); ctx.lineWidth = (city.rank === 1 ? 3.2 : 2.6) * k;
         ctx.strokeText(ch, lx, yy);
         ctx.fillStyle = ink;
         ctx.fillText(ch, lx, yy);
@@ -475,7 +445,7 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
       ctx.fillStyle = f?.color ?? '#8899aa';
       ctx.fillRect(lx, foot + 3 * k, (city.rank === 1 ? 13 : 9) * k, 3 * k);
       ctx.font = `${smallFont}px "WenQuanYi Micro Hei", serif`;
-      ctx.fillStyle = DIM;
+      ctx.fillStyle = th.dim;
       ctx.fillText(city.rank === 1 ? '都' : city.rank === 2 ? '郡' : city.rank === 3 ? '县' : '垒',
         lx + (city.rank === 1 ? 16 : 12) * k, foot);
     }
@@ -484,8 +454,8 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
     for (const p of PASSES) {
       const q = geoToTile(p.lon, p.lat, terrain.cols, terrain.rows);
       const x = (q.c + 0.5) * TP, y = (q.r + 0.5) * TP;
-      const col = p.kind === 'ford' ? '#a8d8d6' : GOLD;
-      ctx.fillStyle = col; ctx.strokeStyle = rgba('#080d0b', 0.9); ctx.lineWidth = 1.2 * k;
+      const col = p.kind === 'ford' ? th.pass : th.gold;
+      ctx.fillStyle = col; ctx.strokeStyle = rgba(th.stroke, 0.9); ctx.lineWidth = 1.2 * k;
       ctx.beginPath();
       if (p.kind === 'ford') ctx.arc(x, y, 4 * k, 0, Math.PI * 2);
       else {
@@ -494,7 +464,7 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
       }
       ctx.fill(); ctx.stroke();
       ctx.font = `600 ${smallFont}px "WenQuanYi Micro Hei", serif`;
-      ctx.strokeStyle = rgba('#080d0b', 0.95); ctx.lineWidth = 2.4 * k;
+      ctx.strokeStyle = rgba(th.stroke, 0.95); ctx.lineWidth = 2.4 * k;
       ctx.strokeText(p.name, x + 8 * k, y - 5 * k);
       ctx.fillStyle = col;
       ctx.fillText(p.name, x + 8 * k, y - 5 * k);
@@ -505,31 +475,34 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
       const p = project(lon, lat, W, H);
       ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rot);
       ctx.font = `italic ${noteFont}px "WenQuanYi Micro Hei", serif`;
-      ctx.strokeStyle = rgba('#080d0b', 0.9); ctx.lineWidth = 2.4 * k;
+      ctx.strokeStyle = rgba(th.stroke, 0.92); ctx.lineWidth = 2.4 * k;
       ctx.strokeText(text, 0, 0);
       ctx.fillStyle = color; ctx.fillText(text, 0, 0);
       ctx.restore();
     };
     for (const rg of RIDGES) {
       const mid = rg.pts[Math.floor(rg.pts.length / 2)];
-      note(rg.name, mid[0], mid[1], rgba('#d2dcbf', 0.9), -0.5);
+      note(rg.name, mid[0], mid[1], rgba(th.ridge, 0.92), -0.5);
     }
     for (const rv of RIVERS_MINOR) {
       const mid = rv.pts[Math.floor(rv.pts.length / 2)];
-      note(rv.name, mid[0], mid[1], rgba('#b6e0e0', 0.92), 0.18);
+      note(rv.name, mid[0], mid[1], rgba(th.water, 0.92), 0.18);
     }
-    for (const lk of LAKES) note(lk.name, lk.lon, lk.lat, rgba('#bfe6e4', 0.92), 0);
-    note('黄 河', 113.72, 35.02, rgba('#d2eeee', 0.95), -0.15);
-    note('官 渡', 113.93, 34.48, rgba(GOLD, 0.95), 0);
+    for (const lk of LAKES) note(lk.name, lk.lon, lk.lat, rgba(th.lake, 0.92), 0);
+    note('黄 河', 113.72, 35.02, rgba(th.huanghe, 0.95), -0.15);
+    note('官 渡', 113.93, 34.48, rgba(th.gold, 0.95), 0);
   }
 
   /** 土地等级角标：只在放大到能看清时画，字号固定屏幕像素。 */
   function drawLevels(ctx) {
-    if (camera.scale < 1.25) return;
-    ctx.font = '9px sans-serif';
+    // 数字角标是最强的「沙盘仪表」信号；只在大幅放大后才极淡出现。
+    if (camera.scale < 1.6) return;
+    const th = theme(style);
+    ctx.font = '8px sans-serif';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = rgba(TEXT, 0.8);
-    ctx.strokeStyle = rgba('#080d0b', 0.8); ctx.lineWidth = 2 / camera.scale;
+    ctx.fillStyle = rgba(th.text, style === 'gongbi' ? 0.30 : 0.8);
+    ctx.strokeStyle = rgba(th.stroke, style === 'gongbi' ? 0.5 : 0.8);
+    ctx.lineWidth = 2 / camera.scale;
     const k = 1 / camera.scale;
     for (const t of terrain.tiles) {
       if (t.level < 5 || t.cityId || t.type === T.RIVER) continue;
@@ -543,32 +516,33 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
   function drawScreenHud(ctx) {
     ctx.save();
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.strokeStyle = rgba(GOLD, 0.28); ctx.lineWidth = 2;
+    const th = theme(style);
+    ctx.strokeStyle = rgba(th.frame, 0.34); ctx.lineWidth = 2;
     ctx.strokeRect(3, 3, cssW - 6, cssH - 6);
 
     // 缩略导航：全图 + 当前视口框，解决「放大后不知道自己在哪」
     const mw = Math.min(190, cssW * 0.24), mh = mw * (H / W);
     // 让开右下工具列（约 62px），否则缩略图被压在按钮底下。
     const mx = cssW - mw - 14 - (cssW > 720 ? 62 : 56), my = cssH - mh - 58;
-    ctx.fillStyle = rgba('#0b100e', 0.97);
+    ctx.fillStyle = rgba(style === 'gongbi' ? '#e9e3d1' : '#0b100e', 0.97);
     ctx.fillRect(mx - 5, my - 5, mw + 10, mh + 10);
-    ctx.strokeStyle = rgba(GOLD, 0.62); ctx.lineWidth = 1.5;
+    ctx.strokeStyle = rgba(th.frame, 0.62); ctx.lineWidth = 1.5;
     ctx.strokeRect(mx - 5, my - 5, mw + 10, mh + 10);
-    ctx.fillStyle = rgba('#0b100e', 0.97);
+    ctx.fillStyle = rgba(style === 'gongbi' ? '#e9e3d1' : '#0b100e', 0.97);
     ctx.fillRect(mx - 5, my - 22, 76, 16);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(off, mx, my, mw, mh);
     const vx = mx + (camera.x / W) * mw, vy = my + (camera.y / H) * mh;
     const vw = (cssW / camera.scale / W) * mw, vh = (cssH / camera.scale / H) * mh;
-    ctx.strokeStyle = rgba(GOLD, 0.95); ctx.lineWidth = 1.5;
+    ctx.strokeStyle = rgba(style === 'gongbi' ? '#a6483a' : GOLD, 0.95); ctx.lineWidth = 1.5;
     ctx.strokeRect(vx, vy, Math.max(3, vw), Math.max(3, vh));
     ctx.font = '9px "WenQuanYi Micro Hei", serif';
-    ctx.fillStyle = rgba(TEXT, 0.85);
+    ctx.fillStyle = rgba(th.text, 0.85);
     ctx.fillText(`全图 ${terrain.cols}×${terrain.rows}`, mx, my - 10);
 
     // 比例尺
     ctx.font = '10px "WenQuanYi Micro Hei", serif';
-    ctx.fillStyle = rgba(TEXT, 0.7);
+    ctx.fillStyle = rgba(th.text, 0.7);
     ctx.fillText(`建安五年 · 豫兖战线 · 1 格 ≈ ${kmPerTileLabel()} km · 缩放 ${camera.scale.toFixed(2)}×`,
       14, cssH - 20);
     ctx.restore();
@@ -579,9 +553,13 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
   }
 
   function draw(ctx) {
+    // 同 city-view：位图尺寸必须与 CSS 尺寸逐像素对应，否则点击与画面错位。
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0 &&
+        (Math.abs(canvas.clientWidth - cssW) > 1 ||
+         canvas.width !== Math.round(canvas.clientWidth * dpr))) resize();
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#0e1411';
+    ctx.fillStyle = style === 'gongbi' ? GONGBI.paperLo : '#0e1411';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale,
       -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
@@ -596,27 +574,40 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
     drawLevels(ctx);
 
     if (reachable.length) {
-      ctx.fillStyle = rgba(GOLD, 0.42);
+      const th = theme(style);
+      // 一片淡染，不是一格一个硬圆点。
+      ctx.beginPath();
       for (const p of reachable) {
-        ctx.beginPath();
-        ctx.arc(p.c * TP + TP / 2, p.r * TP + TP / 2, 2.4 / camera.scale, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.rect(p.c * TP, p.r * TP, TP, TP);
       }
+      // 只 fill 不 stroke：相邻 rect 连成一片淡染，一描边就又变回方格网。
+      ctx.fillStyle = rgba(th.reach, style === 'gongbi' ? 0.10 : 0.18);
+      ctx.fill();
     }
     drawOrders(ctx);
 
     if (selection) {
-      ctx.strokeStyle = GOLD; ctx.lineWidth = 2.2 / camera.scale;
-      ctx.strokeRect(selection.c * TP + 1, selection.r * TP + 1, TP - 2, TP - 2);
-      ctx.strokeStyle = rgba(GOLD, 0.4); ctx.lineWidth = 1 / camera.scale;
-      ctx.strokeRect((selection.c - 1) * TP, (selection.r - 1) * TP, TP * 3, TP * 3);
+      const th = theme(style);
+      const cx = (selection.c + 0.5) * TP, cy = (selection.r + 0.5) * TP;
+      if (style === 'gongbi') {
+        // 细线圈 + 淡晕，不再是方格框
+        ctx.beginPath(); ctx.arc(cx, cy, TP * 0.82, 0, Math.PI * 2);
+        ctx.fillStyle = rgba(th.reach, 0.07); ctx.fill();
+        ctx.beginPath(); ctx.arc(cx, cy, TP * 0.62, 0, Math.PI * 2);
+        ctx.strokeStyle = rgba(th.text, 0.78); ctx.lineWidth = 1.4 / camera.scale; ctx.stroke();
+      } else {
+        ctx.strokeStyle = GOLD; ctx.lineWidth = 2.2 / camera.scale;
+        ctx.strokeRect(selection.c * TP + 1, selection.r * TP + 1, TP - 2, TP - 2);
+        ctx.strokeStyle = rgba(GOLD, 0.4); ctx.lineWidth = 1 / camera.scale;
+        ctx.strokeRect((selection.c - 1) * TP, (selection.r - 1) * TP, TP * 3, TP * 3);
+      }
     }
     if (circle) {
-      ctx.strokeStyle = rgba('#e8d9a8', 0.95); ctx.lineWidth = 1.8 / camera.scale;
+      ctx.strokeStyle = rgba(style === 'gongbi' ? '#a6483a' : '#e8d9a8', 0.95); ctx.lineWidth = 1.8 / camera.scale;
       ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
       ctx.beginPath(); ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = rgba('#e8d9a8', 0.10); ctx.fill();
+      ctx.fillStyle = rgba(style === 'gongbi' ? '#a6483a' : '#e8d9a8', 0.10); ctx.fill();
     }
     ctx.restore();
     drawScreenHud(ctx);
@@ -631,14 +622,12 @@ export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
     setReachable(list) { reachable = list; },
     setOrders(list) { orders = list; },
     setCityOwners(map) { cityOwners = map; borderPaths = null; },
-    setBrush(on) {
-      if (brushOn !== !!on) {
-        brushOn = !!on; buildBase();
-        if (brushOn) strokeRidge(g, RIDGES[BRUSH_RIDGE]);
-      }
-      return brushOn;
+    setStyle(next) {
+      const v = next === 'jiehua' ? 'jiehua' : 'gongbi';
+      if (style !== v) { style = v; buildBase(); }
+      return style;
     },
-    get brushOn() { return brushOn; },
+    get style() { return style; },
     get offscreen() { return off; },   // 烟测做逐像素 A/B 用，不参与渲染
     invalidateBorders() { borderPaths = null; },
     get size() { return { W, H, TP }; },

@@ -4,6 +4,11 @@
 //   · 己方城池：部队初始在城内（布防）；敌方城池：部队初始在城外扎营（派人进去打）。
 //   · 圆框选 + 二次拖拽定方向（全部远程单位齐射 / 近战突击）+ 单击单兵接管。
 // 全部在主画布按屏幕像素绘制，不经过离屏缩放，所以不会糊。
+//
+// v0.7.1 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
+// 320×260，否则位图被浏览器拉伸 → 手指点与画面系统性错位）；竖屏收窄大营、
+// 单位图标与命中半径随 cell 自适应；hitUnit 取「最近单位」而不是倒序第一个，
+// 否则窄屏相邻单位重叠时点 A 会选中 B。逻辑网格仍是 24×16，存档/部署不变。
 import { CITIES } from './map-data.js';
 
 const INK = '#0b100e';
@@ -33,20 +38,28 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   function resize() {
     dpr = Math.min(3, window.devicePixelRatio || 1);
     const rect = canvas.getBoundingClientRect();
-    W = Math.max(320, rect.width || 800);
-    H = Math.max(260, rect.height || 420);
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-    const campW = W * CV.campRatio;
+    // 首次显示 / 地址栏动画期间可能拿到 0：此时不重建，避免把位图压成 0×0。
+    if (rect.width < 1 || rect.height < 1) return false;
+    // 关键：属性尺寸必须逐像素等于 CSS 尺寸 × DPR。任何 Math.max 钳制都会让
+    // 浏览器拉伸位图，而 local() 用的是 CSS 坐标 —— 于是「点的位置」和「实际位置」分家。
+    W = rect.width;
+    H = rect.height;
+    const aw = Math.round(W * dpr), ah = Math.round(H * dpr);
+    if (canvas.width !== aw) canvas.width = aw;
+    if (canvas.height !== ah) canvas.height = ah;
+    const narrow = W < 560;
+    // 竖屏把左侧大营收窄，24 列城内网格才能多拿宽度；横屏保持原比例。
+    const campW = W * (narrow ? 0.14 : CV.campRatio);
     const wallX = campW;
-    const innerX = wallX + 16;
-    const innerW = W - innerX - 14;
-    const padTop = 34, padBottom = 26;
-    const cell = Math.min(innerW / CV.cols, (H - padTop - padBottom) / CV.rows);
+    const innerX = wallX + (narrow ? 8 : 16);
+    const innerW = Math.max(40, W - innerX - (narrow ? 6 : 14));
+    const padTop = narrow ? 24 : 34, padBottom = narrow ? 14 : 26;
+    const cell = Math.max(4, Math.min(innerW / CV.cols, (H - padTop - padBottom) / CV.rows));
     const gridW = cell * CV.cols, gridH = cell * CV.rows;
     const ox = innerX + (innerW - gridW) / 2;
     const oy = padTop + (H - padTop - padBottom - gridH) / 2;
-    layout = { campW, wallX, innerX, innerW, cell, ox, oy, gridW, gridH, padTop };
+    layout = { campW, wallX, innerX, innerW, cell, ox, oy, gridW, gridH, padTop, narrow };
+    return true;
   }
 
   const unitXY = (u) => {
@@ -54,10 +67,13 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     if (u.zone === 'camp') {
       const f = forces();
       const i = f.camp.findIndex((x) => x.id === u.id);
-      const cols = 4;
+      // 竖屏大营窄，改 2 列；行距随 canvas 高度收放，保证不挤出可视区。
+      const cols = L.narrow ? 2 : 4;
+      const usable = Math.max(16, L.campW - 12);
+      const rowGap = L.narrow ? Math.min(46, (H - L.padTop - 70) / Math.max(1, Math.ceil(f.camp.length / cols))) : 52;
       return {
-        x: 20 + (i % cols) * ((L.campW - 40) / cols) + (L.campW - 40) / cols / 2,
-        y: L.padTop + 40 + Math.floor(i / cols) * 52 + 26,
+        x: 6 + (i % cols) * (usable / cols) + usable / cols / 2,
+        y: L.padTop + 30 + Math.floor(i / cols) * rowGap,
       };
     }
     return { x: L.ox + (u.col + 0.5) * L.cell, y: L.oy + (u.row + 0.5) * L.cell };
@@ -76,18 +92,26 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   }
 
   function hitUnit(x, y) {
-    const r = CV.unitPx * 0.75;
-    const list = allUnits();
-    for (let i = list.length - 1; i >= 0; i--) {
-      const p = unitXY(list[i]);
-      if (Math.hypot(x - p.x, y - p.y) <= r) return list[i];
+    // 半径不能超过半个格，否则竖屏相邻单位会一起落进命中圈；
+    // 且必须取「距离最近」的那个，倒序第一个在窄屏会稳定选错人。
+    const r = Math.max(4, Math.min(CV.unitPx * 0.75, (layout?.cell ?? 20) * 0.48));
+    let best = null, bd = Infinity;
+    for (let i = allUnits().length - 1; i >= 0; i--) {
+      const u = allUnits()[i], p = unitXY(u);
+      const d = Math.hypot(x - p.x, y - p.y);
+      if (d <= r && d < bd) { bd = d; best = u; }
     }
-    return null;
+    return best;
   }
 
   // ── 绘制 ─────────────────────────────────────────────────────────────
   function draw(sec = 0) {
-    if (!layout) resize();
+    // 被动尺寸变化（地址栏收起、横竖屏、面板展开）未必会触发 resize 事件；
+    // 每帧用 clientWidth 做一次轻量校验，发现位图与 CSS 尺寸不符就重建。
+    if (canvas.clientWidth > 0 && canvas.clientHeight > 0 &&
+        (Math.abs(canvas.clientWidth - W) > 1 || Math.abs(canvas.clientHeight - H) > 1 ||
+         canvas.width !== Math.round(canvas.clientWidth * dpr))) resize();
+    if (!layout && !resize()) return;   // 容器还没布局好，等下一帧
     const L = layout;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
@@ -246,7 +270,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     const p = unitXY(u);
     const def = cfg.units[u.type];
     const col = factionColor(u.faction);
-    const s = Math.max(12, Math.min(CV.unitPx, L.cell * 0.95));
+    const s = Math.max(6, Math.min(CV.unitPx, L.cell * 0.82));
     const k = s / 20;
     const sel = selection.has(u.id);
     const bob = Math.sin(sec * 2.2 + u.col * 0.7 + u.row * 0.5) * 0.8 * k;
@@ -474,6 +498,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     get selection() { return [...selection]; },
     get champion() { return champion; },
     get layout() { return layout; },
+    get viewport() { return { W, H, dpr, attrW: canvas.width, attrH: canvas.height }; },
+    hitUnit,
     setCallbacks(cb) { callbacks = { ...callbacks, ...cb }; },
     unitXY, screenToTarget, forces,
   };

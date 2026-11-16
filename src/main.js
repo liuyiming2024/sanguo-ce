@@ -1,37 +1,37 @@
-// 装配层 v0.6.0：唯一引用 DOM / rAF / localStorage 的地方。
+// 装配层 v0.7.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.6.0';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.7.1';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.6.0';
+} from './campaign.js?v=0.7.1';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.6.0';
-import { createMapRenderer } from './map-render.js?v=0.6.0';
-import { createCityView } from './city-view.js?v=0.6.0';
+} from './pathfind.js?v=0.7.1';
+import { createMapRenderer } from './map-render.js?v=0.7.1';
+import { createCityView } from './city-view.js?v=0.7.1';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.6.0';
-import { CITIES, cityById } from './map-data.js?v=0.6.0';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.6.0';
+} from './battle-session.js?v=0.7.1';
+import { CITIES, cityById } from './map-data.js?v=0.7.1';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.7.1';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.6.0';
+} from './story.js?v=0.7.1';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.6.0';
-import { TYPE_LABEL } from './terrain.js?v=0.6.0';
-import { createTutorialUI } from './tutorial-ui.js?v=0.6.0';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.6.0';
-import { createShell, facilityCost } from './ui-shell.js?v=0.6.0';
+} from './sync.js?v=0.7.1';
+import { TYPE_LABEL } from './terrain.js?v=0.7.1';
+import { createTutorialUI } from './tutorial-ui.js?v=0.7.1';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.7.1';
+import { createShell, facilityCost } from './ui-shell.js?v=0.7.1';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.6.0';
+} from './persist.js?v=0.7.1';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -172,7 +172,7 @@ function loadGame() {
   if (cityView) { cityView.dispose(); cityView = null; }
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    brush: new URLSearchParams(location.search).get('brush') === 'on',
+    style: new URLSearchParams(location.search).get('style') === 'jiehua' ? 'jiehua' : 'gongbi',
   });
   if (r.ui?.camera) { Object.assign(renderer.camera, r.ui.camera); renderer.clampCamera(); }
   session = snapshot ? restoreSession(cfg, state, snapshot) : null;
@@ -733,8 +733,10 @@ function bindPointer() {
       drag = null;
       canvas.classList.remove('dragging');
     } else if (pointers.size === 1) {
-      drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY,
-        t: e.timeStamp, rect: p.rect, moved: 0, id: e.pointerId };
+      // 全程用「相对 canvas 的 CSS 坐标」：真机地址栏收起时 clientY 与 rect.top
+      // 会各自变化，只有 local 坐标能稳定对应画面上的那一点。
+      drag = { x: p.x, y: p.y, sx: p.x, sy: p.y,
+        t: e.timeStamp, moved: 0, id: e.pointerId };
     }
   });
 
@@ -757,9 +759,9 @@ function bindPointer() {
       return;
     }
     if (!drag) return;
-    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    drag.x = e.clientX; drag.y = e.clientY;
-    drag.moved = Math.max(drag.moved, Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy));
+    const dx = p.x - drag.x, dy = p.y - drag.y;
+    drag.x = p.x; drag.y = p.y;
+    drag.moved = Math.max(drag.moved, Math.hypot(p.x - drag.sx, p.y - drag.sy));
     if (drag.moved > 12) {
       canvas.classList.add('dragging'); renderer.pan(dx, dy); markDirty();
       if (drag.moved > 26) tutNotify('mapPanned');
@@ -774,9 +776,10 @@ function bindPointer() {
     drag = null;
     canvas.classList.remove('dragging');
     if (!d) return;
-    const dist = Math.hypot(e.clientX - d.sx, e.clientY - d.sy);
+    const up = localPos(e);             // 用抬起这一刻的实时 rect，不缓存 down 时的
+    const dist = Math.hypot(up.x - d.sx, up.y - d.sy);
     if (dist > 9) return;               // 拖动 = 平移，不选中
-    const p = renderer.screenToTile(e.clientX - d.rect.left, e.clientY - d.rect.top);
+    const p = renderer.screenToTile(up.x, up.y);
     const hit = snapTile(p);
     if (!state.terrain.inBounds(hit.c, hit.r)) return;
     const tile = renderer.describe(hit.c, hit.r);
@@ -896,7 +899,7 @@ function bindUI() {
     state = newCampaign(fid);
     renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    brush: new URLSearchParams(location.search).get('brush') === 'on',
+    style: new URLSearchParams(location.search).get('style') === 'jiehua' ? 'jiehua' : 'gongbi',
   });
     reports = []; state.reports = reports;
     session = null; snapshot = null; battleCityId = null;
@@ -911,11 +914,25 @@ function bindUI() {
 
   document.addEventListener('visibilitychange', () => { if (document.hidden) autoSave(true); });
   window.addEventListener('pagehide', () => autoSave(true));
-  window.addEventListener('resize', () => {
+  const relayout = () => {
     renderer.resize();
     if (cityView) cityView.resize();
     markDirty();
-  });
+  };
+  window.addEventListener('resize', relayout);
+  window.addEventListener('orientationchange', relayout);
+  // iOS Safari：地址栏收起/展开只改 visualViewport，常常不发 window.resize。
+  // 若不重算 canvas 属性尺寸，位图会被拉伸 → 手指点与画面系统性错位。
+  const vv = window.visualViewport;
+  if (vv) {
+    let vvRaf = 0;
+    const onVV = () => {
+      if (vvRaf) return;
+      vvRaf = requestAnimationFrame(() => { vvRaf = 0; relayout(); });
+    };
+    vv.addEventListener('resize', onVV);
+    vv.addEventListener('scroll', onVV);
+  }
 }
 
 // ── 主循环：两端并行；静止时可停绘 ─────────────────────────────────────
@@ -941,17 +958,17 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.6.0').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.6.0').then((r) => r.json()),
-    fetch('./config/story.json?v=0.6.0').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.6.0').then((r) => r.json()),
+    fetch('./config/campaign.json?v=0.7.1').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.7.1').then((r) => r.json()),
+    fetch('./config/story.json?v=0.7.1').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.7.1').then((r) => r.json()),
   ]);
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);
   state = newCampaign('cao');
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    brush: new URLSearchParams(location.search).get('brush') === 'on',
+    style: new URLSearchParams(location.search).get('style') === 'jiehua' ? 'jiehua' : 'gongbi',
   });
   shell = createShell({ cfg, uiData, story, actions, getState: () => state,
     getReports: () => reports, onRoute: (route) => tutNotify(`tab:${route}`) });
@@ -989,7 +1006,7 @@ async function boot() {
     hashState, stateFingerprint, encodeTicket, decodeTicket,
     createLoopbackTransport, createBroadcastTransport,
     get renderer() { return renderer; },
-    get brushOn() { return renderer?.brushOn ?? false; },
+    get style() { return renderer?.style ?? 'gongbi'; },
     get session() { return session; },
     get snapshot() { return snapshot; },
     get cityView() { return cityView; },

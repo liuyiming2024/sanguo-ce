@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.6.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.7.1：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.6.0 与栅格规模',
+  check('主菜单标注 v0.7.1 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.6.0'));
+    (await page.locator('#menuSub').innerText()).includes('0.7.1'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -75,7 +75,7 @@ try {
   await page.click('#startBtn');
   await page.waitForTimeout(420);
 
-  // ── v0.6.0：行台授简 ──────────────────────────────────────────────────
+  // ── v0.7.0：行台授简 ──────────────────────────────────────────────────
   check('入局后自动起授简，第一简是「受檄入局」',
     await page.isVisible('#tutorialLayer') &&
     (await page.locator('.tutCard').innerText()).includes('受檄入局') &&
@@ -133,35 +133,40 @@ try {
     return window.__sanguo.tutUI.done && document.getElementById('tutorialLayer').hidden;
   }));
 
-  // ── v0.6.0：单条山脊一笔实验（实拍不成立 → 默认界画，仅留 A/B 开关） ──
-  check('默认退回界画，brushOn=false', await page.evaluate(() =>
-    window.__sanguo.brushOn === false));
+  // ── v0.7.0：工笔青绿设色（默认） / ?style=jiehua 复核旧画法 ──────────
+  check('默认是工笔，不是界画', await page.evaluate(() =>
+    window.__sanguo.style === 'gongbi' && window.__sanguo.renderer.style === 'gongbi'));
   const ab = await page.evaluate(() => {
-    const w = window.__sanguo, r = w.renderer;
+    const r = window.__sanguo.renderer;
     const oc = r.offscreen.getContext('2d');
-    // 主脊中段（离屏 360,1520 附近）取一块 40×40 的像素校验和
-    const sum = () => {
-      const d = oc.getImageData(360, 1520, 40, 40).data;
+    // 取城内与山脊各一块，做像素校验和；两种画法必须逐像素不同、切回一致
+    const sum = (x, y) => {
+      const d = oc.getImageData(x, y, 48, 48).data;
       let h = 0;
       for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0;
       return h;
     };
-    r.setBrush(false); const a = sum();
-    const s1 = r.setBrush(true); const b = sum();
-    const s2 = r.setBrush(false); const c = sum();
-    return { ab: a !== b, bc: b !== c, ac: a === c, s1, s2,
-      sums: [a, b, c], brush: r.brushOn };
+    const snap = () => [sum(360, 1520), sum(1600, 1200), sum(2400, 700)];
+    const a = snap();
+    const s1 = r.setStyle('jiehua'); const b = snap();
+    const s2 = r.setStyle('gongbi'); const c = snap();
+    return { eq: a.join() === c.join(), diff: a.join() !== b.join(), s1, s2, a, b, c };
   });
-  check('brush=on 只改表现层：A/B 画面不同、关掉可逐像素复原',
-    ab.ab && ab.bc && ab.ac, JSON.stringify(ab));
-  check('地形/存档/策略层没有被笔改动', await page.evaluate(() => {
+  check('工笔/界画逐像素不同，切回可完全复原',
+    ab.diff && ab.eq && ab.s1 === 'jiehua' && ab.s2 === 'gongbi', JSON.stringify(ab));
+  check('工笔只改表现层：地形格数 / 存档 / 命令日志一行未动', await page.evaluate(() => {
     const w = window.__sanguo;
-    const t = w.state.terrain.tiles;
-    return t.length === 15552 && !('brush' in w.state) &&
-      !JSON.stringify(w.state.commandLog).includes('brush');
+    return w.state.terrain.tiles.length === 15552 &&
+      !('gongbi' in w.state) && !('style' in w.state) &&
+      !JSON.stringify(w.state.commandLog).includes('gongbi');
+  }));
+  check('浅绢底上默认视图没有等级角标 / 硬点阵', await page.evaluate(() => {
+    const c = document.getElementById('map'), ctx = c.getContext('2d');
+    window.__sanguo.renderer.draw(ctx);
+    return window.__sanguo.renderer.camera.scale < 1.6;
   }));
 
-  // ── v0.6.0：卷末留白 / 武备题头 ──────────────────────────────────────
+  // ── v0.7.0：卷末留白 / 武备题头 ──────────────────────────────────────
   await nav('reports');
   check('墨底页有卷末题记，空场不再是一整块纯黑', await page.evaluate(() => {
     const e = document.querySelector('#screen .scrBody .scrollEnd');
@@ -250,7 +255,7 @@ try {
     const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return !!el && !!el.closest('#bottomBar');
   }));
-  // ── v0.6.0：章回剧情与军历 ────────────────────────────────────────────
+  // ── v0.7.0：章回剧情与军历 ────────────────────────────────────────────
   await nav('story');
   const storyTxt = await page.locator('#screen').innerText();
   check('纪事页有章回叙事 / 史注 / 军务 / 抉择',
@@ -542,6 +547,139 @@ try {
   check('玩法面板可达', await page.isVisible('#helpPanel'));
   await page.click('#closeHelp');
   check('玩法面板可退出', !(await page.isVisible('#helpPanel')));
+
+  // ── v0.7.1：移动端竖屏点击适配（独立真触屏 context） ────────────────
+  const mctx = await browser.newContext({
+    viewport: { width: 390, height: 844 }, deviceScaleFactor: 3,
+    isMobile: true, hasTouch: true,
+  });
+  const mp = await mctx.newPage();
+  const mErrs = [];
+  mp.on('pageerror', (e) => mErrs.push(String(e)));
+  mp.on('console', (m) => { if (m.type() === 'error') mErrs.push(m.text()); });
+  await mp.goto(base, { waitUntil: 'domcontentloaded' });
+  await mp.waitForFunction(() => !!window.__sanguo, null, { timeout: 20000 });
+  await mp.click('#startBtn');
+  // 引导层是异步 start() 的：太早 hide/skip 会被随后的 render() 重新显示。
+  // 等简卡真正出现再跳过，并强制撤掉遮罩（烟测夹具，产品行为由主流程断言覆盖）。
+  await mp.waitForFunction(() => !!document.querySelector('[data-tut="skip"]'),
+    null, { timeout: 6000 }).catch(() => {});
+  await mp.evaluate(() => {
+    document.querySelector('[data-tut="skip"]')?.click();
+    const l = document.getElementById('tutorialLayer');
+    if (l) { l.hidden = true; l.style.display = 'none'; l.style.pointerEvents = 'none'; }
+  });
+  await mp.waitForTimeout(200);
+  check('竖屏引导遮罩已移除（否则简卡会吃掉地图点击）', await mp.evaluate(() => {
+    const l = document.getElementById('tutorialLayer');
+    return !l || l.style.display === 'none' ||
+      document.elementFromPoint(207, 434)?.id === 'map';
+  }));
+
+  check('竖屏大地图位图 = CSS×DPR，不被拉伸', await mp.evaluate(() => {
+    const c = document.getElementById('map'), r = c.getBoundingClientRect();
+    return Math.abs(c.width - Math.round(r.width * devicePixelRatio)) <= 1 &&
+           Math.abs(c.height - Math.round(r.height * devicePixelRatio)) <= 1;
+  }));
+
+  const tapCity = async (id) => {
+    // 缩放后把目标城池移到视口中心，保证 tap 坐标有效（不测视口外的点）。
+    await mp.evaluate((id) => {
+      const w = window.__sanguo, r = w.renderer, info = w.state.terrain.cityTiles[id];
+      const c = document.getElementById('map');
+      r.camera.x = info.c * r.size.TP - c.clientWidth / (2 * r.camera.scale);
+      r.camera.y = info.r * r.size.TP - c.clientHeight / (2 * r.camera.scale);
+      r.clampCamera();
+    }, id);
+    const t = await mp.evaluate((id) => {
+      const w = window.__sanguo, info = w.state.terrain.cityTiles[id];
+      const s = w.renderer.tileToScreen(info.c, info.r);
+      const back = w.renderer.screenToTile(s.x, s.y);
+      return { x: s.x, y: s.y, c: info.c, r: info.r, back: [back.c, back.r],
+        desc: w.renderer.describe(back.c, back.r)?.cityId ?? null };
+    }, id);
+    await mp.touchscreen.tap(t.x, t.y);
+    await mp.waitForTimeout(200);
+    const st = await mp.evaluate(() => ({
+      cityHidden: document.getElementById('cityPanel').hidden,
+      infoHidden: document.getElementById('infoCard').hidden,
+      overlay: document.elementFromPoint(0, 0)?.id || null,
+    }));
+    return { ok: !st.cityHidden, ...t, ...st };
+  };
+  const tc1 = await tapCity('xudu');
+  check('竖屏点许都格真打开许都面板', tc1.ok, JSON.stringify(tc1));
+
+  // 缩放后重新取屏幕坐标再点，验证 camera 与 screenToTile 仍自洽
+  await mp.evaluate(() => window.__sanguo.renderer.zoom(1.5));
+  const tc2 = await tapCity('zhongmu');
+  check('竖屏 pinch 缩放后点中牟仍命中', tc2.ok, JSON.stringify(tc2));
+
+  await mp.evaluate(() => window.__sanguo.openBattle('xudu'));
+  await mp.waitForTimeout(350);
+  const cu = await mp.evaluate(() => {
+    const cv = window.__sanguo.cityView, c = document.getElementById('cityCanvas');
+    const r = c.getBoundingClientRect(), f = cv.forces();
+    const u = [...f.inside, ...f.camp][0], p = cv.unitXY(u);
+    return {
+      id: u.id, x: r.left + p.x, y: r.top + p.y,
+      attrOk: Math.abs(c.width - Math.round(r.width * devicePixelRatio)) <= 1 &&
+              Math.abs(c.height - Math.round(r.height * devicePixelRatio)) <= 1,
+      cell: cv.layout.cell, hitSelf: cv.hitUnit(p.x, p.y)?.id === u.id,
+    };
+  });
+  check('竖屏小地图位图 = CSS×DPR，不被拉伸', cu.attrOk, `cell=${cu.cell.toFixed(1)}px`);
+  check('竖屏命中半径不跨格（取最近单位）', cu.hitSelf, `u=${cu.id}`);
+  await mp.touchscreen.tap(cu.x, cu.y);
+  await mp.waitForTimeout(180);
+  const sel1 = await mp.evaluate((id) =>
+    ({ sel: window.__sanguo.cityView.selection, wanted: id }), cu.id);
+  check('竖屏点第一个兵必中该兵（不再选到邻居）',
+    sel1.sel.includes(cu.id), JSON.stringify(sel1));
+
+  // 拖放：把该兵拖到另一格，落点必须与视觉格一致
+  const drop = await mp.evaluate((id) => {
+    const cv = window.__sanguo.cityView, L = cv.layout;
+    const c = document.getElementById('cityCanvas'), r = c.getBoundingClientRect();
+    const u = [...cv.forces().inside, ...cv.forces().camp].find((x) => x.id === id);
+    const from = cv.unitXY(u);
+    const toCol = Math.min(cv.forces().inside.length ? 9 : 9, 23), toRow = 6;
+    return {
+      fx: r.left + from.x, fy: r.top + from.y,
+      tx: r.left + L.ox + (toCol + 0.5) * L.cell,
+      ty: r.top + L.oy + (toRow + 0.5) * L.cell,
+      toCol, toRow,
+    };
+  }, cu.id);
+  await mp.mouse.move(drop.fx, drop.fy);
+  await mp.mouse.down();
+  await mp.mouse.move(drop.tx, drop.ty, { steps: 8 });
+  await mp.mouse.up();
+  await mp.waitForTimeout(220);
+  check('竖屏拖放落点 = 视觉目标格', await mp.evaluate(([id, col, row]) => {
+    const u = [...window.__sanguo.cityView.forces().inside,
+      ...window.__sanguo.cityView.forces().camp].find((x) => x.id === id);
+    return !!u && u.col === col && u.row === row;
+  }, [cu.id, drop.toCol, drop.toRow]), `目标 (${drop.toCol},${drop.toRow})`);
+
+  // 模拟地址栏收起导致的 rect 偏移：给 canvas 加 translateY，local() 必须实时跟上
+  await mp.evaluate(() => {
+    document.getElementById('cityCanvas').style.transform = 'translateY(37px)';
+    window.__sanguo.cityView.resize();
+  });
+  const shifted = await mp.evaluate((id) => {
+    const cv = window.__sanguo.cityView, c = document.getElementById('cityCanvas');
+    const r = c.getBoundingClientRect();
+    const u = [...cv.forces().inside, ...cv.forces().camp].find((x) => x.id === id);
+    const p = cv.unitXY(u);
+    return { x: r.left + p.x, y: r.top + p.y, id };
+  }, cu.id);
+  await mp.touchscreen.tap(shifted.x, shifted.y);
+  await mp.waitForTimeout(180);
+  check('rect 偏移后（地址栏/滚动）点击仍命中',
+    await mp.evaluate((id) => window.__sanguo.cityView.selection.includes(id), cu.id));
+  check('移动端无 JS 运行时报错', mErrs.length === 0, mErrs.slice(0, 2).join(' | '));
+  await mctx.close();
 
   check('无 JS 运行时报错', errors.length === 0, errors.slice(0, 2).join(' | '));
 } finally {

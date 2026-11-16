@@ -1,8 +1,8 @@
 {
   "meta": {
     "title": "三国策 · 官渡",
-    "version": "0.6.0",
-    "subtitle": "建安五年 · 官渡章回 · 行台授简 · 栅格沙盘与城池布阵"
+    "version": "0.7.1",
+    "subtitle": "建安五年 · 官渡章回 · 工笔青绿设色"
   },
   "calendar": {
     "startYear": 200,
@@ -257,24 +257,24 @@
     "_note": "城池小地图即攻城子界面，双时钟仍并行；退出拍快照含 forces。"
   },
   "presentation": {
-    "parchment": "#1b211f",
-    "parchmentLight": "#2a312c",
-    "ink": "#0d1312",
-    "line": "#4a564c",
-    "mountain": "#38463c",
-    "mountainLight": "#4c5c4d",
-    "river": "#3c6570",
-    "riverLight": "#6fa0a6",
-    "road": "#8a7c5c",
-    "text": "#c9d2c6",
-    "textDim": "#8e9a8b",
-    "gold": "#d8b46a",
-    "selection": "#e8d9a8",
-    "camp": "#6fa8c4",
-    "_note": "分层程序化地形：底纹底 + 山脊 + 河道 + 道路 + 城郭角楼 + 旗纛，不做「圆圈中间写汉字」。",
-    "cityFloor": "#3c3f35",
-    "cityStreet": "#8a8267",
-    "campTent": "#4a5b52"
+    "parchment": "#cdc4a7",
+    "parchmentLight": "#ded6bc",
+    "ink": "#2f3a33",
+    "line": "#53604f",
+    "mountain": "#7f9c84",
+    "mountainLight": "#9ab397",
+    "river": "#a6c0bb",
+    "riverLight": "#c6dcd5",
+    "road": "#a4835a",
+    "text": "#26302a",
+    "textDim": "#5c6b5a",
+    "gold": "#8a6b34",
+    "selection": "#a6483a",
+    "camp": "#6b93ad",
+    "_note": "工笔青绿设色：矿物颜料压灰半档；城池小地图取同一色板。",
+    "cityFloor": "#e8dfc6",
+    "cityStreet": "#a4835a",
+    "campTent": "#9aae89"
   },
   "cityView": {
     "cols": 24,

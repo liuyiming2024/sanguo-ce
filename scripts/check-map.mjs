@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.6.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.7.1', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.6.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.6.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.7.1'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.7.1"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -155,7 +155,7 @@ ok(main3.includes('visibilitychange') && main3.includes('pagehide'), '切后台 
 ok(main3.includes('pointers.size === 2') && main3.includes('snapTile'), '移动端缺捏合缩放 / 地块吸附');
 ok(main3.includes('idleStop'), '静止停绘未接线');
 
-// ── v0.6.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
+// ── v0.7.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
 ok(cfg.calendar.startMonth === 1 && cfg.calendar.xunPerMonth === 3,
   '军历须自正月起，3 旬进一月，才能与史实章回月份对齐');
 ok(formatCalendar(0, cfg.calendar) === '建安五年 正月初一', '开局日期不是建安五年正月初一');
@@ -189,7 +189,7 @@ ok(main4.includes('exportTicket') && main4.includes('verifyReplay') && main4.inc
 ok(main4.includes('chapterHeadline(story, state)'), '顶栏未显示章回名');
 ok(!/第 \$\{[^}]*turn\} 旬/.test(main4), '装配层仍有「第 N 旬」文案');
 
-// ── v0.6.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
+// ── v0.7.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
 const mrender = readFileSync(join(root, 'src/map-render.js'), 'utf8');
 ok(/lineWidth = 5;/.test(mrender) && /lineWidth = 2\.4;/.test(mrender),
   '官道仍是 8/4.2 金带');
@@ -205,7 +205,7 @@ ok(html4.includes('class="battleDebug"') && html4.includes('军情细目 · 展�
 ok(!/已拍快照 @/.test(readFileSync(join(root, 'src/main.js'), 'utf8')),
   'toast 仍在报调试数字');
 
-// ── v0.6.0：行台授简 / 卷末留白 / 武备题头 ─────────────────────────────
+// ── v0.7.0：行台授简 / 卷末留白 / 武备题头 ─────────────────────────────
 const tutDef = JSON.parse(readFileSync(join(root, 'config/tutorial.json'), 'utf8'));
 const tutCss = readFileSync(join(root, 'styles/main.css'), 'utf8');
 const tutUi = readFileSync(join(root, 'src/tutorial-ui.js'), 'utf8');
@@ -246,5 +246,66 @@ ok(shell5.includes("emptyScroll('尚 无 战 报'") &&
 ok(/tutNotify\('battleOpened'\)/.test(main5) && /tutNotify\('battleClosed'\)/.test(main5),
   '进出城池未联动授简');
 ok(!/已拍快照 @/.test(main5) && !/快进 .*步/.test(main5), 'toast/log 仍在报调试数字');
+
+
+// ── v0.7.0：工笔青绿设色 —— 去网格化的硬约束 ──────────────────────────
+const gb = readFileSync(join(root, 'src/gongbi.js'), 'utf8');
+const mr7 = readFileSync(join(root, 'src/map-render.js'), 'utf8');
+const main7 = main5;
+ok(/export function paintGongbi/.test(gb) && /paintGongbi\(g,/.test(mr7), '工笔管线没接进渲染层');
+ok(/createImageData\(cols, rows\)/.test(gb) && /drawImage\(sc, 0, 0, W, H\)/.test(gb),
+  '分染必须是「低分辨率类型场平滑放大」，不是逐格填色块');
+ok(!/fillRect\(t\.c \* TP, t\.r \* TP, TP, TP\)/.test(gb),
+  '工笔里仍存在逐格方块（沙盘感的根源）');
+ok(!/for \(const t of terrain\.tiles\)[\s\S]{0,900}links\.push/.test(gb),
+  '官道仍在织 8 向 links 网带');
+ok((gb.match(/quadraticCurveTo/g) ?? []).length >= 6,
+  '山 / 水 / 路必须是连续曲线白描，不是逐格线段');
+ok(/densify\(/.test(gb) && /normals\(/.test(gb), '缺折线加密与法线，连续峰峦/河岸不成立');
+ok(/createLinearGradient[\s\S]{0,280}malaHi[\s\S]{0,280}azurLo/.test(gb),
+  '山体缺石绿→石青的阴阳分染');
+ok(/夹叶|双钩/.test(gb) && /重檐/.test(gb), '点景缺夹叶树丛 / 工笔楼阁');
+ok(/style: styleOpt = 'gongbi'/.test(mr7) &&
+   /get\('style'\) === 'jiehua' \? 'jiehua' : 'gongbi'/.test(main7),
+  '默认必须是工笔，且保留 ?style=jiehua 复核开关');
+ok(/setStyle\(/.test(mr7) && /get style\(\)/.test(mr7), '缺 A/B 切换接口');
+ok(!/import .*campaign|import .*persist|localStorage|Math\.random/.test(gb),
+  '工笔层污染了策略层 / 存档 / 确定性');
+ok(/camera\.scale < 1\.6/.test(mr7), '等级角标必须默认不出现');
+ok(/ctx\.rect\(p\.c \* TP, p\.r \* TP, TP, TP\)/.test(mr7),
+  '可达区必须是整片淡染，不是逐格硬圆点');
+ok(/ctx\.arc\(cx, cy, TP \* 0\.62/.test(mr7), '选中态必须脱离方格框');
+ok(!/strokeRidge|BRUSH_|setBrush|brushOn/.test(mr7 + main7),
+  '失败的「单条山脊一笔」实验残骸未清干净');
+ok(!/绢帛|宣纸|毛笔|界画那头是/.test(gb), '工笔层不该再拿材质给平铺找说法');
+
+
+// ── v0.7.1：移动端竖屏点击适配 ─────────────────────────────────────────
+const cv7 = readFileSync(join(root, 'src/city-view.js'), 'utf8');
+const main71 = readFileSync(join(root, 'src/main.js'), 'utf8');
+const mr71 = readFileSync(join(root, 'src/map-render.js'), 'utf8');
+ok(!/Math\.max\(320, rect\.width\)|Math\.max\(260, rect\.height\)/.test(cv7) &&
+   !/rect\.width \|\| 800|rect\.height \|\| 600/.test(mr71),
+  '任何尺寸钳制/兜底都会让位图被拉伸，导致点击与画面错位');
+ok(/W = rect\.width;[\s\S]{0,120}H = rect\.height;/.test(cv7),
+  'canvas 属性尺寸必须严格等于 CSS 尺寸 × DPR');
+ok(/if \(rect\.width < 1 \|\| rect\.height < 1\) return false/.test(cv7),
+  '首次布局 / 地址栏动画期间拿到 0 尺寸不能重建位图');
+ok(/let best = null, bd = Infinity/.test(cv7) && /d < bd/.test(cv7),
+  'hitUnit 必须取最近单位，倒序第一个在窄屏会稳定选错人');
+ok(/layout\?\.cell \?\? 20\) \* 0\.48/.test(cv7),
+  '命中半径必须随 cell 自适应，不能超过半格');
+ok(/W < 560/.test(cv7) && /narrow \? 0\.14/.test(cv7),
+  '竖屏必须收窄左侧大营，给 24 列城内网格留宽度');
+ok(/const up = localPos\(e\)/.test(main71) && !/d\.rect\.left/.test(main71),
+  '抬起时必须用实时 rect，不能缓存 down 时的 rect');
+ok(/window\.visualViewport/.test(main71) && /vv\.addEventListener\('resize'/.test(main71) &&
+   /vv\.addEventListener\('scroll'/.test(main71),
+  'iOS 地址栏收起只改 visualViewport，不监听就不会重算位图');
+ok(/orientationchange/.test(main71), '横竖屏切换缺重排');
+ok(/canvas\.width !== Math\.round\(canvas\.clientWidth \* dpr\)/.test(cv7) &&
+   /canvas\.width !== Math\.round\(canvas\.clientWidth \* dpr\)/.test(mr71),
+  '缺 draw 内尺寸自愈，事件没送达时仍会错位');
+ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/命中探针');
 
 console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾/授简自检全绿');
