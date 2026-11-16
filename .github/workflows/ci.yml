@@ -35,5 +35,5 @@ jobs:
           test -f config/campaign.json
           test -f src/main.js
           grep -q 'type="module"' index.html
-          grep -q '?v=0.7.1' index.html
-          grep -q '?v=0.7.1' src/main.js
+          grep -q '?v=0.7.2' index.html
+          grep -q '?v=0.7.2' src/main.js

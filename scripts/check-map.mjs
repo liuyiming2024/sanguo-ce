@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.7.1', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.7.2', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.7.1'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.7.1"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.7.2'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.7.2"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -280,7 +280,7 @@ ok(!/strokeRidge|BRUSH_|setBrush|brushOn/.test(mr7 + main7),
 ok(!/绢帛|宣纸|毛笔|界画那头是/.test(gb), '工笔层不该再拿材质给平铺找说法');
 
 
-// ── v0.7.1：移动端竖屏点击适配 ─────────────────────────────────────────
+// ── v0.7.2：移动端竖屏点击适配 ─────────────────────────────────────────
 const cv7 = readFileSync(join(root, 'src/city-view.js'), 'utf8');
 const main71 = readFileSync(join(root, 'src/main.js'), 'utf8');
 const mr71 = readFileSync(join(root, 'src/map-render.js'), 'utf8');
@@ -307,5 +307,32 @@ ok(/canvas\.width !== Math\.round\(canvas\.clientWidth \* dpr\)/.test(cv7) &&
    /canvas\.width !== Math\.round\(canvas\.clientWidth \* dpr\)/.test(mr71),
   '缺 draw 内尺寸自愈，事件没送达时仍会错位');
 ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/命中探针');
+
+
+// ── v0.7.2：士兵精细立绘 + 行军动画 ────────────────────────────────────
+const sol = readFileSync(join(root, 'src/soldier.js'), 'utf8');
+const cv8 = cv7;
+ok(/export function drawSoldier/.test(sol) && /drawSoldier\(ctx, u, o\)/.test(cv8),
+  '精细立绘没接进小地图');
+ok(!/Math\.random|Date\.now|performance\.now/.test(sol + cv8),
+  '士兵层出现墙钟或随机源，破坏确定性');
+ok(/phase: \(sec - m\.startSec\) \* 11 \+ m\.seed/.test(cv8),
+  '行军相位必须只取模拟时间 sec + id 派生种子');
+ok(/function syncMotion/.test(cv8) && /function tweenAt/.test(cv8) &&
+   /function renderPos/.test(cv8), '缺行军插值三层');
+ok(/if \(a\.t >= 1\) \{ motion\.delete/.test(cv8),
+  '隔月快进后必须直接吸附终点，不能补跑没人的行军');
+ok(/releasePos = \{ x: p\.x, y: p\.y \}/.test(cv8) && /dragPos = \{ x: p\.x, y: p\.y \}/.test(cv8),
+  '松手位置必须作为行军起点、拖拽必须跟手');
+ok(/const changed = Math\.abs\(prevW - W\) > 1/.test(cv8) && /if \(changed\) \{ motion\.clear/.test(cv8),
+  '只有视口真变了才清 motion；每帧自愈 resize 会杀死动画');
+ok(!/\bmotion\b[\s\S]{0,400}\bstate\./.test(cv8) && !/campaign\.forces\[[^\]]+\]\s*=\s*motion/.test(cv8),
+  '动画状态污染了 state / 存档');
+ok(/lightGround/.test(cv8) && /PAL_ON_PAPER|PAL_ON_INK/.test(sol),
+  '底色深浅变化时必须自动切换甲色，否则浅绢底上甲片会融掉');
+for (const t of ['daodun', 'changqiang', 'gongnu', 'chuangnu', 'paoshi', 'zhongjia', 'junshi']) {
+  ok(sol.includes(`'${t}'`), `兵种 ${t} 缺独立兵器/造型分支`);
+}
+ok(/札甲|兜鍪|顿项|护心镜/.test(sol), '缺汉末甲胄结构，退回火柴人');
 
 console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾/授简自检全绿');

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.7.1：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.7.2：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.7.1 与栅格规模',
+  check('主菜单标注 v0.7.2 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.7.1'));
+    (await page.locator('#menuSub').innerText()).includes('0.7.2'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -548,7 +548,80 @@ try {
   await page.click('#closeHelp');
   check('玩法面板可退出', !(await page.isVisible('#helpPanel')));
 
-  // ── v0.7.1：移动端竖屏点击适配（独立真触屏 context） ────────────────
+  // ── v0.7.2：士兵精细立绘 + 行军动画 ─────────────────────────────────
+  const sp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const sErrs = [];
+  sp.on('pageerror', (e) => sErrs.push(String(e)));
+  sp.on('console', (m) => { if (m.type() === 'error') sErrs.push(m.text()); });
+  await sp.goto(base, { waitUntil: 'domcontentloaded' });
+  await sp.waitForFunction(() => !!window.__sanguo, null, { timeout: 20000 });
+  await sp.click('#startBtn');
+  await sp.waitForFunction(() => !!document.querySelector('[data-tut="skip"]'),
+    null, { timeout: 6000 }).catch(() => {});
+  await sp.evaluate(() => {
+    document.querySelector('[data-tut="skip"]')?.click();
+    const l = document.getElementById('tutorialLayer');
+    if (l) { l.hidden = true; l.style.display = 'none'; }
+  });
+  await sp.evaluate(() => window.__sanguo.openBattle('xudu'));
+  await sp.waitForTimeout(300);
+  const anim = await sp.evaluate(() => {
+    const w = window.__sanguo, cv = w.cityView, c = document.getElementById('cityCanvas');
+    const sec0 = w.session.sec;
+    cv.draw(sec0);
+    const u = cv.forces().inside[0];
+    const from = cv.unitXY(u);
+    w.deployUnit('xudu', u.id, 'inside', 12, 9);
+    cv.draw(sec0 + 0.001);
+    const started = cv.motionCount;
+    const mid = cv.renderPos(u, sec0 + 0.35);
+    const to = cv.unitXY(u);
+    cv.draw(sec0 + 0.35);
+    const a = c.toDataURL('image/png');
+    cv.draw(sec0 + 0.35);                 // 同一模拟时刻再画一次
+    const b = c.toDataURL('image/png');
+    cv.draw(sec0 + 1.4);                 // 直接跳到终点
+    const ended = cv.motionCount;
+    const settled = cv.renderPos(u, sec0 + 1.4);
+    return {
+      started, ended, from, to, mid, a, b, settled,
+      stateClean: !('motion' in w.state) && !('anim' in w.state) &&
+        !JSON.stringify(w.state.commandLog).includes('motion'),
+      finger: w.state.stats,
+    };
+  });
+  check('部署后自动开启行军插值，不是瞬移', anim.started > 0, `motion=${anim.started}`);
+  check('中间帧位置落在起终点之间且处于行军态',
+    anim.mid.walking && anim.mid.x > anim.from.x && anim.mid.x < anim.to.x &&
+    anim.mid.y > anim.from.y && anim.mid.y < anim.to.y,
+    JSON.stringify({ from: anim.from, mid: [anim.mid.x, anim.mid.y], to: anim.to }));
+  check('同一模拟时刻逐像素一致（零墙钟/零随机）', anim.a === anim.b);
+  check('跳到终点自动吸附并清空动画', anim.ended === 0 &&
+    Math.abs(anim.settled.x - anim.to.x) < 0.01 && !anim.settled.walking);
+  check('动画状态不进 state / 命令日志', anim.stateClean);
+
+  // 拖拽跟手：按下并移动后，该兵画在手指位置
+  const drag = await sp.evaluate(() => {
+    const cv = window.__sanguo.cityView, c = document.getElementById('cityCanvas');
+    const u = cv.forces().inside[0], p = cv.unitXY(u), r = c.getBoundingClientRect();
+    return { id: u.id, x: r.left + p.x, y: r.top + p.y, lx: p.x, ly: p.y };
+  });
+  await sp.mouse.move(drag.x, drag.y);
+  await sp.mouse.down();
+  await sp.mouse.move(drag.x + 46, drag.y + 30, { steps: 5 });
+  const follow = await sp.evaluate(([id, sec]) => {
+    const cv = window.__sanguo.cityView, u = [...cv.forces().inside, ...cv.forces().camp]
+      .find((x) => x.id === id);
+    const rp = cv.renderPos(u, sec);
+    return { x: rp.x, y: rp.y, carried: !!rp.carried };
+  }, [drag.id, await sp.evaluate(() => window.__sanguo.session.sec)]);
+  await sp.mouse.up();
+  check('拖拽时士兵跟着手指走', Math.abs(follow.x - (drag.lx + 46)) < 2 &&
+    Math.abs(follow.y - (drag.ly + 30)) < 2, JSON.stringify(follow));
+  check('士兵动画无 JS 运行时报错', sErrs.length === 0, sErrs.slice(0, 2).join(' | '));
+  await sp.close();
+
+  // ── v0.7.2：移动端竖屏点击适配（独立真触屏 context） ────────────────
   const mctx = await browser.newContext({
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3,
     isMobile: true, hasTouch: true,

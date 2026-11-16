@@ -555,8 +555,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
   function draw(ctx) {
     // 同 city-view：位图尺寸必须与 CSS 尺寸逐像素对应，否则点击与画面错位。
     if (canvas.clientWidth > 0 && canvas.clientHeight > 0 &&
-        (Math.abs(canvas.clientWidth - cssW) > 1 ||
-         canvas.width !== Math.round(canvas.clientWidth * dpr))) resize();
+        (Math.abs(canvas.clientWidth - cssW) > 3 ||
+         canvas.width !== Math.round(cssW * dpr))) resize();
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = style === 'gongbi' ? GONGBI.paperLo : '#0e1411';

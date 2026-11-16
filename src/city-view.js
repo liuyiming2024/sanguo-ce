@@ -5,11 +5,16 @@
 //   · 圆框选 + 二次拖拽定方向（全部远程单位齐射 / 近战突击）+ 单击单兵接管。
 // 全部在主画布按屏幕像素绘制，不经过离屏缩放，所以不会糊。
 //
-// v0.7.1 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
+// v0.7.2 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
 // 320×260，否则位图被浏览器拉伸 → 手指点与画面系统性错位）；竖屏收窄大营、
 // 单位图标与命中半径随 cell 自适应；hitUnit 取「最近单位」而不是倒序第一个，
 // 否则窄屏相邻单位重叠时点 A 会选中 B。逻辑网格仍是 24×16，存档/部署不变。
+//
+// v0.7.2：士兵精细重绘 + 行军动画。立绘移到 soldier.js（汉末札甲/兜鍪/顿项/
+// 护心镜 + 按兵种兵器），这里只管「从哪走到哪」：motion 全是渲染层私有状态，
+// 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
+import { drawSoldier, idSeed } from './soldier.js?v=0.7.2';
 
 const INK = '#0b100e';
 const TEXT = '#e2ddc7', DIM = '#9aa896', GOLD = '#e8c882';
@@ -25,11 +30,23 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   const ctx = canvas.getContext('2d');
   const cityOf = () => CITIES.find((c) => c.id === getCityId());
   const factionColor = (fid) => cfg.factions.find((f) => f.id === fid)?.color ?? '#8899aa';
+  // 城内地面被工笔色板改成浅绢底后，冷灰甲会融进地面。按底色明度切换设色，
+  // 不碰画风本身：另一边把底色改回墨绿，士兵会自动换回冷灰铁甲。
+  const lightGround = (() => {
+    const h = cfg.presentation?.cityFloor ?? '#3c3f35';
+    const n = parseInt(h.slice(1), 16);
+    return ((n >> 16 & 255) * 0.299 + (n >> 8 & 255) * 0.587 + (n & 255) * 0.114) > 130;
+  })();
 
   let dpr = 1, W = 800, H = 420;
   let layout = null;
   let circle = null, dragUnit = null, pointer = null;
   let selection = new Set(), champion = null;
+  // ── 行军动画（渲染层私有，绝不进 state） ──────────────────────────────
+  const motion = new Map();    // id -> {fx,fy,tx,ty,startSec,dur,dir,seed}
+  const lastKey = new Map();   // id -> "zone:col:row"，用来检测逻辑位置变化
+  const lastXY = new Map();    // id -> 上一帧的逻辑画布位置
+  let dragPos = null, releasePos = null, releaseId = null;
   let callbacks = { onDeploy: () => {}, onSelect: () => {}, onDirection: () => {}, onChampion: () => {} };
 
   const forces = () => campaign.forces[getCityId()] ?? { inside: [], camp: [] };
@@ -44,6 +61,10 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     // 浏览器拉伸位图，而 local() 用的是 CSS 坐标 —— 于是「点的位置」和「实际位置」分家。
     W = rect.width;
     H = rect.height;
+    // canvas 有 1px 边框：clientWidth 比 rect.width 恒小 2px。若用 >1 判定，
+    // 会每帧都 resize()，而 resize 会清掉 motion —— 行军动画永远开不起来。
+    const prevW = layout?.W ?? -99, prevH = layout?.H ?? -99;
+    const changed = Math.abs(prevW - W) > 1 || Math.abs(prevH - H) > 1;
     const aw = Math.round(W * dpr), ah = Math.round(H * dpr);
     if (canvas.width !== aw) canvas.width = aw;
     if (canvas.height !== ah) canvas.height = ah;
@@ -58,8 +79,66 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     const gridW = cell * CV.cols, gridH = cell * CV.rows;
     const ox = innerX + (innerW - gridW) / 2;
     const oy = padTop + (H - padTop - padBottom - gridH) / 2;
-    layout = { campW, wallX, innerX, innerW, cell, ox, oy, gridW, gridH, padTop, narrow };
+    layout = { W, H, campW, wallX, innerX, innerW, cell, ox, oy, gridW, gridH, padTop, narrow };
+    // 只有视口真的变了才清：按旧像素记的起终点此时才失效。
+    // 自愈性 resize（尺寸没变，只补 attr）必须保留 motion。
+    if (changed) { motion.clear(); lastKey.clear(); lastXY.clear(); }
     return true;
+  }
+
+  function tweenAt(m, sec) {
+    const t = Math.max(0, Math.min(1, (sec - m.startSec) / m.dur));
+    const e = t * t * (3 - 2 * t);            // smoothstep：起步/收步都慢
+    return { x: m.fx + (m.tx - m.fx) * e, y: m.fy + (m.ty - m.fy) * e, t };
+  }
+
+  /** 每帧开头：把「逻辑位置被改了」翻译成一段从旧点到新点的行军。 */
+  function syncMotion(sec) {
+    const seen = new Set();
+    for (const u of allUnits()) {
+      seen.add(u.id);
+      const key = `${u.zone}:${u.col}:${u.row}`;
+      const to = unitXY(u);
+      const prev = lastKey.get(u.id);
+      lastKey.set(u.id, key);
+      if (prev === undefined) { lastXY.set(u.id, { x: to.x, y: to.y }); continue; }
+      if (prev !== key) {
+        // 起点优先级：刚松手的手指位置 > 正在进行的 tween 当前点 > 上一帧逻辑位置
+        let from = null;
+        if (releaseId === u.id && releasePos) from = { x: releasePos.x, y: releasePos.y };
+        const m = motion.get(u.id);
+        if (!from && m) from = tweenAt(m, sec);
+        if (!from) from = lastXY.get(u.id) ?? { x: to.x, y: to.y };
+        const dist = Math.hypot(to.x - from.x, to.y - from.y);
+        if (dist < 1.2) motion.delete(u.id);
+        else motion.set(u.id, {
+          fx: from.x, fy: from.y, tx: to.x, ty: to.y,
+          startSec: sec, dur: Math.min(0.95, Math.max(0.30, 0.26 + dist / 240)),
+          dir: to.x >= from.x ? 1 : -1, seed: idSeed(u.id),
+        });
+      }
+      lastXY.set(u.id, { x: to.x, y: to.y });
+    }
+    for (const id of [...lastKey.keys()]) {
+      if (!seen.has(id)) { lastKey.delete(id); lastXY.delete(id); motion.delete(id); }
+    }
+    releaseId = null; releasePos = null;
+  }
+
+  /** 返回该单位这一帧该画在哪、是否在走路、步频相位与朝向。 */
+  function renderPos(u, sec) {
+    const still = (x, y) => ({ x, y, walking: false, dir: 1, phase: 0, amp: 0 });
+    if (dragUnit?.id === u.id && dragPos) {
+      return { x: dragPos.x, y: dragPos.y, walking: false, dir: 1, phase: 0, amp: 0, carried: true };
+    }
+    const m = motion.get(u.id);
+    if (!m) { const p = unitXY(u); return still(p.x, p.y); }
+    const a = tweenAt(m, sec);
+    // 离开一个月再回来：sec 跳变远超 dur，直接吸附终点，不补跑一段没人的行军。
+    if (a.t >= 1) { motion.delete(u.id); return still(m.tx, m.ty); }
+    const amp = Math.min(1, Math.sin(Math.PI * a.t) * 1.15);
+    return { x: a.x, y: a.y, walking: true, dir: m.dir,
+      phase: (sec - m.startSec) * 11 + m.seed, amp };
   }
 
   const unitXY = (u) => {
@@ -109,10 +188,11 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     // 被动尺寸变化（地址栏收起、横竖屏、面板展开）未必会触发 resize 事件；
     // 每帧用 clientWidth 做一次轻量校验，发现位图与 CSS 尺寸不符就重建。
     if (canvas.clientWidth > 0 && canvas.clientHeight > 0 &&
-        (Math.abs(canvas.clientWidth - W) > 1 || Math.abs(canvas.clientHeight - H) > 1 ||
-         canvas.width !== Math.round(canvas.clientWidth * dpr))) resize();
+        (Math.abs(canvas.clientWidth - W) > 3 || Math.abs(canvas.clientHeight - H) > 3 ||
+         canvas.width !== Math.round(W * dpr) || canvas.height !== Math.round(H * dpr))) resize();
     if (!layout && !resize()) return;   // 容器还没布局好，等下一帧
     const L = layout;
+    syncMotion(sec);                   // 逻辑位置 → 行军插值，全在渲染层
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
@@ -267,110 +347,14 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   }
 
   function drawUnit(u, L, sec) {
-    const p = unitXY(u);
-    const def = cfg.units[u.type];
-    const col = factionColor(u.faction);
     const s = Math.max(6, Math.min(CV.unitPx, L.cell * 0.82));
-    const k = s / 20;
-    const sel = selection.has(u.id);
-    const bob = Math.sin(sec * 2.2 + u.col * 0.7 + u.row * 0.5) * 0.8 * k;
-
-    // 地面投影
-    ctx.fillStyle = rgba('#000000', 0.35);
-    ctx.beginPath(); ctx.ellipse(p.x, p.y + 9 * k, 6 * k, 2.2 * k, 0, 0, Math.PI * 2); ctx.fill();
-
-    ctx.save();
-    ctx.translate(p.x, p.y + bob);
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-
-    // 披风
-    ctx.fillStyle = rgba(col, 0.55);
-    ctx.beginPath(); ctx.moveTo(-3 * k, -6 * k); ctx.lineTo(-8 * k, 7 * k);
-    ctx.lineTo(-2 * k, 4 * k); ctx.closePath(); ctx.fill();
-    // 躯干（粗描边 + 阵营色芯）
-    ctx.strokeStyle = INK; ctx.lineWidth = 5.5 * k;
-    ctx.beginPath(); ctx.moveTo(0, -5 * k); ctx.lineTo(0, 4 * k); ctx.stroke();
-    ctx.strokeStyle = rgba(col, 0.9); ctx.lineWidth = 2.6 * k;
-    ctx.beginPath(); ctx.moveTo(0, -5 * k); ctx.lineTo(0, 4 * k); ctx.stroke();
-    // 双腿
-    ctx.strokeStyle = INK; ctx.lineWidth = 3.2 * k;
-    ctx.beginPath();
-    ctx.moveTo(0, 4 * k); ctx.lineTo(-4 * k, 10 * k);
-    ctx.moveTo(0, 4 * k); ctx.lineTo(4 * k, 10 * k); ctx.stroke();
-    // 头 + 盔
-    ctx.fillStyle = INK;
-    ctx.beginPath(); ctx.arc(0, -9 * k, 4.4 * k, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = rgba('#cfc8ae', 0.9);
-    ctx.beginPath(); ctx.arc(0, -9.5 * k, 3.1 * k, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = col;
-    ctx.beginPath(); ctx.arc(0, -11 * k, 2.2 * k, 0, Math.PI * 2); ctx.fill();
-    // 盔缨
-    ctx.strokeStyle = col; ctx.lineWidth = 1.6 * k;
-    ctx.beginPath(); ctx.moveTo(0, -13 * k); ctx.lineTo(2 * k, -17 * k); ctx.stroke();
-
-    // 武器：按兵种区分，不靠文字标签
-    ctx.strokeStyle = rgba('#d8cfae', 0.95); ctx.lineWidth = 2 * k;
-    ctx.strokeStyle = '#e2ddc7';
-    const proj = def?.projectile;
-    if (u.type === 'junshi') {
-      // 军师：羽扇
-      ctx.fillStyle = rgba('#8fb5a0', 0.9);
-      ctx.beginPath(); ctx.ellipse(6 * k, -4 * k, 4 * k, 2.6 * k, -0.5, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = rgba('#e8dcb4', 0.8); ctx.lineWidth = 1 * k;
-      ctx.beginPath(); ctx.moveTo(3 * k, -2 * k); ctx.lineTo(6 * k, -4 * k); ctx.stroke();
-    } else if (proj === 'stone') {
-      ctx.fillStyle = rgba('#9a9278', 0.95);
-      ctx.fillRect(4 * k, -8 * k, 6 * k, 6 * k);
-      ctx.strokeStyle = rgba('#e2ddc7', 0.8); ctx.lineWidth = 1.2 * k;
-      ctx.beginPath(); ctx.moveTo(3 * k, 2 * k); ctx.lineTo(10 * k, -10 * k); ctx.stroke();
-    } else if (proj === 'bolt') {
-      ctx.strokeStyle = rgba('#cfc4a2', 0.95); ctx.lineWidth = 2.4 * k;
-      ctx.beginPath(); ctx.moveTo(3 * k, 3 * k); ctx.lineTo(11 * k, -8 * k); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(8 * k, -6 * k); ctx.lineTo(12 * k, -5 * k); ctx.stroke();
-    } else if (proj) {
-      // 弓弩
-      ctx.strokeStyle = rgba('#d8c89a', 0.95); ctx.lineWidth = 1.8 * k;
-      ctx.beginPath(); ctx.arc(7 * k, -3 * k, 6 * k, -1.1, 1.1); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(7 * k, -9 * k); ctx.lineTo(7 * k, 3 * k); ctx.stroke();
-    } else if (u.type === 'changqiang') {
-      ctx.strokeStyle = rgba('#d8cfae', 0.95); ctx.lineWidth = 1.8 * k;
-      ctx.beginPath(); ctx.moveTo(5 * k, 10 * k); ctx.lineTo(9 * k, -15 * k); ctx.stroke();
-      ctx.fillStyle = rgba('#e8dcb4', 0.95);
-      ctx.beginPath(); ctx.moveTo(9 * k, -15 * k); ctx.lineTo(7 * k, -11 * k);
-      ctx.lineTo(11 * k, -11 * k); ctx.closePath(); ctx.fill();
-    } else if (u.type === 'zhongjia') {
-      ctx.fillStyle = rgba('#a8a08a', 0.9);
-      ctx.fillRect(-5 * k, -4 * k, 10 * k, 8 * k);
-      ctx.strokeStyle = INK; ctx.lineWidth = 1.2 * k;
-      ctx.strokeRect(-5 * k, -4 * k, 10 * k, 8 * k);
-    } else {
-      // 刀盾
-      ctx.fillStyle = rgba(col, 0.75);
-      ctx.beginPath(); ctx.arc(-6 * k, -2 * k, 4 * k, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = rgba('#e2ddc7', 0.95); ctx.lineWidth = 2 * k;
-      ctx.beginPath(); ctx.moveTo(4 * k, 6 * k); ctx.lineTo(9 * k, -11 * k); ctx.stroke();
-    }
-    ctx.restore();
-
-    // 血条
-    const hp = Math.max(0, u.hp / (u.maxHp || 1));
-    ctx.fillStyle = rgba('#0b100e', 0.8);
-    ctx.fillRect(p.x - 9 * k, p.y - 20 * k, 18 * k, 3 * k);
-    ctx.fillStyle = hp > 0.5 ? rgba('#8fc27f', 0.95) : rgba('#e2a06b', 0.95);
-    ctx.fillRect(p.x - 9 * k, p.y - 20 * k, 18 * k * hp, 3 * k);
-
-    // 选中环 + champion 菱形
-    if (sel || u.id === champion) {
-      const pulse = 0.85 + Math.sin(sec * 4) * 0.15;
-      ctx.strokeStyle = u.id === champion ? GOLD : rgba('#e8d9a8', 0.95);
-      ctx.lineWidth = 1.8;
-      ctx.beginPath(); ctx.ellipse(p.x, p.y + 10 * k, 10 * k * pulse, 4 * k * pulse, 0, 0, Math.PI * 2); ctx.stroke();
-      if (u.id === champion) {
-        ctx.fillStyle = GOLD;
-        ctx.beginPath(); ctx.moveTo(p.x, p.y - 26 * k); ctx.lineTo(p.x + 4, p.y - 22 * k);
-        ctx.lineTo(p.x, p.y - 18 * k); ctx.lineTo(p.x - 4, p.y - 22 * k); ctx.closePath(); ctx.fill();
-      }
-    }
+    const rp = renderPos(u, sec);
+    drawSoldier(ctx, u, {
+      x: rp.x, y: rp.y, s, sec,
+      walk: rp.walking, dir: rp.dir, phase: rp.phase, amp: rp.amp,
+      seed: idSeed(u.id), col: factionColor(u.faction), def: cfg.units[u.type],
+      selected: selection.has(u.id), champion: u.id === champion, lightGround,
+    });
   }
 
   function drawOverlays(L, sec) {
@@ -382,7 +366,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
       ctx.fillStyle = rgba(GOLD, 0.09); ctx.fill();
     }
     if (dragUnit) {
-      const p = unitXY(dragUnit);
+      const p = dragPos ?? unitXY(dragUnit);
       ctx.strokeStyle = rgba(GOLD, 0.9); ctx.lineWidth = 1.5;
       ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.arc(p.x, p.y, CV.unitPx * 0.8, 0, Math.PI * 2); ctx.stroke();
@@ -420,6 +404,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     const u = hitUnit(p.x, p.y);
     pointer = { sx: p.x, sy: p.y, x: p.x, y: p.y, t: e.timeStamp, moved: 0, unit: u };
     dragUnit = u ?? null;
+    dragPos = u ? { x: p.x, y: p.y } : null;
     try { canvas.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
   }, sig);
 
@@ -428,6 +413,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     const p = local(e);
     pointer.moved = Math.max(pointer.moved, Math.hypot(p.x - pointer.sx, p.y - pointer.sy));
     pointer.x = p.x; pointer.y = p.y;
+    if (dragUnit && dragPos) dragPos = { x: p.x, y: p.y };   // 兵跟着手指走
     if (!dragUnit && pointer.moved > CV.dragThresholdPx) {
       circle = {
         x: (pointer.sx + p.x) / 2, y: (pointer.sy + p.y) / 2,
@@ -440,6 +426,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     if (!pointer) return;
     const P = pointer; pointer = null;
     const p = local(e);
+    // 松手位置交给下一帧 syncMotion 当行军起点：兵从手指处走到目标格，不瞬移。
+    if (dragUnit && dragPos) { releasePos = { x: p.x, y: p.y }; releaseId = dragUnit.id; }
+    dragPos = null;
     const dist = Math.hypot(p.x - P.sx, p.y - P.sy);
 
     // A) 拖单位 → 部署到大营 / 城内格
@@ -489,7 +478,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     callbacks.onChampion(null);
   }, sig);
   for (const ev of ['pointercancel', 'lostpointercapture']) {
-    canvas.addEventListener(ev, () => { pointer = null; dragUnit = null; circle = null; }, sig);
+    canvas.addEventListener(ev, () => {
+      pointer = null; dragUnit = null; dragPos = null; circle = null;
+    }, sig);
   }
 
   return {
@@ -499,7 +490,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     get champion() { return champion; },
     get layout() { return layout; },
     get viewport() { return { W, H, dpr, attrW: canvas.width, attrH: canvas.height }; },
-    hitUnit,
+    get motionCount() { return motion.size; },
+    motionOf: (id) => motion.get(id) ?? null,
+    renderPos, hitUnit,
     setCallbacks(cb) { callbacks = { ...callbacks, ...cb }; },
     unitXY, screenToTarget, forces,
   };
