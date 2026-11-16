@@ -92,7 +92,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
-    // 绢帛底
+    // 底纹
     const bg = ctx.createLinearGradient(0, 0, W, H);
     bg.addColorStop(0, '#232b25'); bg.addColorStop(1, '#171e1a');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);

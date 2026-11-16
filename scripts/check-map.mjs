@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.5.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.6.0', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.5.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.5.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.6.0'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.6.0"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -155,7 +155,7 @@ ok(main3.includes('visibilitychange') && main3.includes('pagehide'), '切后台 
 ok(main3.includes('pointers.size === 2') && main3.includes('snapTile'), '移动端缺捏合缩放 / 地块吸附');
 ok(main3.includes('idleStop'), '静止停绘未接线');
 
-// ── v0.5.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
+// ── v0.6.0：年号历法 / 章回剧情 / 联机地基 ─────────────────────────────
 ok(cfg.calendar.startMonth === 1 && cfg.calendar.xunPerMonth === 3,
   '军历须自正月起，3 旬进一月，才能与史实章回月份对齐');
 ok(formatCalendar(0, cfg.calendar) === '建安五年 正月初一', '开局日期不是建安五年正月初一');
@@ -189,7 +189,7 @@ ok(main4.includes('exportTicket') && main4.includes('verifyReplay') && main4.inc
 ok(main4.includes('chapterHeadline(story, state)'), '顶栏未显示章回名');
 ok(!/第 \$\{[^}]*turn\} 旬/.test(main4), '装配层仍有「第 N 旬」文案');
 
-// ── v0.5.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
+// ── v0.6.0 实拍收尾：地图装饰密度 ──────────────────────────────────────
 const mrender = readFileSync(join(root, 'src/map-render.js'), 'utf8');
 ok(/lineWidth = 5;/.test(mrender) && /lineWidth = 2\.4;/.test(mrender),
   '官道仍是 8/4.2 金带');
@@ -205,7 +205,7 @@ ok(html4.includes('class="battleDebug"') && html4.includes('军情细目 · 展�
 ok(!/已拍快照 @/.test(readFileSync(join(root, 'src/main.js'), 'utf8')),
   'toast 仍在报调试数字');
 
-// ── v0.5.0：行台授简 / 卷末留白 / 武备题头 ─────────────────────────────
+// ── v0.6.0：行台授简 / 卷末留白 / 武备题头 ─────────────────────────────
 const tutDef = JSON.parse(readFileSync(join(root, 'config/tutorial.json'), 'utf8'));
 const tutCss = readFileSync(join(root, 'styles/main.css'), 'utf8');
 const tutUi = readFileSync(join(root, 'src/tutorial-ui.js'), 'utf8');

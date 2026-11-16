@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.5.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.6.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.5.0 与栅格规模',
+  check('主菜单标注 v0.6.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.5.0'));
+    (await page.locator('#menuSub').innerText()).includes('0.6.0'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -75,7 +75,7 @@ try {
   await page.click('#startBtn');
   await page.waitForTimeout(420);
 
-  // ── v0.5.0：行台授简 ──────────────────────────────────────────────────
+  // ── v0.6.0：行台授简 ──────────────────────────────────────────────────
   check('入局后自动起授简，第一简是「受檄入局」',
     await page.isVisible('#tutorialLayer') &&
     (await page.locator('.tutCard').innerText()).includes('受檄入局') &&
@@ -133,7 +133,35 @@ try {
     return window.__sanguo.tutUI.done && document.getElementById('tutorialLayer').hidden;
   }));
 
-  // ── v0.5.0：卷末留白 / 武备题头 ──────────────────────────────────────
+  // ── v0.6.0：单条山脊一笔实验（实拍不成立 → 默认界画，仅留 A/B 开关） ──
+  check('默认退回界画，brushOn=false', await page.evaluate(() =>
+    window.__sanguo.brushOn === false));
+  const ab = await page.evaluate(() => {
+    const w = window.__sanguo, r = w.renderer;
+    const oc = r.offscreen.getContext('2d');
+    // 主脊中段（离屏 360,1520 附近）取一块 40×40 的像素校验和
+    const sum = () => {
+      const d = oc.getImageData(360, 1520, 40, 40).data;
+      let h = 0;
+      for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0;
+      return h;
+    };
+    r.setBrush(false); const a = sum();
+    const s1 = r.setBrush(true); const b = sum();
+    const s2 = r.setBrush(false); const c = sum();
+    return { ab: a !== b, bc: b !== c, ac: a === c, s1, s2,
+      sums: [a, b, c], brush: r.brushOn };
+  });
+  check('brush=on 只改表现层：A/B 画面不同、关掉可逐像素复原',
+    ab.ab && ab.bc && ab.ac, JSON.stringify(ab));
+  check('地形/存档/策略层没有被笔改动', await page.evaluate(() => {
+    const w = window.__sanguo;
+    const t = w.state.terrain.tiles;
+    return t.length === 15552 && !('brush' in w.state) &&
+      !JSON.stringify(w.state.commandLog).includes('brush');
+  }));
+
+  // ── v0.6.0：卷末留白 / 武备题头 ──────────────────────────────────────
   await nav('reports');
   check('墨底页有卷末题记，空场不再是一整块纯黑', await page.evaluate(() => {
     const e = document.querySelector('#screen .scrBody .scrollEnd');
@@ -222,7 +250,7 @@ try {
     const el = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     return !!el && !!el.closest('#bottomBar');
   }));
-  // ── v0.5.0：章回剧情与军历 ────────────────────────────────────────────
+  // ── v0.6.0：章回剧情与军历 ────────────────────────────────────────────
   await nav('story');
   const storyTxt = await page.locator('#screen').innerText();
   check('纪事页有章回叙事 / 史注 / 军务 / 抉择',

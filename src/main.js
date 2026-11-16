@@ -1,37 +1,37 @@
-// 装配层 v0.5.0：唯一引用 DOM / rAF / localStorage 的地方。
+// 装配层 v0.6.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.5.0';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.6.0';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.5.0';
+} from './campaign.js?v=0.6.0';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.5.0';
-import { createMapRenderer } from './map-render.js?v=0.5.0';
-import { createCityView } from './city-view.js?v=0.5.0';
+} from './pathfind.js?v=0.6.0';
+import { createMapRenderer } from './map-render.js?v=0.6.0';
+import { createCityView } from './city-view.js?v=0.6.0';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.5.0';
-import { CITIES, cityById } from './map-data.js?v=0.5.0';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.5.0';
+} from './battle-session.js?v=0.6.0';
+import { CITIES, cityById } from './map-data.js?v=0.6.0';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.6.0';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.5.0';
+} from './story.js?v=0.6.0';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.5.0';
-import { TYPE_LABEL } from './terrain.js?v=0.5.0';
-import { createTutorialUI } from './tutorial-ui.js?v=0.5.0';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.5.0';
-import { createShell, facilityCost } from './ui-shell.js?v=0.5.0';
+} from './sync.js?v=0.6.0';
+import { TYPE_LABEL } from './terrain.js?v=0.6.0';
+import { createTutorialUI } from './tutorial-ui.js?v=0.6.0';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.6.0';
+import { createShell, facilityCost } from './ui-shell.js?v=0.6.0';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.5.0';
+} from './persist.js?v=0.6.0';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -170,7 +170,10 @@ function loadGame() {
   battleCityId = r.ui?.battleCityId ?? null;
   // terrain 换了实例，渲染器与城池视图都要重建。
   if (cityView) { cityView.dispose(); cityView = null; }
-  renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
+  renderer = createMapRenderer(canvas, {
+    terrain: state.terrain, cfg,
+    brush: new URLSearchParams(location.search).get('brush') === 'on',
+  });
   if (r.ui?.camera) { Object.assign(renderer.camera, r.ui.camera); renderer.clampCamera(); }
   session = snapshot ? restoreSession(cfg, state, snapshot) : null;
   $('autoBtn').setAttribute('aria-pressed', String(auto));
@@ -891,7 +894,10 @@ function bindUI() {
   $('startBtn').addEventListener('click', () => {
     const fid = story.meta.faction;
     state = newCampaign(fid);
-    renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
+    renderer = createMapRenderer(canvas, {
+    terrain: state.terrain, cfg,
+    brush: new URLSearchParams(location.search).get('brush') === 'on',
+  });
     reports = []; state.reports = reports;
     session = null; snapshot = null; battleCityId = null;
     $('centerBtn').click();
@@ -935,15 +941,18 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.5.0').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.5.0').then((r) => r.json()),
-    fetch('./config/story.json?v=0.5.0').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.5.0').then((r) => r.json()),
+    fetch('./config/campaign.json?v=0.6.0').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.6.0').then((r) => r.json()),
+    fetch('./config/story.json?v=0.6.0').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.6.0').then((r) => r.json()),
   ]);
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);
   state = newCampaign('cao');
-  renderer = createMapRenderer(canvas, { terrain: state.terrain, cfg });
+  renderer = createMapRenderer(canvas, {
+    terrain: state.terrain, cfg,
+    brush: new URLSearchParams(location.search).get('brush') === 'on',
+  });
   shell = createShell({ cfg, uiData, story, actions, getState: () => state,
     getReports: () => reports, onRoute: (route) => tutNotify(`tab:${route}`) });
 
@@ -980,6 +989,7 @@ async function boot() {
     hashState, stateFingerprint, encodeTicket, decodeTicket,
     createLoopbackTransport, createBroadcastTransport,
     get renderer() { return renderer; },
+    get brushOn() { return renderer?.brushOn ?? false; },
     get session() { return session; },
     get snapshot() { return snapshot; },
     get cityView() { return cityView; },

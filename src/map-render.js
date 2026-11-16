@@ -1,7 +1,15 @@
 // 分层程序化地形渲染。刻意不做「一个圆圈中间写汉字」那种极简标记：
-// 绢帛底纹 → 地貌色块 → 等高线山形 → 树冠/田埂/芦苇 → 河面波纹 → 官道车辙
+// 底纹 → 地貌色块 → 山形 → 树冠/田埂/芦苇 → 河面波纹 → 官道车辙
 // → 城郭（城墙垛口 + 角楼 + 城门 + 旗纛）→ 地名注记 → 领地边界与动态层。
 // 全部离屏预渲染一次，主画布只做视口 blit + 动态叠加；不使用 ctx.filter / Math.random。
+//
+// v0.6.0 实拍结论：单条山脊的一笔不成立，默认仍是界画。
+//   曾试过把 RIDGES[0] 沿折线连成一条路径、笔压 3.2→0.8 / .55→.08 叠上去，
+//   一格未删、一格未改。实拍里全图气没变（默认视口只多 17 个像素），
+//   把镜头推近后那一笔读成划痕而非山脊：墨色比皴暗、与等宽等浓的格状山形
+//   异质。按预案整体退回，不推广到河与官道。
+//   ?brush=on 仅保留作 A/B 复核开关，默认关闭；想让笔成立得先解决
+//   「笔与皴的明度/朝向关系」，那已经不是最小一步了。
 import { CITIES, RIVERS_MINOR, RIDGES, LAKES, PASSES, geoToTile, project } from './map-data.js';
 import { T, TYPE_LABEL } from './terrain.js';
 
@@ -24,7 +32,7 @@ const rgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
-export function createMapRenderer(canvas, { terrain, cfg }) {
+export function createMapRenderer(canvas, { terrain, cfg, brush = false }) {
   const TP = cfg.terrain.tilePx;
   const W = terrain.cols * TP, H = terrain.rows * TP;
   const off = document.createElement('canvas');
@@ -32,12 +40,77 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
   const g = off.getContext('2d');
 
   const camera = { x: 0, y: 0, scale: 1 };
+  let brushOn = brush;                 // 默认 false：界画；?brush=on 才启用实验笔
   let selection = null, circle = null, reachable = [], orders = [], cityOwners = {};
   let dpr = 1, cssW = 1, cssH = 1;
 
+  // ── 一次运笔（实验范围：仅 RIDGES[0] 嵩山，默认关闭） ────────────────────────────
+  const BRUSH_RIDGE = 0;
+  const BRUSH_SCALE = TP / 6;      // 3.2→0.8 是格尺度，换算到离屏像素
+
+  /**
+   * 一条路径，quadraticCurveTo 连完；再按「运笔进度」分带重复描同一路径，
+   * 每带换一次笔压（线宽 3.2→0.8、浓 .55→.08）。路径从头到尾只有一条，
+   * 不是 N 段独立线段——所以叫一次运笔，不是给整齐找说法。
+   */
+  function strokeRidge(g, rg) {
+    const P = rg.pts.map(([lon, lat]) => project(lon, lat, W, H));
+    const n = P.length;
+    if (n < 3) return;
+
+    const path = new Path2D();
+    path.moveTo(P[0].x, P[0].y);
+    for (let i = 1; i < n - 1; i++) {
+      const mx = (P[i].x + P[i + 1].x) / 2, my = (P[i].y + P[i + 1].y) / 2;
+      path.quadraticCurveTo(P[i].x, P[i].y, mx, my);
+    }
+    path.quadraticCurveTo(P[n - 2].x, P[n - 2].y, P[n - 1].x, P[n - 1].y);
+
+    // 运笔方向按首尾 y 定（这几条山脊在图上都是南北向，y 单调）。
+    const yFrom = P[0].y, yTo = P[n - 1].y;
+    const N = 28;
+    g.save();
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N, t = (t0 + t1) / 2;
+      const ya = yFrom + (yTo - yFrom) * t0, yb = yFrom + (yTo - yFrom) * t1;
+      const top = Math.min(ya, yb) - 1, h = Math.abs(yb - ya) + 2;
+      g.save();
+      g.beginPath(); g.rect(0, top, W, h); g.clip();
+      g.strokeStyle = rgba(INK, 0.55 + (0.08 - 0.55) * t);
+      g.lineWidth = (3.2 + (0.8 - 3.2) * t) * BRUSH_SCALE;
+      g.stroke(path);                       // 同一条路径，只换笔压
+      g.restore();
+    }
+    g.restore();
+
+    // 折点处一次分叉枯笔：极细、极淡、中间带两处飞白断口。
+    for (let i = 1; i < n - 1; i++) {
+      const a = P[i - 1], p = P[i], b = P[i + 1];
+      const va = { x: p.x - a.x, y: p.y - a.y }, vb = { x: b.x - p.x, y: b.y - p.y };
+      const la = Math.hypot(va.x, va.y) || 1, lb = Math.hypot(vb.x, vb.y) || 1;
+      let dx = va.x / la - vb.x / lb, dy = va.y / la - vb.y / lb;
+      const dl = Math.hypot(dx, dy) || 1;
+      dx /= dl; dy /= dl;
+      const len = TP * 1.5;
+      g.save();
+      g.lineCap = 'round';
+      g.lineWidth = 0.7 * BRUSH_SCALE;
+      // 三段短笔，中间留白 —— 枯笔不是一条实线
+      for (const [u0, u1, alpha] of [[0, 0.28, 0.26], [0.40, 0.66, 0.17], [0.78, 1, 0.08]]) {
+        g.strokeStyle = rgba(INK, alpha);
+        g.beginPath();
+        g.moveTo(p.x + dx * len * u0, p.y + dy * len * u0);
+        g.lineTo(p.x + dx * len * u1, p.y + dy * len * u1);
+        g.stroke();
+      }
+      g.restore();
+    }
+  }
+
   // ── 离屏静态地形 ──────────────────────────────────────────────────────
   function buildBase() {
-    // 1) 绢帛底 + 细颗粒
+    // 1) 底纹 + 细颗粒
     const bg = g.createLinearGradient(0, 0, W, H);
     bg.addColorStop(0, '#212823'); bg.addColorStop(0.5, '#1b211f'); bg.addColorStop(1, '#242b25');
     g.fillStyle = bg; g.fillRect(0, 0, W, H);
@@ -63,7 +136,7 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
       }
     }
 
-    // 3) 山地：三角山形簇 + 亮面 + 等高线
+    // 3) 山地：三角山形簇 + 亮面 + 等高线（皴法一行不动，笔是叠上去的）
     for (const t of terrain.tiles) {
       if (t.type !== T.MOUNTAIN && t.type !== T.HILL) continue;
       if ((t.c + t.r) & 1) continue;   // 隔格抽样：山形不再铺满半屏
@@ -252,6 +325,7 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
   }
 
   buildBase();
+  if (brushOn) strokeRidge(g, RIDGES[BRUSH_RIDGE]);   // 叠在全部格状静态层之上
 
   // ── 主画布 ────────────────────────────────────────────────────────────
   function resize() {
@@ -557,6 +631,15 @@ export function createMapRenderer(canvas, { terrain, cfg }) {
     setReachable(list) { reachable = list; },
     setOrders(list) { orders = list; },
     setCityOwners(map) { cityOwners = map; borderPaths = null; },
+    setBrush(on) {
+      if (brushOn !== !!on) {
+        brushOn = !!on; buildBase();
+        if (brushOn) strokeRidge(g, RIDGES[BRUSH_RIDGE]);
+      }
+      return brushOn;
+    },
+    get brushOn() { return brushOn; },
+    get offscreen() { return off; },   // 烟测做逐像素 A/B 用，不参与渲染
     invalidateBorders() { borderPaths = null; },
     get size() { return { W, H, TP }; },
     describe(c, r) { return terrain.describe(c, r); },
