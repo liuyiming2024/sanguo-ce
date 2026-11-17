@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>建安五年 · 官渡舆图（工笔重绘 · 背景层）</title>
+<style>
+  :root{
+    --paper:#eae2cd; --mount:#d7cfb8; --ink:#33342c;
+    --cinnabar:#9c332b; --gold:#a08a58; --dim:#6a6753;
+    --serif:"WenQuanYi Micro Hei","Noto Serif CJK SC","Songti SC","STSong","SimSun",serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:#c5bda6;color:var(--ink);font-family:var(--serif)}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:20px 14px 16px;gap:12px;
+    background:radial-gradient(ellipse at 50% 28%,#ded6c0,#b8b09a 100%)}
+  .leaf{position:relative;width:min(1240px,100%);padding:9px;background:var(--mount);
+    border:1px solid rgba(90,80,58,.42);
+    box-shadow:0 18px 52px rgba(48,42,30,.38),inset 0 0 0 1px rgba(255,255,255,.3)}
+  .sheet{position:relative;width:100%;aspect-ratio:1200/880;overflow:hidden;
+    background:var(--paper);border:1px solid rgba(90,80,58,.3)}
+  canvas{display:block;width:100%;height:100%}
+
+  .colophon{position:absolute;left:2.6%;top:4.8%;display:flex;align-items:flex-start;gap:9px;
+    pointer-events:none;user-select:none}
+  .colophon .t{writing-mode:vertical-rl;text-orientation:upright;
+    font-size:clamp(15px,1.85vw,22px);letter-spacing:6px;color:#33352c;opacity:.92}
+  .colophon .s{writing-mode:vertical-rl;font-size:clamp(9px,.95vw,11px);
+    letter-spacing:2px;color:#6d6a56;margin-top:4px;opacity:.85}
+  .colophon .seal{writing-mode:vertical-rl;text-orientation:upright;margin-top:34px;
+    width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+    background:var(--cinnabar);color:#f2e6d1;font-size:14px;line-height:1;
+    border:1px solid rgba(240,190,160,.45);box-shadow:inset 0 0 0 2px rgba(0,0,0,.16);opacity:.9}
+
+  .scale{position:absolute;right:2.4%;bottom:4.2%;display:flex;align-items:flex-end;gap:8px;
+    pointer-events:none;user-select:none;opacity:.8}
+  .scale .bar{width:96px;height:6px;border:1px solid #5f5a45;
+    background:linear-gradient(90deg,#5f5a45 0 25%,transparent 25% 50%,#5f5a45 50% 75%,transparent 75%)}
+  .scale .txt{font-size:10px;letter-spacing:1px;color:#5f5a45;line-height:1.6;text-align:right}
+
+  .foot{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:center;
+    font-size:11px;color:#5d5949;letter-spacing:1px}
+  .foot .note{opacity:.85}
+  button{font-family:inherit;font-size:11px;letter-spacing:2px;padding:7px 13px;cursor:pointer;
+    color:#4a473a;background:rgba(255,255,255,.24);border:1px solid rgba(90,80,58,.45)}
+  button:hover{background:rgba(255,255,255,.52);border-color:var(--gold)}
+  button[aria-pressed="true"]{background:rgba(160,138,88,.22);border-color:var(--gold)}
+</style>
+</head>
+<body>
+  <div class="leaf">
+    <div class="sheet">
+      <canvas id="c" aria-label="建安五年官渡舆图地形背景层：纸、水、山、山内地貌与平原土脉"></canvas>
+      <div class="colophon">
+        <div class="t">汉末州郡地形图</div>
+        <div class="s">建安五年庚辰 · 形象画法 · 纵横不拘实距</div>
+        <div class="seal">舆</div>
+      </div>
+      <div class="scale">
+        <div class="txt">每方约百里<br>以水系为脉络</div>
+        <div class="bar"></div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">
+    <span class="note">背景层只画地形；城郭关津为上层地物，格网再往上压</span>
+    <button id="featBtn" type="button" aria-pressed="true">地 物 层</button>
+    <button id="gridBtn" type="button" aria-pressed="false">压 上 格 子</button>
+    <button id="again" type="button">重 落 一 笔</button>
+  </div>
+
+<!-- MIT：Copyright (c) 2018 Lingdong Huang，见 third-party/LICENSE-*.txt 与 ATTRIBUTION.md -->
+<script src="third-party/ink-stroke.js"></script>
+<script>
+(() => {
+  if (!window.InkStroke) {
+    document.body.insertAdjacentHTML('afterbegin',
+      '<p style="color:#8a2b22">缺少 third-party/ink-stroke.js，请把整个 demos/ 目录一起打开。</p>');
+    return;
+  }
+  const { rgba, resample, frames, ribbon, hardRibbon, doubleOutline, flatWash } = InkStroke;
+
+  const W = 1200, H = 880, PAD = 46;
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  let seed = 20261116;
+  let showGrid = false;
+  let showFeatures = true;       // 地物层开关：关掉即只剩地形背景
+
+  // 每次落笔由各层回填的真实骨架，供「地貌细节」派生，不做随机撒点
+  const RIDGE_GEO = [], RIVER_GEO = [], LAKE_GEO = [];
+
+  // ── 确定性随机 ────────────────────────────────────────────────────────
+  const rnd = () => {
+    seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const rr = (a,b) => a + (b-a)*rnd();
+  const h1 = k => { const v = Math.sin(k*127.1 + seed*0.000131)*43758.5453; return v-Math.floor(v); };
+
+  // ── src/map-data.js 的经纬度锚点（重绘所需字段） ───────────────────────
+  const LON_MIN=112.75, LON_MAX=116.15, LAT_MIN=32.65, LAT_MAX=36.65;
+  const CITIES = [
+    ['许都',113.85,34.03,1],['邺',114.40,36.30,1],['汝南',114.36,33.01,2],
+    ['陈留',114.53,34.66,2],['黎阳',114.55,35.68,2],['濮阳',115.03,35.75,2],
+    ['阳翟',113.52,34.14,2],['谯县',115.78,33.85,2],['中牟',114.03,34.72,3],
+    ['白马',114.45,35.55,3],['延津',114.20,35.15,3],['官渡',114.00,34.55,4],
+  ];
+  const HUANGHE = [
+    [112.78,34.98],[113.05,35.02],[113.35,35.10],[113.62,35.16],[113.88,35.12],
+    [114.20,35.15],[114.42,35.48],[114.55,35.68],[114.86,35.74],[115.18,35.78],
+    [115.48,36.02],[115.78,36.25],[116.10,36.48],
+  ];
+  const RIVERS_MINOR = [
+    {name:'颍水',w:1.6,pts:[[113.10,33.20],[113.30,33.55],[113.48,33.90],[113.62,34.12],[113.85,34.28],[114.10,34.40]]},
+    {name:'汝水',w:1.6,pts:[[113.90,32.70],[114.10,32.95],[114.36,33.15],[114.62,33.40],[114.82,33.72],[115.05,33.95]]},
+    {name:'鸿沟',w:1.5,pts:[[113.55,34.30],[113.78,34.42],[114.00,34.55],[114.22,34.62],[114.53,34.66]]},
+    {name:'淇水',w:1.3,pts:[[114.05,36.55],[114.25,36.20],[114.40,35.90],[114.55,35.68]]},
+    {name:'荡水',w:1.1,pts:[[114.15,36.45],[114.32,36.32],[114.40,36.30]]},
+  ];
+  const LAKES = [
+    {name:'圃田泽',lon:113.90,lat:34.80,rx:.20,ry:.10},
+    {name:'荥泽',  lon:113.30,lat:35.02,rx:.14,ry:.08},
+    {name:'大野泽',lon:115.62,lat:35.42,rx:.30,ry:.16},
+  ];
+  const RIDGES = [
+    {name:'嵩山',h:.92,pts:[[112.82,33.55],[113.02,33.90],[113.12,34.28],[113.05,34.62],[113.22,34.92]]},
+    {name:'箕山',h:.74,pts:[[113.28,33.35],[113.52,33.62],[113.66,33.95],[113.55,34.20]]},
+    {name:'太行',h:.96,pts:[[114.05,36.62],[114.35,36.40],[114.62,36.18],[114.86,35.95],[115.10,35.80]]},
+    {name:'历山',h:.62,pts:[[115.35,36.55],[115.60,36.38],[115.82,36.20]]},
+  ];
+  const PASSES = [
+    ['虎牢关',113.18,34.82,'pass'],['轘辕关',113.08,34.42,'pass'],
+    ['延津渡',114.20,35.15,'ford'],['白马津',114.45,35.55,'ford'],
+    ['黎阳津',114.55,35.68,'ford'],['濮阳津',115.03,35.75,'ford'],
+    ['官渡口',114.00,34.55,'ford'],
+  ];
+  // ROADS 只作逻辑锚点保留：城与城之间不画任何路线，格网由上层叠压。
+  const ROAD_HINTS = [
+    ['许都','陈留',[[113.95,34.20],[114.20,34.42],[114.45,34.58]]],
+    ['许都','汝南',[[113.95,33.78],[114.10,33.48],[114.25,33.20]]],
+    ['许都','谯县',[[114.20,33.90],[114.60,33.82],[115.10,33.80],[115.50,33.84]]],
+    ['官渡','延津',[[114.06,34.80],[114.14,35.00]]],
+    ['黎阳','邺',[[114.48,35.92],[114.42,36.10]]],
+  ];
+
+  const proj = (lon,lat) => [
+    PAD + (lon-LON_MIN)/(LON_MAX-LON_MIN)*(W-2*PAD),
+    PAD + (1-(lat-LAT_MIN)/(LAT_MAX-LAT_MIN))*(H-2*PAD),
+  ];
+  const PXY = p => proj(p[0],p[1]);
+
+  // ── 纸：干净、低频晕染，工笔不靠纹理抢戏 ───────────────────────────────
+  function paper() {
+    const g=ctx.createLinearGradient(0,0,W,H);
+    g.addColorStop(0,'#f0e9d7'); g.addColorStop(.42,'#e9e1cb');
+    g.addColorStop(.78,'#ece4cf'); g.addColorStop(1,'#e4dcc4');
+    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    for (let i=0;i<22;i++) {
+      const x=rr(-100,W+100),y=rr(-80,H+80),r=rr(150,380);
+      const q=ctx.createRadialGradient(x,y,0,x,y,r);
+      q.addColorStop(0,rgba(rnd()>.5?'#fffaf0':'#a3976f',rr(.010,.030)));
+      q.addColorStop(1,'rgba(0,0,0,0)');
+      ctx.fillStyle=q; ctx.fillRect(x-r,y-r,r*2,r*2);
+    }
+    for (let i=0;i<420;i++) {
+      const x=rnd()*W,y=rnd()*H;
+      ctx.fillStyle=rgba(rnd()>.55?'#877a5c':'#fffaf0',rr(.010,.035));
+      ctx.fillRect(x,y,rr(.5,2.2),.6);
+    }
+    const v=ctx.createRadialGradient(W/2,H/2,H*.30,W/2,H/2,H*.88);
+    v.addColorStop(0,'rgba(0,0,0,0)'); v.addColorStop(1,'rgba(60,52,36,.13)');
+    ctx.fillStyle=v; ctx.fillRect(0,0,W,H);
+  }
+
+  // ── 图廓 ──────────────────────────────────────────────────────────────
+  function border() {
+    ctx.strokeStyle='rgba(95,84,58,.58)'; ctx.lineWidth=1.2;
+    ctx.strokeRect(16,16,W-32,H-32);
+    ctx.strokeStyle='rgba(95,84,58,.30)'; ctx.lineWidth=.8;
+    ctx.strokeRect(23,23,W-46,H-46);
+    const L=22;
+    ctx.strokeStyle='rgba(140,112,62,.66)'; ctx.lineWidth=1.5;
+    for (const [x,y,sx,sy] of [[16,16,1,1],[W-16,16,-1,1],[16,H-16,1,-1],[W-16,H-16,-1,-1]]) {
+      ctx.beginPath();
+      ctx.moveTo(x+sx*L,y); ctx.lineTo(x,y); ctx.lineTo(x,y+sy*L);
+      ctx.moveTo(x+sx*9,y+sy*9); ctx.lineTo(x+sx*9,y+sy*L*.7); ctx.lineTo(x+sx*L*.7,y+sy*9);
+      ctx.stroke();
+    }
+  }
+
+  // 可选界格：演示「把逻辑格子压上去」，默认不画，不参与本层绘制
+  function gridOverlay() {
+    if (!showGrid) return;
+    ctx.save();
+    ctx.strokeStyle='rgba(120,100,66,.13)'; ctx.lineWidth=.5;
+    for (let x=26;x<W-26;x+=42){ ctx.beginPath();ctx.moveTo(x,23);ctx.lineTo(x,H-23);ctx.stroke(); }
+    for (let y=23;y<H-23;y+=42){ ctx.beginPath();ctx.moveTo(23,y);ctx.lineTo(W-23,y);ctx.stroke(); }
+    ctx.restore();
+  }
+
+  // ── 远山：只在西北山背留一小段层次 ────────────────────────────────────
+  // 官渡一带是豫东平原，山只在西侧嵩箕、西北太行。上一版两条贯穿全画的淡山影
+  // 把中部平原也罩成「空灵山态」，不合实际；这里收成一小段，中部留给平原土脉。
+  function farHills() {
+    const raw=[[60,252],[96,238],[132,244],[170,228],[208,240],[246,232],[286,246]];
+    const P=resample(raw,6);
+    const path=new Path2D(); path.moveTo(P[0][0],286);
+    for (const p of P) path.lineTo(p[0],p[1]);
+    path.lineTo(P[P.length-1][0],286); path.closePath();
+    flatWash(ctx,path,'#8b9b96',.05,2);
+    hardRibbon(ctx,P,{w:.7,col:'#7d8b82',alpha:.12,head:.04,tail:.16,sk:9,seg:7});
+  }
+
+  // ── 竖排小字 ──────────────────────────────────────────────────────────
+  function vertical(text,x,y,size,col,alpha) {
+    ctx.save();
+    ctx.font=`${size}px "WenQuanYi Micro Hei","Noto Serif CJK SC",serif`;
+    ctx.textAlign='center'; ctx.textBaseline='top';
+    for (let i=0;i<text.length;i++) {
+      ctx.fillStyle=rgba(col,alpha);
+      ctx.fillText(text[i],x,y+i*(size*1.12));
+    }
+    ctx.restore();
+  }
+
+  // ── 泽薮：双勾水线 + 分区平涂 + 横向水纹 ──────────────────────────────
+  function lakes() {
+    for (const L of LAKES) {
+      const [cx,cy]=proj(L.lon,L.lat);
+      const rx=L.rx/(LON_MAX-LON_MIN)*(W-2*PAD), ry=L.ry/(LAT_MAX-LAT_MIN)*(H-2*PAD);
+      const N=12, pts=[];
+      for (let i=0;i<N;i++) {
+        const a=i/N*Math.PI*2;
+        pts.push([cx+Math.cos(a)*rx*rr(.70,1.24), cy+Math.sin(a)*ry*rr(.62,1.30)]);
+      }
+      const d=resample([...pts,pts[0],pts[1],pts[2]],4);
+      const path=new Path2D(); path.moveTo(d[0][0],d[0][1]);
+      for (const p of d) path.lineTo(p[0],p[1]);
+      path.closePath();
+      flatWash(ctx,path,'#71867e',.075,2);
+      doubleOutline(ctx,d,{gap:1.1,col:'#54655c',alpha:.30,sk:rr(0,99)});
+      for (let i=0;i<9;i++) {
+        const y=cy+rr(-ry*.6,ry*.6), x=cx+rr(-rx*.6,rx*.15), l=rr(rx*.22,rx*.6);
+        hardRibbon(ctx,[[x,y],[x+l*.5,y+rr(-1,1)],[x+l,y]],
+          {w:.6,col:'#5c7276',alpha:rr(.10,.20),head:.08,tail:.3,sk:rr(0,99),seg:3});
+      }
+      vertical(L.name,cx+rx*.78,cy-ry*.55,10,'#5a5d4c',.66);
+      LAKE_GEO.push({cx,cy,rx,ry});
+    }
+  }
+
+  // ── 河：双勾水线 + 极淡平涂，不铺大面积青色 ───────────────────────────
+  function river(pts, width, name, major) {
+    const P=resample(pts.map(PXY),5), F=frames(P);
+    const A=P.map((p,i)=>[p[0]+F[i].nx*width,p[1]+F[i].ny*width]);
+    const B=P.map((p,i)=>[p[0]-F[i].nx*width,p[1]-F[i].ny*width]);
+    const path=new Path2D(); path.moveTo(A[0][0],A[0][1]);
+    for (const p of A) path.lineTo(p[0],p[1]);
+    for (let i=B.length-1;i>=0;i--) path.lineTo(B[i][0],B[i][1]);
+    path.closePath();
+    flatWash(ctx,path,'#6f8a86',major?.055:.035,2);
+    // 岸线切成断续短笔（笔断意连）：贯穿全画的连续双线会读成道路/边界。
+    const broken=(Q,o)=>{
+      const step=12, gap=2;
+      for (let i=0;i<Q.length-gap;i+=step+gap) {
+        const seg=Q.slice(i,Math.min(Q.length,i+step));
+        if (seg.length>2) ribbon(ctx,seg,o);
+      }
+    };
+    const bank={w:major?.78:.52,col:'#5c7d84',alpha:major?.30:.22,
+                head:.05,tail:.16,sk:rr(0,99),dry:.34,bristles:3};
+    broken(A,bank);
+    broken(B,{...bank,alpha:major?.25:.18,sk:rr(0,99)});
+    const count=major?28:9;
+    for (let k=0;k<count;k++) {
+      const i=Math.floor(rr(.04,.95)*(P.length-1)), f=F[i];
+      const off=rr(-width*.5,width*.5);
+      const x=P[i][0]+f.nx*off, y=P[i][1]+f.ny*off;
+      const l=rr(7,major?20:12);
+      ribbon(ctx,[[x-f.nx*l*.5,y-f.ny*l*.5],[x+f.nx*l*.5,y+f.ny*l*.5]],
+        {w:.5,col:'#5c7d84',alpha:rr(.12,.24),head:.1,tail:.3,sk:rr(0,99)});
+    }
+    if (name) {
+      const i=Math.floor(P.length*.60), f=F[i];
+      vertical(name,P[i][0]+f.nx*(width+10),P[i][1]+f.ny*(width+10)-10,
+        major?11:9,'#4c6062',major?.76:.62);
+    }
+    RIVER_GEO.push({P,F,width,major});
+  }
+
+  // ── 山：横向铺展、峰头尖折、方硬折带、山脚横向坡带 ────────────────────
+  // 山体内部只有地貌：分区平涂、双勾水线、折带/斧劈皴、苔点、顺坡林带。
+  // 不画亭塔寺舍 —— 那是有实地位置的地物或文人点景，不归背景层。
+  function ridge(rg) {
+    const raw=rg.pts.map(PXY);
+    let x0=Math.min(...raw.map(p=>p[0])), x1=Math.max(...raw.map(p=>p[0]));
+    const yc=raw.reduce((s,p)=>s+p[1],0)/raw.length;
+    if (x1-x0<170){ const m=(x0+x1)/2; x0=m-105; x1=m+105; }
+    x0=Math.max(56,x0-20); x1=Math.min(W-56,x1+20);
+    const foot=Math.min(H-72,yc+34+rg.h*16);
+    const amp=26+rg.h*34;
+
+    // 峰头：显式折点、分段线性 —— 峰顶是尖角不是圆弧
+    const peakT=[.10,.30,.52,.74,.92];
+    const peakH=[.42,.88,.62,1.0,.38];
+    const knots=[[0,.05]];
+    for (let k=0;k<peakT.length;k++) {
+      knots.push([peakT[k]-.055,.18+.10*h1(k+rg.h*7)]);
+      knots.push([peakT[k],peakH[k]*(.86+.14*h1(k*2.3+rg.h*11))]);
+      knots.push([peakT[k]+.055,.16+.12*h1(k+3.1)]);
+    }
+    knots.push([1,.05]); knots.sort((a,b)=>a[0]-b[0]);
+    const K=54, ctrl=[];
+    for (let k=0;k<=K;k++) {
+      const t=k/K;
+      let i=0; while (i<knots.length-2 && knots[i+1][0]<t) i++;
+      const a=knots[i], b=knots[i+1];
+      const f=Math.min(1,Math.max(0,(t-a[0])/((b[0]-a[0])||1)));
+      ctrl.push([x0+t*(x1-x0),foot-amp*Math.max(.045,a[1]+(b[1]-a[1])*f)]);
+    }
+    const T=resample(ctrl,3), F=frames(T);
+    const base=[];
+    for (let k=0;k<=K;k++) {
+      const t=k/K;
+      base.push([x0+t*(x1-x0),foot+rr(1,4)]);
+    }
+    const Bb=resample(base,5);
+
+    const body=new Path2D(); body.moveTo(T[0][0],T[0][1]);
+    for (const p of T) body.lineTo(p[0],p[1]);
+    for (let i=Bb.length-1;i>=0;i--) body.lineTo(Bb[i][0],Bb[i][1]);
+    body.closePath();
+    flatWash(ctx,body,'#8f9c84',.145,2);
+
+    for (let i=0;i<T.length-6;i+=6) {
+      const a=T[i], b=T[Math.min(T.length-1,i+6)];
+      const bx=[b[0],foot], ax=[a[0],foot];
+      const face=new Path2D(); face.moveTo(a[0],a[1]);
+      for (let k=i;k<=Math.min(T.length-1,i+6);k++) face.lineTo(T[k][0],T[k][1]);
+      face.lineTo(bx[0],bx[1]); face.lineTo(ax[0],ax[1]); face.closePath();
+      const lit=(i/6)%2===0;
+      flatWash(ctx,face,lit?'#b39a6c':'#6f8a80',lit?.17:.21,3);
+      const seg=T.slice(i,Math.min(T.length-1,i+6)+1);
+      doubleOutline(ctx,seg,{gap:1.0,col:'#4f5a4c',alpha:.40,sk:i});
+    }
+
+    const clusters=[[.04,.24,7],[.24,.46,9],[.46,.68,9],[.68,.94,7]];
+    for (const [a,b,n] of clusters) {
+      for (let k=0;k<n;k++) {
+        const t=a+(b-a)*(k+rr(.1,.9))/n, i=Math.floor(t*(T.length-1));
+        const sx=T[i][0]+rr(-2,2), sy=T[i][1]+rr(3,8);
+        const len=Math.min(amp*rr(.14,.30),foot-sy-4);
+        if (len<3) continue;
+        const bend=rr(8,15);
+        hardRibbon(ctx,[[sx,sy],[sx+bend,sy+rr(-1,1)],[sx+bend+len*.16,sy+len]],
+          {w:rr(.75,1.25),col:rnd()>.45?'#4b5542':'#6b5b43',
+           alpha:rr(.25,.40),head:.06,tail:.42,sk:rr(0,99),seg:3});
+        if (rnd()>.62) {
+          hardRibbon(ctx,[[sx-len*.3,sy+len*.45],[sx+rr(6,13),sy+len*.45+rr(1,3)]],
+            {w:rr(1.0,1.7),col:'#4c5645',alpha:rr(.20,.33),head:.08,tail:.4,sk:rr(0,99),seg:2});
+        }
+      }
+    }
+    hardRibbon(ctx,T,{w:1.25,col:'#5f6049',alpha:.64,head:.03,tail:.10,sk:rr(0,99),seg:11});
+    ribbon(ctx,T.map(p=>[p[0],p[1]-1.6]),
+      {w:.6,col:'#f7efd8',alpha:.55,head:.03,tail:.08,sk:rr(0,99)});
+
+    const footA=T.map(p=>[p[0],foot+rr(0,2)]);
+    const footB=T.map(p=>[p[0],foot+rr(11,16)+3*Math.sin(p[0]*.021)]);
+    const band=new Path2D(); band.moveTo(footA[0][0],footA[0][1]);
+    for (const p of footA) band.lineTo(p[0],p[1]);
+    for (let i=footB.length-1;i>=0;i--) band.lineTo(footB[i][0],footB[i][1]);
+    band.closePath();
+    flatWash(ctx,band,'#a9794f',.14,2);
+    for (let i=0;i<T.length-3;i+=5) {
+      const x=T[i][0], y=foot+rr(12,17);
+      hardRibbon(ctx,[[x,y],[x+rr(7,16),y+rr(-1,1)]],
+        {w:.7,col:'#7d6447',alpha:rr(.18,.30),head:.1,tail:.3,sk:rr(0,99),seg:2});
+    }
+    for (const t of [.16,.33,.50,.67,.84]) {
+      const i=Math.floor(t*(T.length-1));
+      for (let k=0;k<2;k++) {
+        ctx.fillStyle=rgba('#46543f',rr(.20,.38));
+        ctx.fillRect(T[i][0]+rr(-6,6),T[i][1]+rr(6,14),rr(1.2,2.3),rr(1,2));
+      }
+    }
+    let bi=0; for (let i=1;i<T.length;i++) if (T[i][1]<T[bi][1]) bi=i;
+    vertical(rg.name,T[bi][0]+11,T[bi][1]-4,11,'#4a4c3d',.76);
+    RIDGE_GEO.push({T,F,foot,amp,x0,x1});
+  }
+
+  // ── 地貌细节：只画地形自身，由真实骨架派生 ─────────────────────────────
+  // 这是「背景层」与「点景」的分界。上一版用 poisson 随机撒 + triangle/pagoda/
+  // hut/stamp 图章函数复制 N 遍，密度来自重复而非地理，于是山里冒出亭子。
+  // 这里改成：沿山脚、河岸、泽缘、平原做**带 carry 状态的一次性游走**，
+  // 上一段的方向与终点决定下一段，笔数/长度/浓淡由局部坡度、曲率、离山距离
+  // 连续给出 —— 密，但没有一个重复单元，也没有任何建筑符号。
+  function terrainDetail() {
+    // ① 山内：顺坡林带（簇高由该点山势定）+ 山脚碎石，沿每条脊一次性游走
+    for (const g of RIDGE_GEO) {
+      let carry = 0;
+      for (let i=3;i<g.T.length-3;i+=4) {
+        const p=g.T[i];
+        const slope=(g.T[i+2][1]-g.T[i-2][1])/Math.max(1,g.T[i+2][0]-g.T[i-2][0]);
+        const rise=(g.foot-p[1])/Math.max(1,g.amp);       // 该点离山脚多高
+        // 林带：只在坡中下部成组，笔数随高度连续变，不是固定 n 的图章
+        if (rise>.12 && rnd()<.88) {
+          const cnt=3+Math.floor(rise*9+rnd()*3);
+          for (let k=0;k<cnt;k++) {
+            const h=rr(4,11)*(.6+rise*.8);
+            const x=p[0]+carry+rr(-5,5);
+            carry+=rr(1.5,4.5);
+            ribbon(ctx,[[x,p[1]+rr(6,12)],[x+rr(-2,2),p[1]+rr(6,12)-h]],
+              {w:rr(.6,1.1),col:rnd()>.4?'#4e5c44':'#63704d',
+               alpha:rr(.24,.42),head:.10,tail:.42,sk:rr(0,99)});
+          }
+        }
+        // 折角岩块：坡度突变处两三条方硬折线，方向由转折本身定
+        if (Math.abs(slope)>.32 && rnd()<.7) {
+          const sgn=Math.sign(slope)||1, L=rr(6,13);
+          hardRibbon(ctx,[[p[0]-L*.4,p[1]+rr(10,18)],
+                          [p[0]+L*.2,p[1]+rr(8,15)],
+                          [p[0]+L*.2+sgn*rr(2,5),p[1]+rr(14,22)]],
+            {w:rr(.8,1.3),col:'#4d5644',alpha:rr(.24,.38),
+             head:.06,tail:.36,sk:rr(0,99),seg:3});
+        }
+        // 山脚碎石：坡陡处多、坡缓处少
+        const y=g.foot+rr(9,15);
+        const n=2+Math.floor(Math.abs(slope)*3.2+rnd()*1.3);
+        for (let k=0;k<n;k++) {
+          const x=p[0]+carry+rr(-4,4), L=rr(3,9)*(1+Math.abs(slope)*.5);
+          carry+=rr(2,6);
+          hardRibbon(ctx,[[x,y],[x+L*.6,y-rr(0,2)],[x+L,y+rr(0,2)]],
+            {w:rr(.6,1.1),col:rnd()>.5?'#5c6350':'#7a6849',alpha:rr(.20,.36),
+             head:.08,tail:.34,sk:rr(0,99),seg:2});
+        }
+      }
+    }
+
+    // ② 河岸汀渚：按弧长与曲率给沙嘴，形状随水势，不复制同一拱形
+    for (const g of RIVER_GEO) {
+      const step=g.major?9:16;
+      for (let i=3;i<g.P.length-3;i+=step) {
+        if (rnd()>.62) continue;
+        const f=g.F[i], p=g.P[i];
+        const cur=Math.abs((g.P[i+2][1]-g.P[i-2][1])/(g.P[i+2][0]-g.P[i-2][0]+.001));
+        const side=rnd()>.5?1:-1, L=rr(6,15)*(1+cur*.6);
+        const q=[p[0]+f.nx*g.width*side, p[1]+f.ny*g.width*side];
+        ribbon(ctx,[[q[0]-f.nx*L*.5,q[1]-f.ny*L*.5],
+                    [q[0],q[1]+rr(-2,1)],
+                    [q[0]+f.nx*L*.5,q[1]+f.ny*L*.5]],
+          {w:rr(.5,.9),col:'#8a8261',alpha:rr(.13,.24),head:.10,tail:.40,sk:rr(0,99)});
+      }
+    }
+
+    // 水汊：从支流按弧长派出极细分叉，末端渐隐。方向由该段河的切线决定，
+    // 位置挂在真实河段上，不是随机撒的符号。
+    for (const g of RIVER_GEO) {
+      if (g.major) continue;
+      for (const t of [.22,.58,.84]) {
+        if (rnd()>.6) continue;
+        const i=Math.floor(t*(g.P.length-1)), f=g.F[i], p=g.P[i];
+        const side=rnd()>.5?1:-1, L=rr(22,46), spread=rr(.3,.7);
+        const a=[p[0]+f.nx*g.width*side,p[1]+f.ny*g.width*side];
+        const b=[a[0]+f.tx*L*.55+f.nx*L*spread*side, a[1]+f.ty*L*.55+f.ny*L*spread*side];
+        const c=[b[0]+f.tx*L*.45+f.nx*L*spread*.4*side, b[1]+f.ty*L*.45+f.ny*L*spread*.4*side];
+        ribbon(ctx,[a,b,c],{w:.55,col:'#6a8a8a',alpha:rr(.12,.20),
+                            head:.06,tail:.55,sk:rr(0,99)});
+      }
+    }
+
+    // ③ 泽缘芦苇：按极角向水面倒伏，每组笔数不同
+    for (const g of LAKE_GEO) {
+      const n=10+Math.floor(g.rx/9);
+      for (let k=0;k<n;k++) {
+        const a=k/n*Math.PI*2+rr(-.08,.08);
+        const x=g.cx+Math.cos(a)*g.rx*rr(.86,1.06);
+        const y=g.cy+Math.sin(a)*g.ry*rr(.84,1.05);
+        const cnt=2+Math.floor(rnd()*3);
+        for (let j=0;j<cnt;j++)
+          ribbon(ctx,[[x+rr(-3,3),y],
+                      [x+rr(-4,4)+Math.cos(a+1.2)*rr(2,6),y-rr(3,8)]],
+            {w:.55,col:'#5f7059',alpha:rr(.15,.27),head:.10,tail:.42,sk:rr(0,99)});
+      }
+    }
+
+    // ④ 平原土脉：中部不是空灵远山，是低对比的断续横笔。
+    //    西密东疏、每条带独立游走，carry 让相邻笔首尾相承，不是平铺单元。
+    for (let band=0;band<13;band++) {
+      const y=326+band*33+rr(-6,6);
+      const tilt=rr(-.10,.10)+band*.004;        // 每条带自己的走向
+      let x=rr(120,190), carry=0;
+      while (x<W-70) {
+        const dWest=Math.max(0,1-(x-60)/760);
+        if (rnd()<.38+dWest*.38) {
+          const L=rr(5,16)*(.7+dWest*.8);
+          const yy=y+carry+(x-120)*tilt*.02;
+          ribbon(ctx,[[x,yy],[x+L*.5,yy+rr(-1,1)],[x+L,yy+rr(-1,1)]],
+            {w:rr(.45,.8),col:rnd()>.6?'#7d8064':'#8d8262',alpha:rr(.14,.26),
+             head:.10,tail:.34,sk:rr(0,99)});
+        }
+        carry=Math.max(-4,Math.min(4,carry+rr(-1.5,1.5)));
+        x+=rr(8,17)*(1.2-dWest*.3);
+      }
+    }
+  }
+
+  // ── 以下为「地物层」：有实地位置，由上层数据叠压，不属于背景 ───────────
+  // 关掉「地物层」按钮即只看纯地形，用来确认背景是什么。
+
+  function archBridge(x,y,w) {
+    ctx.save();
+    ctx.strokeStyle='rgba(88,78,56,.72)'; ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(x-w/2,y+3); ctx.quadraticCurveTo(x,y-6,x+w/2,y+3);
+    ctx.moveTo(x-w/2,y+6); ctx.quadraticCurveTo(x,y-3,x+w/2,y+6);
+    ctx.stroke();
+    ctx.strokeStyle='rgba(247,239,216,.6)'; ctx.lineWidth=.5;
+    ctx.beginPath(); ctx.moveTo(x-w/2+1,y+4.4); ctx.quadraticCurveTo(x,y-4.6,x+w/2-1,y+4.4); ctx.stroke();
+    ctx.restore();
+  }
+  // 每舟的船身与帆角由所在河段流速/位置给出，不是同一图章复制
+  function boat(x,y,sail) {
+    const l=6+sail*4;
+    ctx.save();
+    ctx.strokeStyle='rgba(70,86,82,.7)'; ctx.lineWidth=.9;
+    ctx.beginPath(); ctx.moveTo(x-l,y); ctx.lineTo(x,y+4); ctx.lineTo(x+l,y);
+    ctx.moveTo(x,y+4); ctx.lineTo(x+.6,y-7-sail*2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x+.6,y-7-sail*2);
+    ctx.lineTo(x+5+sail*2,y-4-sail); ctx.lineTo(x+.6,y-2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function city(c) {
+    const [name,lon,lat,rank]=c;
+    const [x,y]=proj(lon,lat);
+    const s=rank===1?30:rank===2?24:rank===3?20:17, h=s*.64;
+    const L=x-s,R=x+s,T=y-h,B=y+h;
+    ctx.save();
+    ctx.strokeStyle='rgba(68,66,52,.86)'; ctx.lineWidth=1.5;
+    ctx.strokeRect(L,T,s*2,h*2);
+    ctx.strokeStyle='rgba(68,66,52,.42)'; ctx.lineWidth=.8;
+    ctx.strokeRect(L+2.5,T+2.5,s*2-5,h*2-5);
+    ctx.strokeStyle='rgba(247,239,216,.72)'; ctx.lineWidth=.7;
+    ctx.strokeRect(L+1.4,T+1.4,s*2-2.8,h*2-2.8);
+    if (rank<=2) {
+      const u=s*.42;
+      ctx.strokeStyle='rgba(68,66,52,.66)'; ctx.lineWidth=1;
+      ctx.strokeRect(x-u,T+4,u*2,h*.86);
+      ctx.strokeStyle='rgba(247,239,216,.6)'; ctx.lineWidth=.6;
+      ctx.strokeRect(x-u+1.2,T+5.2,u*2-2.4,h*.86-2.4);
+    }
+    ctx.strokeStyle='rgba(68,66,52,.5)'; ctx.lineWidth=.7;
+    for (const [ox,oy] of [[-s*.55,h*.1],[s*.3,-h*.25],[s*.42,h*.28]]) {
+      const w=rr(4,7), ht=rr(3.5,5.5);
+      ctx.strokeRect(x+ox,T+h+oy,w,ht);
+      ctx.beginPath(); ctx.moveTo(x+ox-1,T+h+oy); ctx.lineTo(x+ox+w/2,T+h+oy-3);
+      ctx.lineTo(x+ox+w+1,T+h+oy); ctx.stroke();
+    }
+    ctx.fillStyle='rgba(68,66,52,.72)';
+    for (const [a,b] of [[L+4,L+s*.6],[L+s*.8,L+s*1.3],[R-s*.5,R-4]]) {
+      let px=a;
+      while (px<b-3){ const w=rr(2.8,4.8); ctx.fillRect(px,T-rr(3,4.6),w,rr(3,4.6)); px+=w+rr(2,4.6); }
+    }
+    const gw=s*.48;
+    ctx.fillStyle='rgba(234,226,205,.96)'; ctx.fillRect(x-gw/2,B-1,gw,3.5);
+    ctx.strokeStyle='rgba(68,66,52,.86)'; ctx.lineWidth=1.3;
+    ctx.beginPath();
+    ctx.moveTo(x-gw/2,B+2); ctx.lineTo(x-gw/2,T+h*.55);
+    ctx.moveTo(x+gw/2,B+2); ctx.lineTo(x+gw/2,T+h*.55); ctx.stroke();
+    for (const [ly,ww] of [[T+h*.55,gw*.95],[T+h*.30,gw*.78]]) {
+      ctx.beginPath();
+      ctx.moveTo(x-ww,ly); ctx.lineTo(x-ww*.66,ly-5);
+      ctx.lineTo(x+ww*.66,ly-5); ctx.lineTo(x+ww,ly);
+      ctx.moveTo(x-ww*.78,ly-5); ctx.lineTo(x,ly-9); ctx.lineTo(x+ww*.78,ly-5);
+      ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(68,66,52,.62)'; ctx.lineWidth=1;
+    for (const [cx,cy] of [[L,T],[R,T],[L,B],[R,B]]) {
+      ctx.strokeRect(cx-3,cy-3,6,6);
+      ctx.beginPath(); ctx.moveTo(cx-4.5,cy-3); ctx.lineTo(cx,cy-6); ctx.lineTo(cx+4.5,cy-3); ctx.stroke();
+    }
+    ctx.strokeStyle='rgba(120,72,48,.7)'; ctx.lineWidth=.9;
+    ctx.beginPath(); ctx.moveTo(R-6,T-4); ctx.lineTo(R-6,T-16); ctx.stroke();
+    ctx.fillStyle='rgba(156,51,43,.62)';
+    ctx.beginPath(); ctx.moveTo(R-6,T-16); ctx.lineTo(R+2,T-13); ctx.lineTo(R-6,T-10); ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    const fs=rank===1?15:rank===2?13:rank===3?11:10;
+    vertical(name,R+10,T-2,fs,'#33352c',.92);
+    const by=T+name.length*(fs*1.12)+3, bs=rank===1?10:8;
+    ctx.fillStyle=rgba('#9c332b',.86); ctx.fillRect(R+6,by,bs,bs);
+    ctx.fillStyle=rgba('#f2e6d1',.95);
+    ctx.font=`${rank===1?8:7}px serif`; ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.fillText(rank===1?'都':rank===2?'郡':rank===3?'县':'垒',R+6+bs/2,by+1);
+    vertical(rank===1?'州治':rank===2?'郡治':rank===3?'县邑':'营垒',
+      R+10+fs*1.2,T+4,8,'#6a6753',.62);
+  }
+
+  function passesFords() {
+    for (const [name,lon,lat,kind] of PASSES) {
+      const [x,y]=proj(lon,lat);
+      if (kind==='pass') {
+        ctx.strokeStyle='rgba(110,68,46,.86)'; ctx.lineWidth=1.2;
+        ctx.beginPath(); ctx.moveTo(x,y+6); ctx.lineTo(x,y-10); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x,y-10); ctx.lineTo(x+12,y-6); ctx.lineTo(x,y-2); ctx.closePath();
+        ctx.fillStyle='rgba(156,51,43,.62)'; ctx.fill();
+        ctx.strokeStyle='rgba(110,68,46,.72)'; ctx.stroke();
+        ctx.strokeStyle='rgba(247,239,216,.7)'; ctx.lineWidth=.6;
+        ctx.beginPath(); ctx.moveTo(x+2,y-8); ctx.lineTo(x+9,y-6); ctx.stroke();
+      } else {
+        ctx.strokeStyle='rgba(70,94,94,.82)'; ctx.lineWidth=1.1;
+        ctx.beginPath(); ctx.moveTo(x-8,y+2);
+        ctx.quadraticCurveTo(x,y+8,x+8,y+2);
+        ctx.quadraticCurveTo(x,y+5,x-8,y+2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x,y+2); ctx.lineTo(x,y-8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x,y-8); ctx.lineTo(x+5,y-5); ctx.lineTo(x,y-3); ctx.stroke();
+      }
+      vertical(name,x+11,y-11,9,kind==='pass'?'#7a4a34':'#4c6062',.80);
+    }
+  }
+
+  // ── 聚落与田畴：地物层的「密」，由真实锚点派生 ────────────────────────
+  // 上一版用 poisson 全图随机撒 64 组一模一样的三角符，密是密了，但密来自
+  // 复制，于是山里会长出亭子。这里每一处都挂在某座城或某处关津上：
+  // 间数、朝向、大小、注字由该城等级与最近河段的切线角连续决定，
+  // 并显式避开山体包围盒 —— 背景层里不放任何居民点与点景建筑。
+  function nearestRiver(x,y) {
+    let best=null, bd=1e9;
+    for (const g of RIVER_GEO) for (let i=0;i<g.P.length;i+=6) {
+      const d=Math.hypot(g.P[i][0]-x,g.P[i][1]-y);
+      if (d<bd) { bd=d; best={a:Math.atan2(g.F[i].ty,g.F[i].tx),d}; }
+    }
+    return best||{a:0,d:1e9};
+  }
+  const inRidge=(x,y)=>RIDGE_GEO.some(g=>
+    x>g.x0-6&&x<g.x1+6&&y>g.foot-g.amp-14&&y<g.foot+24);
+
+  function hamlet(x,y,ang,n,sc) {
+    const ca=Math.cos(ang), sa=Math.sin(ang);
+    ctx.save();
+    ctx.strokeStyle='rgba(68,66,52,.66)'; ctx.lineWidth=.8;
+    for (let k=0;k<n;k++) {
+      const ox=(k-(n-1)/2)*7*sc, oy=rr(-2,2)*sc;
+      const X=x+ox*ca-oy*sa, Y=y+ox*sa+oy*ca;
+      const w=rr(4,6.5)*sc, h=rr(3,4.6)*sc;
+      ctx.strokeRect(X-w/2,Y-h,w,h);
+      ctx.beginPath();
+      ctx.moveTo(X-w/2-1,Y-h); ctx.lineTo(X,Y-h-2.6*sc); ctx.lineTo(X+w/2+1,Y-h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  function croft(x,y,ang,n) {
+    ctx.save();
+    ctx.strokeStyle='rgba(96,104,78,.44)'; ctx.lineWidth=.6;
+    const ca=Math.cos(ang), sa=Math.sin(ang);
+    for (let k=0;k<n;k++) {
+      const oy=(k-(n-1)/2)*2.6, L=rr(10,20);
+      ctx.beginPath();
+      ctx.moveTo(x-L/2*ca-oy*sa,y-L/2*sa+oy*ca);
+      ctx.lineTo(x+L/2*ca-oy*sa,y+L/2*sa+oy*ca);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function settlements() {
+    const names=['坞','聚','邮','市','屯','里','邑','堡','驿','仓'];
+    CITIES.forEach((c,ci)=>{
+      const [,, ,rank]=c;
+      const [cx,cy]=proj(c[1],c[2]);
+      const n=rank===1?5:rank===2?3:rank===3?2:1;
+      for (let k=0;k<n;k++) {
+        const a=(k/n)*Math.PI*2+h1(ci*7+k)*1.4;
+        const R=(rank===1?62:rank===2?50:rank===3?42:34)+rr(-8,12);
+        const x=cx+Math.cos(a)*R, y=cy+Math.sin(a)*R*.78;
+        if (x<60||x>W-60||y<60||y>H-60||inRidge(x,y)) continue;
+        const rv=nearestRiver(x,y);          // 屋舍朝向随最近水系的岸线
+        const ang=rv.a+rr(-.35,.35);
+        hamlet(x,y,ang,2+Math.floor(h1(ci*13+k*3)*3),rr(.85,1.25));
+        croft(x+Math.cos(ang)*16,y+Math.sin(ang)*16,ang+Math.PI/2,
+              3+Math.floor(h1(ci*5+k)*4));
+        vertical(names[(ci*3+k)%names.length],x+11,y-9,8,'#6a6753',rr(.55,.72));
+      }
+    });
+    // 关隘外侧烽燧：位置挂在关口上，不随机撒
+    PASSES.filter(p=>p[3]==='pass').forEach((p,pi)=>{
+      const [x0,y0]=proj(p[1],p[2]);
+      for (let k=0;k<2;k++) {
+        const x=x0+rr(16,34)*(k?1:-1), y=y0+rr(-20,18);
+        if (inRidge(x,y)) continue;
+        hardRibbon(ctx,[[x,y],[x,y-rr(8,12)]],
+          {w:.8,col:'#7a5238',alpha:.50,head:.10,tail:.30,sk:pi,seg:2});
+        ribbon(ctx,[[x-4,y-rr(8,12)],[x,y-rr(12,17)],[x+4,y-rr(8,12)]],
+          {w:.7,col:'#9c332b',alpha:.36,head:.10,tail:.35,sk:pi});
+      }
+    });
+  }
+
+  function bridgesBoats() {
+    const onRiver=(pts,ts) => { const P=resample(pts.map(PXY),5); return ts.map(t=>P[Math.floor(t*(P.length-1))]); };
+    for (const p of onRiver(HUANGHE,[.16,.34,.52,.70,.86])) archBridge(p[0]+rr(-6,6),p[1]+rr(-4,4),rr(15,24));
+    for (const r of RIVERS_MINOR) for (const p of onRiver(r.pts,[.30,.68])) archBridge(p[0],p[1]+2,rr(12,18));
+    onRiver(HUANGHE,[.10,.24,.40,.58,.74,.92]).forEach((p,i)=>
+      boat(p[0]+rr(-8,8),p[1]+rr(-6,6),h1(i+3)));
+    onRiver(RIVERS_MINOR[0].pts,[.2,.55,.85]).forEach((p,i)=>
+      boat(p[0]+rr(-6,6),p[1]+rr(-5,5),h1(i+11)));
+    const b=PXY([114.00,34.55]); archBridge(b[0],b[1],20);
+  }
+
+  // ── 绘制顺序 ──────────────────────────────────────────────────────────
+  // 背景层：纸 → 廓 → 远山 → 泽 → 河 → 山 → 地貌细节
+  // 地物层（可关）：桥舟 → 城 → 关津      上层（可开）：界格
+  function draw() {
+    const rect=cv.getBoundingClientRect();
+    const dpr=Math.min(2,window.devicePixelRatio||1);
+    cv.width=Math.round(rect.width*dpr); cv.height=Math.round(rect.height*dpr);
+    ctx.setTransform(cv.width/W,0,0,cv.height/H,0,0);
+    ctx.clearRect(0,0,W,H);
+    RIDGE_GEO.length=0; RIVER_GEO.length=0; LAKE_GEO.length=0;
+
+    paper(); border(); farHills();
+    lakes();
+    river(HUANGHE,8.6,'河水',true);
+    for (const r of RIVERS_MINOR) river(r.pts,r.w,r.name,false);
+    for (const rg of RIDGES) ridge(rg);
+    terrainDetail();
+
+    if (showFeatures) {
+      bridgesBoats();
+      settlements();
+      for (const c of CITIES) city(c);
+      passesFords();
+    }
+    gridOverlay();
+  }
+
+  document.getElementById('again').addEventListener('click',()=>{ seed=(seed+7919)>>>0; draw(); });
+  const gb=document.getElementById('gridBtn');
+  gb.addEventListener('click',()=>{ showGrid=!showGrid; gb.setAttribute('aria-pressed',String(showGrid)); draw(); });
+  const fb=document.getElementById('featBtn');
+  fb.addEventListener('click',()=>{ showFeatures=!showFeatures; fb.setAttribute('aria-pressed',String(showFeatures)); draw(); });
+  window.addEventListener('resize',draw);
+  if (document.fonts?.ready) document.fonts.ready.then(draw); else draw();
+})();
+</script>
+</body>
+</html>
