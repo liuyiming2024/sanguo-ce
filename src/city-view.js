@@ -5,18 +5,20 @@
 //   · 圆框选 + 二次拖拽定方向（全部远程单位齐射 / 近战突击）+ 单击单兵接管。
 // 全部在主画布按屏幕像素绘制，不经过离屏缩放，所以不会糊。
 //
-// v0.7.4 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
+// v0.8.0 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
 // 320×260，否则位图被浏览器拉伸 → 手指点与画面系统性错位）；竖屏收窄大营、
 // 单位图标与命中半径随 cell 自适应；hitUnit 取「最近单位」而不是倒序第一个，
 // 否则窄屏相邻单位重叠时点 A 会选中 B。逻辑网格仍是 24×16，存档/部署不变。
 //
-// v0.7.4：床弩/抛石机改为「器械为主体」，不再画人举着小弩。器械类行军只转轮
+// v0.8.0：床弩/抛石机改为「器械为主体」，不再画人举着小弩。器械类行军只转轮
 // + 颠簸，不摆腿（soldier.js 内部按 unitKind 分派）；这里只管「从哪走到哪」。
-// v0.7.4：士兵精细重绘 + 行军动画。立绘移到 soldier.js（汉末札甲/兜鍪/顿项/
+// v0.8.0：士兵精细重绘 + 行军动画。立绘移到 soldier.js（汉末札甲/兜鍪/顿项/
 // 护心镜 + 按兵种兵器），motion 全是渲染层私有状态，
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
-import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.7.4';
+import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.8.0';
+import { createPortraits } from './portrait.js?v=0.8.0';
+import { headingFromDelta, normAngle } from './direction.js?v=0.8.0';
 
 const INK = '#0b100e';
 const TEXT = '#e2ddc7', DIM = '#9aa896', GOLD = '#e8c882';
@@ -45,9 +47,13 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   let circle = null, dragUnit = null, pointer = null;
   let selection = new Set(), champion = null;
   // ── 行军动画（渲染层私有，绝不进 state） ──────────────────────────────
-  const motion = new Map();    // id -> {fx,fy,tx,ty,startSec,dur,dir,seed}
+  const motion = new Map();    // id -> {fx,fy,tx,ty,startSec,dur,dir,seed,heading}
   const lastKey = new Map();   // id -> "zone:col:row"，用来检测逻辑位置变化
   const lastXY = new Map();    // id -> 上一帧的逻辑画布位置
+  const lastHeading = new Map(); // id -> 最近一次朝向（静止时保留，不回弹到正面）
+  // 写实淡彩八向位图皮肤：素材未就绪 / 加载失败时自动回退程序化俯视路径。
+  // 这是可选渲染层，不进 state、不进存档、不进命令日志、不进状态指纹。
+  const portraits = createPortraits();
   let dragPos = null, releasePos = null, releaseId = null;
   let callbacks = { onDeploy: () => {}, onSelect: () => {}, onDirection: () => {}, onChampion: () => {} };
 
@@ -113,25 +119,36 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
         if (!from) from = lastXY.get(u.id) ?? { x: to.x, y: to.y };
         const dist = Math.hypot(to.x - from.x, to.y - from.y);
         if (dist < 1.2) motion.delete(u.id);
-        else motion.set(u.id, {
-          fx: from.x, fy: from.y, tx: to.x, ty: to.y,
-          startSec: sec, dur: Math.min(0.95, Math.max(0.30, 0.26 + dist / 240)),
-          dir: to.x >= from.x ? 1 : -1, seed: idSeed(u.id),
-        });
+        else {
+          const heading = headingFromDelta(to.x - from.x, to.y - from.y,
+            lastHeading.get(u.id) ?? 0);
+          motion.set(u.id, {
+            fx: from.x, fy: from.y, tx: to.x, ty: to.y,
+            startSec: sec, dur: Math.min(0.95, Math.max(0.30, 0.26 + dist / 240)),
+            dir: to.x >= from.x ? 1 : -1, seed: idSeed(u.id), heading,
+          });
+          lastHeading.set(u.id, heading);
+        }
       }
       lastXY.set(u.id, { x: to.x, y: to.y });
     }
     for (const id of [...lastKey.keys()]) {
-      if (!seen.has(id)) { lastKey.delete(id); lastXY.delete(id); motion.delete(id); }
+      if (!seen.has(id)) { lastKey.delete(id); lastXY.delete(id); motion.delete(id); lastHeading.delete(id); }
     }
     releaseId = null; releasePos = null;
   }
 
   /** 返回该单位这一帧该画在哪、是否在走路、步频相位与朝向。 */
   function renderPos(u, sec) {
-    const still = (x, y) => ({ x, y, walking: false, dir: 1, phase: 0, amp: 0 });
+    // 静止时按 id 派生一个覆盖八向的静态偏角：军阵不是复制粘贴的正对图标，
+    // 也能一眼看出素材确实有多张、不是镜像翻转。
+    const idleHeading = () => normAngle(lastHeading.get(u.id) ??
+      Math.round((idSeed(u.id) / 6.2831853) * 8) % 8 * Math.PI / 4);
+    const still = (x, y) => ({ x, y, walking: false, dir: 1, phase: 0, amp: 0,
+      heading: idleHeading() });
     if (dragUnit?.id === u.id && dragPos) {
-      return { x: dragPos.x, y: dragPos.y, walking: false, dir: 1, phase: 0, amp: 0, carried: true };
+      return { x: dragPos.x, y: dragPos.y, walking: false, dir: 1, phase: 0, amp: 0,
+        heading: idleHeading(), carried: true };
     }
     const m = motion.get(u.id);
     if (!m) { const p = unitXY(u); return still(p.x, p.y); }
@@ -140,7 +157,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     if (a.t >= 1) { motion.delete(u.id); return still(m.tx, m.ty); }
     const amp = Math.min(1, Math.sin(Math.PI * a.t) * 1.15);
     return { x: a.x, y: a.y, walking: true, dir: m.dir,
-      phase: (sec - m.startSec) * 11 + m.seed, amp };
+      phase: (sec - m.startSec) * 11 + m.seed, amp,
+      heading: normAngle(m.heading ?? 0) };
   }
 
   const unitXY = (u) => {
@@ -351,11 +369,18 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   function drawUnit(u, L, sec) {
     const s = Math.max(6, Math.min(CV.unitPx, L.cell * 0.82));
     const rp = renderPos(u, sec);
-    drawSoldier(ctx, u, {
+    const common = {
       x: rp.x, y: rp.y, s, sec,
       walk: rp.walking, dir: rp.dir, phase: rp.phase, amp: rp.amp,
-      seed: idSeed(u.id), col: factionColor(u.faction), def: cfg.units[u.type],
-      selected: selection.has(u.id), champion: u.id === champion, lightGround,
+      heading: rp.heading, hp: (u.hp ?? 1) / (u.maxHp || 1),
+      selected: selection.has(u.id), champion: u.id === champion,
+    };
+    // 人形用八向写实位图（方向变了就换帧，不再镜像翻转）；
+    // 器械仍是程序化俯视木架，素材没到位时整队回退程序化路径。
+    if (unitKind(u.type) !== 'engine' && portraits.ready && portraits.draw(ctx, common)) return;
+    drawSoldier(ctx, u, {
+      ...common, seed: idSeed(u.id), col: factionColor(u.faction),
+      def: cfg.units[u.type], lightGround,
     });
   }
 
@@ -495,6 +520,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     get motionCount() { return motion.size; },
     unitKind,
     motionOf: (id) => motion.get(id) ?? null,
+    get portraits() { return portraits; },
+    frameFor: (heading) => portraits.frameFor(heading),
+    headingOf: (id) => lastHeading.get(id) ?? 0,
     renderPos, hitUnit,
     setCallbacks(cb) { callbacks = { ...callbacks, ...cb }; },
     unitXY, screenToTarget, forces,

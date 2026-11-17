@@ -1,0 +1,62 @@
+{
+  "version": "0.8.0",
+  "unit": "trooper",
+  "style": "写实淡彩 · 墨线勾勒 · 花青赭石 · 平光散光",
+  "canvas": [
+    560,
+    820
+  ],
+  "footY": 780,
+  "anchor": "脚底中心",
+  "note": "8 向统一画布尺寸与脚底基线；背景已抠透明，地面投影由游戏层绘制；按角度索引切帧，无随机、无墙钟、无运行时位图生成。",
+  "frames": [
+    {
+      "index": 0,
+      "name": "d0_front",
+      "angle": 0,
+      "file": "trooper-d0_front.png"
+    },
+    {
+      "index": 1,
+      "name": "d1_front_right",
+      "angle": 45,
+      "file": "trooper-d1_front_right.png"
+    },
+    {
+      "index": 2,
+      "name": "d2_right",
+      "angle": 90,
+      "file": "trooper-d2_right.png"
+    },
+    {
+      "index": 3,
+      "name": "d3_back_right",
+      "angle": 135,
+      "file": "trooper-d3_back_right.png"
+    },
+    {
+      "index": 4,
+      "name": "d4_back",
+      "angle": 180,
+      "file": "trooper-d4_back.png"
+    },
+    {
+      "index": 5,
+      "name": "d5_back_left",
+      "angle": 225,
+      "file": "trooper-d5_back_left.png"
+    },
+    {
+      "index": 6,
+      "name": "d6_left",
+      "angle": 270,
+      "file": "trooper-d6_left.png"
+    },
+    {
+      "index": 7,
+      "name": "d7_front_left",
+      "angle": 315,
+      "file": "trooper-d7_front_left.png"
+    }
+  ]
+}

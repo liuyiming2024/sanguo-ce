@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.7.4：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.8.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.7.4 与栅格规模',
+  check('主菜单标注 v0.8.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.7.4'));
+    (await page.locator('#menuSub').innerText()).includes('0.8.0'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -472,6 +472,29 @@ try {
   const sideText = await page.locator('#battleSide').innerText();
   check('标注己方城内 / 敌方城外扎营', ['城内', '大营', '扎营'].some((k) => sideText.includes(k)), sideText);
 
+  // ── v0.8.0：写实淡彩八向素材，按朝向换帧 ────────────────────────────
+  check('八向位图资源全部加载成功（不是静默回退）', await page.evaluate(async () => {
+    const cv = window.__sanguo.cityView;
+    for (let i = 0; i < 40 && !cv.portraits.ready; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    return cv.portraits.ready && cv.portraits.loaded === 8;
+  }));
+  check('八个中心角各取不同帧，360° 回到正面帧', await page.evaluate(() => {
+    const cv = window.__sanguo.cityView;
+    const names = [0, 45, 90, 135, 180, 225, 270, 315].map((d) =>
+      cv.frameFor(d * Math.PI / 180));
+    return new Set(names).size === 8 && cv.frameFor(0) === cv.frameFor(Math.PI * 2) &&
+      names[0] === 'd0_front' && names[4] === 'd4_back';
+  }));
+  check('朝向逐帧传给渲染层，静止时用 id 派生偏角而非全队正对', await page.evaluate(() => {
+    const cv = window.__sanguo.cityView;
+    const u = [...cv.forces().inside, ...cv.forces().camp][0];
+    if (!u) return false;
+    const rp = cv.renderPos(u, 1.2);
+    return Number.isFinite(rp.heading) && cv.frameFor(rp.heading).startsWith('d');
+  }));
+
   const L0 = await page.evaluate(() => JSON.stringify(window.__sanguo.cityView.layout));
   const box = await page.locator('#cityCanvas').boundingBox();
   await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.5);
@@ -548,7 +571,7 @@ try {
   await page.click('#closeHelp');
   check('玩法面板可退出', !(await page.isVisible('#helpPanel')));
 
-  // ── v0.7.4：士兵精细立绘 + 行军动画 ─────────────────────────────────
+  // ── v0.8.0：士兵精细立绘 + 行军动画 ─────────────────────────────────
   const sp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const sErrs = [];
   sp.on('pageerror', (e) => sErrs.push(String(e)));
@@ -620,9 +643,9 @@ try {
     Math.abs(follow.y - (drag.ly + 30)) < 2, JSON.stringify(follow));
   check('士兵动画无 JS 运行时报错', sErrs.length === 0, sErrs.slice(0, 2).join(' | '));
 
-  // ── v0.7.4：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
+  // ── v0.8.0：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
   const art = await sp.evaluate(async () => {
-    const mod = await import('./src/soldier.js?v=0.7.4');
+    const mod = await import('./src/soldier.js?v=0.8.0');
     const cfg = window.__sanguo.cfg;
     const mk = (type, opts = {}) => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 160;
@@ -714,7 +737,7 @@ try {
     art.rollDiff > 10, `diff=${art.rollDiff}`);
   await sp.close();
 
-  // ── v0.7.4：移动端竖屏点击适配（独立真触屏 context） ────────────────
+  // ── v0.8.0：移动端竖屏点击适配（独立真触屏 context） ────────────────
   const mctx = await browser.newContext({
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3,
     isMobile: true, hasTouch: true,

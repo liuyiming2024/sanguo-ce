@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.7.4', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.8.0', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.7.4'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.7.4"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.8.0'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.8.0"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -90,6 +90,8 @@ for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/path
   'src/calendar.js', 'src/story.js', 'src/sync.js',
   'config/campaign.json', 'config/ui-data.json', 'config/story.json',
   'config/tutorial.json', 'src/tutorial.js', 'src/tutorial-ui.js',
+  'src/direction.js', 'src/portrait.js', 'tests/direction.test.mjs',
+  'assets/units/trooper.json', 'assets/units/trooper-sheet.png',
   'tests/tutorial.test.mjs', 'styles/main.css',
   'tests/commands.test.mjs', 'tests/persist.test.mjs',
   'tests/calendar.test.mjs', 'tests/story.test.mjs', 'tests/sync.test.mjs',
@@ -283,7 +285,7 @@ ok(!/strokeRidge|BRUSH_|setBrush|brushOn/.test(mr7 + main7),
 ok(!/绢帛|宣纸|毛笔|界画那头是/.test(gb), '工笔层不该再拿材质给平铺找说法');
 
 
-// ── v0.7.4：移动端竖屏点击适配 ─────────────────────────────────────────
+// ── v0.8.0：移动端竖屏点击适配 ─────────────────────────────────────────
 const cv7 = readFileSync(join(root, 'src/city-view.js'), 'utf8');
 const main71 = readFileSync(join(root, 'src/main.js'), 'utf8');
 const mr71 = readFileSync(join(root, 'src/map-render.js'), 'utf8');
@@ -312,7 +314,7 @@ ok(/canvas\.width !== Math\.round\(W \* dpr\)/.test(cv7) &&
 ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/命中探针');
 
 
-// ── v0.7.4 / v0.7.4：立绘 + 行军动画 + 器械为主体 ─────────────────────
+// ── v0.8.0 / v0.8.0：立绘 + 行军动画 + 器械为主体 ─────────────────────
 const sol = readFileSync(join(root, 'src/soldier.js'), 'utf8');
 const cv8 = cv7;
 ok(/export function drawSoldier\(ctx, u, o\)/.test(sol) &&
@@ -334,7 +336,7 @@ ok(!/\bmotion\b[\s\S]{0,400}\bstate\./.test(cv8) && !/campaign\.forces\[[^\]]+\]
 ok(/lightGround/.test(cv8) && /PAL_ON_PAPER|PAL_ON_INK/.test(sol),
   '底色深浅变化时必须自动切换甲色，否则浅绢底上甲片会融掉');
 
-// v0.7.4：器械为主体、遮面去呆萌；v0.7.4：整套改斜俯视
+// v0.8.0：器械为主体、遮面去呆萌；v0.8.0：整套改斜俯视
 ok(/export function unitKind/.test(sol) && /unitKind,/.test(cv8), '缺器械/人形分派接口');
 ok(/type === 'chuangnu'\) drawBedCrossbow/.test(sol) && /drawTrebuchet/.test(sol),
   '床弩 / 抛石机没有画成军械主体');
@@ -389,4 +391,40 @@ if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);
 }
+// ── v0.8.0：写实淡彩八向素材 + 按朝向换帧 ─────────────────────────────
+const dirMod = readFileSync(join(root, 'src/direction.js'), 'utf8');
+const portMod = readFileSync(join(root, 'src/portrait.js'), 'utf8');
+const cv8b = readFileSync(join(root, 'src/city-view.js'), 'utf8');
+const mani = JSON.parse(readFileSync(join(root, 'assets/units/trooper.json'), 'utf8'));
+ok(mani.frames.length === 8 && mani.frames.every((f, i) => f.angle === i * 45),
+  '八向 manifest 角度必须 0..315 每 45°');
+ok(mani.frames.every((f) => existsSync(join(root, 'assets/units', f.file))),
+  '八向 manifest 里有找不到的素材文件');
+ok(existsSync(join(root, 'assets/units/trooper-sheet.png')) &&
+   existsSync(join(root, 'assets/units/trooper.json')), '缺 sprite sheet 或 manifest');
+ok(mani.frames.every((f) => {
+  const b = readFileSync(join(root, 'assets/units', f.file));
+  return b.subarray(1, 4).toString() === 'PNG' && b[25] === 6 &&
+    b.readUInt32BE(16) === mani.canvas[0] && b.readUInt32BE(20) === mani.canvas[1];
+}), '八张素材必须是同尺寸 RGBA PNG（统一脚底基线）');
+ok(/export function dirIndex/.test(dirMod) && /export const DIR8/.test(dirMod) &&
+   /Math\.floor\(a \/ SECTOR \+ 0\.5\) % 8/.test(dirMod),
+  '八向索引必须是确定性最近邻量化，不能靠 scale(-1,1) 镜像');
+ok(/headingFromDelta/.test(dirMod) && /normAngle/.test(dirMod),
+  '缺「位移向量 → 朝向」与角度规整');
+ok(/createPortraits/.test(portMod) && /drawImage\(img/.test(portMod) &&
+   /dirIndex\(o\.heading/.test(portMod),
+  '位图皮肤必须按 heading 取帧，不是固定一张');
+ok(!/Date\.|performance\.|Math\.random/.test(portMod.replace(/^\/\/[\s\S]*?\*\//, '')),
+  '位图皮肤不能引入墙钟或随机源，否则破坏确定性重放');
+ok(/unitKind\(u\.type\) !== 'engine' && portraits\.ready && portraits\.draw/.test(cv8b) &&
+   /drawSoldier\(ctx, u, \{/.test(cv8b),
+  '素材未就绪必须能回退程序化俯视路径，不能白屏');
+ok(/lastHeading/.test(cv8b) && /heading: rp\.heading/.test(cv8b),
+  '朝向必须逐帧传下去且静止时保留，不能每次回弹正面');
+ok(/不进 state|不进存档|不进命令日志|不进状态指纹/.test(portMod),
+  '缺「渲染层不污染局面」的边界说明');
+ok(/trooper-sheet|trooper\.json|assets\/units/.test(readFileSync(join(root, 'README.md'), 'utf8')),
+  'README 缺八向素材说明');
+
 console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾/授简自检全绿');
