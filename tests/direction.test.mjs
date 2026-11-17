@@ -9,12 +9,15 @@ test('八向表与素材 manifest 严格一致', () => {
   assert.equal(m.frames.length, 8);
   assert.equal(m.canvas[0], 560);
   assert.equal(m.footY, 780);
+  assert.deepEqual(m.phases, ['idle', 'stepL', 'stepR'], '走路需要三相位帧');
+  assert.equal(m.sheets.walk, 'trooper-walk-sheet.png');
   m.frames.forEach((f, i) => {
     assert.equal(f.index, i);
     assert.equal(f.name, DIR8[i]);
     assert.equal(f.angle, i * 45);
-    assert.ok(existsSync(new URL(`../assets/units/${f.file}`, import.meta.url)),
-      `缺素材 ${f.file}`);
+    for (const n of [f.file, f.walkL, f.walkR]) {
+      assert.ok(existsSync(new URL(`../assets/units/${n}`, import.meta.url)), `缺素材 ${n}`);
+    }
   });
   assert.equal(DIR8_LABEL.length, 8);
   assert.equal(new Set(DIR8).size, 8);

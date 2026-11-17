@@ -1,5 +1,5 @@
 {
-  "version": "0.8.0",
+  "version": "0.9.0",
   "unit": "trooper",
   "style": "写实淡彩 · 墨线勾勒 · 花青赭石 · 平光散光",
   "canvas": [
@@ -8,55 +8,99 @@
   ],
   "footY": 780,
   "anchor": "脚底中心",
-  "note": "8 向统一画布尺寸与脚底基线；背景已抠透明，地面投影由游戏层绘制；按角度索引切帧，无随机、无墙钟、无运行时位图生成。",
+  "phases": [
+    "idle",
+    "stepL",
+    "stepR"
+  ],
+  "phaseRule": "静止取 idle；行走按 sin(phase) 符号在 stepL / stepR 间交替",
+  "sheets": {
+    "idle": "trooper-sheet.png",
+    "walk": "trooper-walk-sheet.png"
+  },
+  "note": "8 向转身 × 3 相位 = 24 帧，统一画布与脚底基线。背面三帧经人工验收：看不到护心镜 / 腰前蝴蝶结 / 盾面铆钉，只见背带、背甲、盾背握把。步态由 idle 确定性几何派生，非 AI 逐张画腿（避免多腿与盔甲漂移）。背景已抠透明，地面投影由渲染层绘制；运行时只读，不参与状态计算。",
+  "srcSha256": {
+    "d0_front": "bf78f96ea239a253",
+    "d1_front_right": "f7a0ffb5a18b5059",
+    "d2_right": "32723d8385bfcd59",
+    "d3_back_right": "22effe915ac2764e",
+    "d4_back": "b0453c4474b8c88c",
+    "d5_back_left": "8a4b1db4e09f2575",
+    "d6_left": "9d238bfd6034a6a6",
+    "d7_front_left": "5d0211c8f3cdcbe2"
+  },
   "frames": [
     {
       "index": 0,
       "name": "d0_front",
       "angle": 0,
-      "file": "trooper-d0_front.png"
+      "label": "正面 3/4",
+      "file": "trooper-d0_front.png",
+      "walkL": "trooper-walk-d0_front-L.png",
+      "walkR": "trooper-walk-d0_front-R.png"
     },
     {
       "index": 1,
       "name": "d1_front_right",
       "angle": 45,
-      "file": "trooper-d1_front_right.png"
+      "label": "右前 45°",
+      "file": "trooper-d1_front_right.png",
+      "walkL": "trooper-walk-d1_front_right-L.png",
+      "walkR": "trooper-walk-d1_front_right-R.png"
     },
     {
       "index": 2,
       "name": "d2_right",
       "angle": 90,
-      "file": "trooper-d2_right.png"
+      "label": "正右 90°",
+      "file": "trooper-d2_right.png",
+      "walkL": "trooper-walk-d2_right-L.png",
+      "walkR": "trooper-walk-d2_right-R.png"
     },
     {
       "index": 3,
       "name": "d3_back_right",
       "angle": 135,
-      "file": "trooper-d3_back_right.png"
+      "label": "右后 135°",
+      "file": "trooper-d3_back_right.png",
+      "walkL": "trooper-walk-d3_back_right-L.png",
+      "walkR": "trooper-walk-d3_back_right-R.png"
     },
     {
       "index": 4,
       "name": "d4_back",
       "angle": 180,
-      "file": "trooper-d4_back.png"
+      "label": "正背 180°",
+      "file": "trooper-d4_back.png",
+      "walkL": "trooper-walk-d4_back-L.png",
+      "walkR": "trooper-walk-d4_back-R.png"
     },
     {
       "index": 5,
       "name": "d5_back_left",
       "angle": 225,
-      "file": "trooper-d5_back_left.png"
+      "label": "左后 225°",
+      "file": "trooper-d5_back_left.png",
+      "walkL": "trooper-walk-d5_back_left-L.png",
+      "walkR": "trooper-walk-d5_back_left-R.png"
     },
     {
       "index": 6,
       "name": "d6_left",
       "angle": 270,
-      "file": "trooper-d6_left.png"
+      "label": "正左 270°",
+      "file": "trooper-d6_left.png",
+      "walkL": "trooper-walk-d6_left-L.png",
+      "walkR": "trooper-walk-d6_left-R.png"
     },
     {
       "index": 7,
       "name": "d7_front_left",
       "angle": 315,
-      "file": "trooper-d7_front_left.png"
+      "label": "左前 315°",
+      "file": "trooper-d7_front_left.png",
+      "walkL": "trooper-walk-d7_front_left-L.png",
+      "walkR": "trooper-walk-d7_front_left-R.png"
     }
   ]
 }

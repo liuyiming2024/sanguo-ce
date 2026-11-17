@@ -5,20 +5,21 @@
 //   · 圆框选 + 二次拖拽定方向（全部远程单位齐射 / 近战突击）+ 单击单兵接管。
 // 全部在主画布按屏幕像素绘制，不经过离屏缩放，所以不会糊。
 //
-// v0.8.0 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
+// v0.9.0 移动端竖屏适配：canvas 属性尺寸严格等于 CSS 尺寸 × DPR（不再钳制到
 // 320×260，否则位图被浏览器拉伸 → 手指点与画面系统性错位）；竖屏收窄大营、
 // 单位图标与命中半径随 cell 自适应；hitUnit 取「最近单位」而不是倒序第一个，
 // 否则窄屏相邻单位重叠时点 A 会选中 B。逻辑网格仍是 24×16，存档/部署不变。
 //
-// v0.8.0：床弩/抛石机改为「器械为主体」，不再画人举着小弩。器械类行军只转轮
+// v0.9.0：床弩/抛石机改为「器械为主体」，不再画人举着小弩。器械类行军只转轮
 // + 颠簸，不摆腿（soldier.js 内部按 unitKind 分派）；这里只管「从哪走到哪」。
-// v0.8.0：士兵精细重绘 + 行军动画。立绘移到 soldier.js（汉末札甲/兜鍪/顿项/
+// v0.9.0：士兵精细重绘 + 行军动画。立绘移到 soldier.js（汉末札甲/兜鍪/顿项/
 // 护心镜 + 按兵种兵器），motion 全是渲染层私有状态，
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
-import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.8.0';
-import { createPortraits } from './portrait.js?v=0.8.0';
-import { headingFromDelta, normAngle } from './direction.js?v=0.8.0';
+import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.9.0';
+import { createPortraits } from './portrait.js?v=0.9.0';
+import { headingFromDelta, normAngle } from './direction.js?v=0.9.0';
+import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js?v=0.9.0';
 
 const INK = '#0b100e';
 const TEXT = '#e2ddc7', DIM = '#9aa896', GOLD = '#e8c882';
@@ -46,6 +47,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   let layout = null;
   let circle = null, dragUnit = null, pointer = null;
   let selection = new Set(), champion = null;
+  let formationShape = 'line';   // 横队 / 方阵 / 楔形，HUD 右上热区点击切换
   // ── 行军动画（渲染层私有，绝不进 state） ──────────────────────────────
   const motion = new Map();    // id -> {fx,fy,tx,ty,startSec,dur,dir,seed,heading}
   const lastKey = new Map();   // id -> "zone:col:row"，用来检测逻辑位置变化
@@ -55,7 +57,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   // 这是可选渲染层，不进 state、不进存档、不进命令日志、不进状态指纹。
   const portraits = createPortraits();
   let dragPos = null, releasePos = null, releaseId = null;
-  let callbacks = { onDeploy: () => {}, onSelect: () => {}, onDirection: () => {}, onChampion: () => {} };
+  let callbacks = { onDeploy: () => {}, onSelect: () => {}, onDirection: () => {},
+    onChampion: () => {}, onFormationMove: () => {}, onFormationChange: () => {} };
 
   const forces = () => campaign.forces[getCityId()] ?? { inside: [], camp: [] };
   const allUnits = () => [...forces().inside, ...forces().camp];
@@ -139,11 +142,11 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   }
 
   /** 返回该单位这一帧该画在哪、是否在走路、步频相位与朝向。 */
+  // 队伍不是散兵：同区同向、两军相向（大营朝城内，城内朝城门）。
+  // 行军结束自动归队，不保留上一次的移动朝向 —— 这是「自动列队」的一半。
+  const unitIdleHeading = (unit) => unit.zone === 'camp' ? Math.PI / 2 : -Math.PI / 2;
   function renderPos(u, sec) {
-    // 静止时按 id 派生一个覆盖八向的静态偏角：军阵不是复制粘贴的正对图标，
-    // 也能一眼看出素材确实有多张、不是镜像翻转。
-    const idleHeading = () => normAngle(lastHeading.get(u.id) ??
-      Math.round((idSeed(u.id) / 6.2831853) * 8) % 8 * Math.PI / 4);
+    const idleHeading = () => normAngle(unitIdleHeading(u));
     const still = (x, y) => ({ x, y, walking: false, dir: 1, phase: 0, amp: 0,
       heading: idleHeading() });
     if (dragUnit?.id === u.id && dragPos) {
@@ -413,7 +416,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     ctx.fillText(`城外大营 ${f.camp.length} 队`, 12, L.padTop + 6);
     ctx.fillText(`城内 ${f.inside.length} 队`, L.wallX + 18, 8);
     ctx.textAlign = 'right';
-    ctx.fillText(`框选 ${selection.size} · 拖单位部署 · 再拖一次定方向`, W - 12, 8);
+    ctx.fillText(`框选 ${selection.size} · 点位置自动列队 · 阵型 ${FORMATION_LABEL[formationShape]} ⇄`, W - 12, 8);
     ctx.textAlign = 'left';
     ctx.fillStyle = rgba(TEXT, 0.7);
     ctx.font = '10px "WenQuanYi Micro Hei", serif';
@@ -428,8 +431,20 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
 
   canvas.addEventListener('pointerdown', (e) => {
     const p = local(e);
-    const u = hitUnit(p.x, p.y);
-    pointer = { sx: p.x, sy: p.y, x: p.x, y: p.y, t: e.timeStamp, moved: 0, unit: u };
+    // 命中单位永远优先：竖屏第一行兵可能正好落在 HUD 文字下方，不能被热区吃掉。
+    const hit = hitUnit(p.x, p.y);
+    // HUD 右上热区：只在没点到兵时生效，点一下循环切换阵型
+    if (!hit && p.y < 20 && p.x > W - 200) {
+      formationShape = FORMATIONS[(FORMATIONS.indexOf(formationShape) + 1) % FORMATIONS.length];
+      callbacks.onFormationChange?.(formationShape);
+      pointer = null; dragUnit = null; dragPos = null;
+      return;
+    }
+    const u = hit;
+    // 位移一律用 client 坐标：竖屏地址栏收起 / 软键盘会让 canvas rect 在
+    // 按下与抬起之间漂移，两套坐标系算 dist 会把「单击」误判成「拖动部署」。
+    pointer = { sx: p.x, sy: p.y, x: p.x, y: p.y,
+      csx: e.clientX, csy: e.clientY, t: e.timeStamp, moved: 0, unit: u };
     dragUnit = u ?? null;
     dragPos = u ? { x: p.x, y: p.y } : null;
     try { canvas.setPointerCapture(e.pointerId); } catch { /* 忽略 */ }
@@ -438,7 +453,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   canvas.addEventListener('pointermove', (e) => {
     if (!pointer) return;
     const p = local(e);
-    pointer.moved = Math.max(pointer.moved, Math.hypot(p.x - pointer.sx, p.y - pointer.sy));
+    pointer.moved = Math.max(pointer.moved,
+      Math.hypot(e.clientX - pointer.csx, e.clientY - pointer.csy));
     pointer.x = p.x; pointer.y = p.y;
     if (dragUnit && dragPos) dragPos = { x: p.x, y: p.y };   // 兵跟着手指走
     if (!dragUnit && pointer.moved > CV.dragThresholdPx) {
@@ -456,26 +472,59 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     // 松手位置交给下一帧 syncMotion 当行军起点：兵从手指处走到目标格，不瞬移。
     if (dragUnit && dragPos) { releasePos = { x: p.x, y: p.y }; releaseId = dragUnit.id; }
     dragPos = null;
-    const dist = Math.hypot(p.x - P.sx, p.y - P.sy);
+    const dist = Math.hypot(e.clientX - P.csx, e.clientY - P.csy);
 
+    // 单击判定用 client 坐标，不受 canvas rect 在按下/抬起之间漂移影响。
+    // 抬起时补一次命中测试：真机地址栏收起会让 down 与 up 的布局不同，
+    // 只靠 down 的 hitUnit 会稳定漏选 —— up 命中以当前画面为准。
+    const clicked = dragUnit ?? P.unit ??
+      (dist <= CV.dragThresholdPx ? hitUnit(p.x, p.y) : null);
+
+    // 优先级：拖单位部署 ＞ 框选后单击编队 ＞ 单击单兵接管 ＞ 短拖框选/定向 ＞ 单击清除
     // A) 拖单位 → 部署到大营 / 城内格
-    if (dragUnit) {
+    if (dragUnit && dist > CV.dragThresholdPx) {
+      const id = dragUnit.id;
       dragUnit = null;
-      if (dist > CV.dragThresholdPx) {
-        const t = screenToTarget(p.x, p.y);
-        callbacks.onDeploy(dragUnit?.id ?? P.unit.id, t.zone, t.col, t.row, P.unit);
-      } else {
-        // 单击单位 = 单兵接管
-        champion = P.unit.id;
-        selection = new Set([P.unit.id]);
-        for (const u of allUnits()) { u.selected = u.id === champion; u.champion = u.id === champion; }
-        callbacks.onChampion(champion);
-      }
+      const t = screenToTarget(p.x, p.y);
+      callbacks.onDeploy(id, t.zone, t.col, t.row, P.unit);
       circle = null;
       return;
     }
 
-    // B) 短拖 = 圆框选；若已有框选，这次的向量作为「往哪方向」
+    // B) 已有框选 + 单击 → 点这个位置，整队自动列队走过去。
+    // 单兵接管（champion 非空）不算「框选一队」，单击仍是选人，避免一次点击被吃掉。
+    if (dist <= CV.dragThresholdPx && selection.size > 0 && !champion) {
+      const t = screenToTarget(p.x, p.y);
+      const chosen = allUnits().filter((u) => selection.has(u.id));
+      const occupied = new Set(allUnits()
+        .filter((u) => !selection.has(u.id) && u.zone === 'inside')
+        .map((u) => `${u.col}:${u.row}`));
+      const res = assignFormation({
+        units: chosen.map((u) => ({ id: u.id, zone: u.zone, col: u.col, row: u.row })),
+        target: t, cols: CV.cols, rows: CV.rows, occupied, shape: formationShape,
+      });
+      if (res.assignments.length) {
+        callbacks.onFormationMove(res, t);
+        // 动作闭环：列队完成后清空选择，下一次单击重新是「选人 / 清选择」
+        selection = new Set(); champion = null; circle = null;
+        for (const u of allUnits()) { u.selected = false; u.champion = false; }
+        callbacks.onSelect([]);
+        return;
+      }
+    }
+
+    // C) 单击单位 → 单兵接管
+    if (dist <= CV.dragThresholdPx && clicked) {
+      dragUnit = null;
+      champion = clicked.id;
+      selection = new Set([clicked.id]);
+      for (const u of allUnits()) { u.selected = u.id === champion; u.champion = u.id === champion; }
+      callbacks.onChampion(champion);
+      circle = null;
+      return;
+    }
+
+    // D) 短拖 = 圆框选；若已有框选，这次的向量作为「往哪方向」
     if (dist > CV.dragThresholdPx) {
       if (selection.size > 0 && !circle) {
         callbacks.onDirection({ x: p.x - P.sx, y: p.y - P.sy }, [...selection]);
@@ -490,14 +539,17 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
         if (Math.hypot(q.x - cx, q.y - cy) <= rr) ids.push(u.id);
       }
       selection = new Set(ids);
-      for (const u of allUnits()) u.selected = selection.has(u.id);
+      champion = null;                 // 框选是「一队」，不再是单兵接管
+      for (const u of allUnits()) {
+        u.selected = selection.has(u.id); u.champion = false;
+      }
       callbacks.onSelect(ids);
       circle = { x: cx, y: cy, r: rr };
       setTimeout(() => { circle = null; }, 800);
       return;
     }
 
-    // C) 单击空白 = 清除选择
+    // E) 单击空白 = 清除选择
     circle = null;
     selection = new Set(); champion = null;
     for (const u of allUnits()) { u.selected = false; u.champion = false; }
@@ -523,6 +575,17 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     get portraits() { return portraits; },
     frameFor: (heading) => portraits.frameFor(heading),
     headingOf: (id) => lastHeading.get(id) ?? 0,
+    get formationShape() { return formationShape; },
+    setFormation: (v) => { if (FORMATIONS.includes(v)) formationShape = v; },
+    assignFormationAt: (ids, target, shape) => {
+      const chosen = allUnits().filter((u) => ids.includes(u.id));
+      const occupied = new Set(allUnits()
+        .filter((u) => !ids.includes(u.id) && u.zone === 'inside')
+        .map((u) => `${u.col}:${u.row}`));
+      return assignFormation({ units: chosen.map((u) => ({ id: u.id, zone: u.zone,
+        col: u.col, row: u.row })), target, cols: CV.cols, rows: CV.rows,
+        occupied, shape: shape ?? formationShape });
+    },
     renderPos, hitUnit,
     setCallbacks(cb) { callbacks = { ...callbacks, ...cb }; },
     unitXY, screenToTarget, forces,

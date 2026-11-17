@@ -1,5 +1,5 @@
 // 静态自检：配置、地形生成、连通性、导航控件、版本指纹。CI 与本地共用。
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createTerrain, terrainStats } from '../src/terrain.js';
@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.8.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.9.0', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.8.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.8.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.9.0'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.9.0"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -285,7 +285,7 @@ ok(!/strokeRidge|BRUSH_|setBrush|brushOn/.test(mr7 + main7),
 ok(!/绢帛|宣纸|毛笔|界画那头是/.test(gb), '工笔层不该再拿材质给平铺找说法');
 
 
-// ── v0.8.0：移动端竖屏点击适配 ─────────────────────────────────────────
+// ── v0.9.0：移动端竖屏点击适配 ─────────────────────────────────────────
 const cv7 = readFileSync(join(root, 'src/city-view.js'), 'utf8');
 const main71 = readFileSync(join(root, 'src/main.js'), 'utf8');
 const mr71 = readFileSync(join(root, 'src/map-render.js'), 'utf8');
@@ -314,7 +314,7 @@ ok(/canvas\.width !== Math\.round\(W \* dpr\)/.test(cv7) &&
 ok(/get viewport\(\)/.test(cv7) && /hitUnit,/.test(cv7), '缺烟测用的视口/命中探针');
 
 
-// ── v0.8.0 / v0.8.0：立绘 + 行军动画 + 器械为主体 ─────────────────────
+// ── v0.9.0 / v0.9.0：立绘 + 行军动画 + 器械为主体 ─────────────────────
 const sol = readFileSync(join(root, 'src/soldier.js'), 'utf8');
 const cv8 = cv7;
 ok(/export function drawSoldier\(ctx, u, o\)/.test(sol) &&
@@ -336,7 +336,7 @@ ok(!/\bmotion\b[\s\S]{0,400}\bstate\./.test(cv8) && !/campaign\.forces\[[^\]]+\]
 ok(/lightGround/.test(cv8) && /PAL_ON_PAPER|PAL_ON_INK/.test(sol),
   '底色深浅变化时必须自动切换甲色，否则浅绢底上甲片会融掉');
 
-// v0.8.0：器械为主体、遮面去呆萌；v0.8.0：整套改斜俯视
+// v0.9.0：器械为主体、遮面去呆萌；v0.9.0：整套改斜俯视
 ok(/export function unitKind/.test(sol) && /unitKind,/.test(cv8), '缺器械/人形分派接口');
 ok(/type === 'chuangnu'\) drawBedCrossbow/.test(sol) && /drawTrebuchet/.test(sol),
   '床弩 / 抛石机没有画成军械主体');
@@ -387,11 +387,7 @@ for (const [t, pat] of [
 ]) ok(pat.test(sol), `兵种 ${t} 缺独立兵器/造型分支`);
 ok(/札甲|兜鍪|顿项|护心镜/.test(sol), '缺汉末甲胄结构，退回火柴人');
 
-if (problems.length) {
-  console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
-  process.exit(1);
-}
-// ── v0.8.0：写实淡彩八向素材 + 按朝向换帧 ─────────────────────────────
+// ── v0.9.0：写实淡彩八向素材 + 按朝向换帧 ─────────────────────────────
 const dirMod = readFileSync(join(root, 'src/direction.js'), 'utf8');
 const portMod = readFileSync(join(root, 'src/portrait.js'), 'utf8');
 const cv8b = readFileSync(join(root, 'src/city-view.js'), 'utf8');
@@ -412,19 +408,70 @@ ok(/export function dirIndex/.test(dirMod) && /export const DIR8/.test(dirMod) &
   '八向索引必须是确定性最近邻量化，不能靠 scale(-1,1) 镜像');
 ok(/headingFromDelta/.test(dirMod) && /normAngle/.test(dirMod),
   '缺「位移向量 → 朝向」与角度规整');
-ok(/createPortraits/.test(portMod) && /drawImage\(img/.test(portMod) &&
-   /dirIndex\(o\.heading/.test(portMod),
-  '位图皮肤必须按 heading 取帧，不是固定一张');
+ok(/createPortraits/.test(portMod) && /drawImage\(sheet, sx, 0, CW, CH/.test(portMod) &&
+   /dirIndex\(heading/.test(portMod) && /walkPhase\(o\.walk, o\.phase\)/.test(portMod),
+  '位图皮肤必须按 heading 取方向帧、按模拟相位取步态帧，不是固定一张');
+ok(/trooper-sheet\.png/.test(portMod) && /trooper-walk-sheet\.png/.test(portMod),
+  'idle 与 walk 两张 sprite sheet 都必须加载');
 ok(!/Date\.|performance\.|Math\.random/.test(portMod.replace(/^\/\/[\s\S]*?\*\//, '')),
   '位图皮肤不能引入墙钟或随机源，否则破坏确定性重放');
 ok(/unitKind\(u\.type\) !== 'engine' && portraits\.ready && portraits\.draw/.test(cv8b) &&
    /drawSoldier\(ctx, u, \{/.test(cv8b),
   '素材未就绪必须能回退程序化俯视路径，不能白屏');
-ok(/lastHeading/.test(cv8b) && /heading: rp\.heading/.test(cv8b),
-  '朝向必须逐帧传下去且静止时保留，不能每次回弹正面');
+ok(/heading: rp\.heading/.test(cv8b) && /unitIdleHeading/.test(cv8b),
+  '朝向必须逐帧下传，且静止时整队统一朝向（不是按 id 散布）');
+ok(/assignFormation/.test(cv8b) && /onFormationMove/.test(cv8b),
+  '缺「框选 → 点位置 → 自动列队」接线');
 ok(/不进 state|不进存档|不进命令日志|不进状态指纹/.test(portMod),
   '缺「渲染层不污染局面」的边界说明');
 ok(/trooper-sheet|trooper\.json|assets\/units/.test(readFileSync(join(root, 'README.md'), 'utf8')),
   'README 缺八向素材说明');
 
+// ── v0.9.0：背面三帧验收锁 / 24 帧步态 / 自动列队 ──────────────────────
+ok(mani.version === '0.9.0' && mani.phases?.length === 3 &&
+   mani.phases.join(',') === 'idle,stepL,stepR',
+  'manifest 必须是 8 向 × 3 相位');
+ok(mani.sheets?.idle === 'trooper-sheet.png' &&
+   mani.sheets?.walk === 'trooper-walk-sheet.png' &&
+   existsSync(join(root, 'assets/units/trooper-walk-sheet.png')),
+  '缺 idle / walk sprite sheet');
+ok(mani.frames.every((f) => {
+  const names = [f.file, f.walkL, f.walkR];
+  return names.every((n) => n && existsSync(join(root, 'assets/units', n))) &&
+    new Set(names).size === 3;
+}), '每方向必须有 idle / 左步 / 右步三张互不相同的帧');
+ok(readdirSync(join(root, 'assets/units')).filter((f) => f.endsWith('.png')).length >= 26,
+  '24 帧 + 2 sheet 共 26 张 PNG 不齐');
+
+// 背面三帧经人工验收：看不到护心镜 / 腰前蝴蝶结 / 盾面铆钉。
+// 把验收结论固化成源图 sha256，防止误把旧的「假背面」图放回仓库。
+const { createHash } = await import('node:crypto');
+const srcDir = join(root, 'assets/units/src');
+ok(existsSync(srcDir) && readdirSync(srcDir).length === 8, '缺 8 张可复现的源图');
+for (const [dir, hash] of Object.entries(mani.srcSha256 ?? {})) {
+  const f = join(srcDir, `src-${dir}.jpg`);
+  if (!existsSync(f)) { ok(false, `源图缺失 ${dir}`); continue; }
+  const real = createHash('sha256').update(readFileSync(f)).digest('hex').slice(0, 16);
+  ok(real === hash, `源图 ${dir} 与验收版本不符（可能退回了假背面）`);
+}
+ok(existsSync(join(root, 'scripts/build_units.py')), '缺可复现的资产构建脚本');
+ok(/step_frame/.test(readFileSync(join(root, 'scripts/build_units.py'), 'utf8')) &&
+   /INTER_NEAREST/.test(readFileSync(join(root, 'scripts/build_units.py'), 'utf8')),
+  '步态必须由 idle 确定性派生，不能靠 AI 逐张画腿');
+
+const formMod = readFileSync(join(root, 'src/formation.js'), 'utf8');
+const mainMod = readFileSync(join(root, 'src/main.js'), 'utf8');
+ok(/export function assignFormation/.test(formMod) &&
+   /export function formationOffsets/.test(formMod) &&
+   /FORMATIONS = \['line', 'block', 'wedge'\]/.test(formMod),
+  '编队必须是可选阵型的纯逻辑层');
+ok(!/document|canvas|Date\.|performance\.|Math\.random/.test(formMod.replace(/^\/\/[\s\S]*?\*\//, '')),
+  '编队层不能碰 DOM / 墙钟 / 随机源，否则重放会分叉');
+ok(/onFormationMove/.test(mainMod) && /deployUnit\(state, cityId, a\.id/.test(mainMod),
+  '编队结果必须逐队写回部署，不能只画个圈');
+
+if (problems.length) {
+  console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
+  process.exit(1);
+}
 console.log('\n✓ 地图/连通性/导航/指纹/界面机制/历法章回/联机地基/审美收尾/授简自检全绿');

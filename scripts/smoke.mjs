@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.8.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.9.0：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.8.0 与栅格规模',
+  check('主菜单标注 v0.9.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.8.0'));
+    (await page.locator('#menuSub').innerText()).includes('0.9.0'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -472,13 +472,13 @@ try {
   const sideText = await page.locator('#battleSide').innerText();
   check('标注己方城内 / 敌方城外扎营', ['城内', '大营', '扎营'].some((k) => sideText.includes(k)), sideText);
 
-  // ── v0.8.0：写实淡彩八向素材，按朝向换帧 ────────────────────────────
-  check('八向位图资源全部加载成功（不是静默回退）', await page.evaluate(async () => {
+  // ── v0.9.0：写实淡彩八向素材，按朝向换帧 ────────────────────────────
+  check('八向 idle + 步态两张 sprite sheet 全部加载成功（不是静默回退）', await page.evaluate(async () => {
     const cv = window.__sanguo.cityView;
     for (let i = 0; i < 40 && !cv.portraits.ready; i++) {
       await new Promise((r) => setTimeout(r, 50));
     }
-    return cv.portraits.ready && cv.portraits.loaded === 8;
+    return cv.portraits.ready && cv.portraits.loaded === 2;
   }));
   check('八个中心角各取不同帧，360° 回到正面帧', await page.evaluate(() => {
     const cv = window.__sanguo.cityView;
@@ -494,6 +494,72 @@ try {
     const rp = cv.renderPos(u, 1.2);
     return Number.isFinite(rp.heading) && cv.frameFor(rp.heading).startsWith('d');
   }));
+
+  // ── v0.9.0：队伍感 / 步态帧 / 框选→点位置→自动列队 ──────────────────
+  check('静止时整队同向、两军相向，不再按 id 散成八向', await page.evaluate(() => {
+    const cv = window.__sanguo.cityView;
+    const all = [...cv.forces().inside, ...cv.forces().camp];
+    const h = (u) => cv.renderPos(u, 0).heading;
+    const inside = all.filter((u) => u.zone === 'inside');
+    const camp = all.filter((u) => u.zone === 'camp');
+    return inside.length > 0 && camp.length > 0 &&
+      inside.every((u) => Math.abs(h(u) - h(inside[0])) < 1e-9) &&
+      camp.every((u) => Math.abs(h(u) - h(camp[0])) < 1e-9) &&
+      Math.abs(h(inside[0]) - h(camp[0])) > 1e-6;
+  }));
+  check('行走相位在左步/右步之间交替，静止取 idle', await page.evaluate(() => {
+    const p = window.__sanguo.cityView.portraits;
+    return p.phaseFor(false, 1.2) === 0 &&
+      p.phaseFor(true, 0.4) !== p.phaseFor(true, 3.6) &&
+      p.walkFrameFor(0, 0.4) !== p.walkFrameFor(0, 3.6);
+  }));
+  check('三种阵型都能算出互不重叠的格位', await page.evaluate(() => {
+    const cv = window.__sanguo.cityView;
+    const ids = cv.forces().inside.slice(0, 6).map((u) => u.id);
+    return ['line', 'block', 'wedge'].every((shape) => {
+      const r = cv.assignFormationAt(ids, { zone: 'inside', col: 12, row: 8 }, shape);
+      const ks = r.assignments.map((a) => `${a.col}:${a.row}`);
+      return r.assignments.length === ids.length && new Set(ks).size === ks.length &&
+        r.assignments.every((a) => a.col >= 0 && a.col < 24 && a.row >= 0 && a.row < 16);
+    });
+  }));
+
+  // 真实鼠标：画圆框选城内队伍 → 单击一个空格 → 整队自动列队走过去
+  const fm = await page.evaluate(() => {
+    const cv = window.__sanguo.cityView, c = document.getElementById('cityCanvas');
+    const r = c.getBoundingClientRect(), L = cv.layout;
+    const us = cv.forces().inside.slice(0, 3);
+    const ps = us.map((u) => cv.unitXY(u));
+    const cx = ps.reduce((s, p) => s + p.x, 0) / ps.length;
+    const cy = ps.reduce((s, p) => s + p.y, 0) / ps.length;
+    return {
+      ids: us.map((u) => u.id),
+      x1: r.left + cx - 62, y1: r.top + cy - 42,
+      x2: r.left + cx + 62, y2: r.top + cy + 42,
+      tx: r.left + L.ox + 14.5 * L.cell, ty: r.top + L.oy + 9.5 * L.cell,
+    };
+  });
+  await page.mouse.move(fm.x1, fm.y1);
+  await page.mouse.down();
+  await page.mouse.move(fm.x2, fm.y2, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(120);
+  const selIds = await page.evaluate(() => [...window.__sanguo.cityView.selection]);
+  const selCount = selIds.length;
+  await page.mouse.click(fm.tx, fm.ty);
+  await page.waitForTimeout(160);
+  const formed = await page.evaluate((ids) => {
+    const cv = window.__sanguo.cityView, f = cv.forces();
+    const all = [...f.inside, ...f.camp];
+    const us = ids.map((id) => all.find((u) => u.id === id)).filter(Boolean);
+    const ks = us.map((u) => `${u.col}:${u.row}`);
+    return { n: us.length, rows: new Set(us.map((u) => u.row)).size,
+      uniq: new Set(ks).size, motion: cv.motionCount, keys: ks };
+  }, selIds);
+  check('框选后点位置：整队自动列队并开拔（不是各走各的）',
+    selCount >= 2 && formed.n === selCount && formed.rows === 1 &&
+    formed.uniq === formed.n && formed.motion > 0,
+    JSON.stringify({ selCount, ...formed }));
 
   const L0 = await page.evaluate(() => JSON.stringify(window.__sanguo.cityView.layout));
   const box = await page.locator('#cityCanvas').boundingBox();
@@ -571,7 +637,7 @@ try {
   await page.click('#closeHelp');
   check('玩法面板可退出', !(await page.isVisible('#helpPanel')));
 
-  // ── v0.8.0：士兵精细立绘 + 行军动画 ─────────────────────────────────
+  // ── v0.9.0：士兵精细立绘 + 行军动画 ─────────────────────────────────
   const sp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const sErrs = [];
   sp.on('pageerror', (e) => sErrs.push(String(e)));
@@ -643,9 +709,9 @@ try {
     Math.abs(follow.y - (drag.ly + 30)) < 2, JSON.stringify(follow));
   check('士兵动画无 JS 运行时报错', sErrs.length === 0, sErrs.slice(0, 2).join(' | '));
 
-  // ── v0.8.0：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
+  // ── v0.9.0：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
   const art = await sp.evaluate(async () => {
-    const mod = await import('./src/soldier.js?v=0.8.0');
+    const mod = await import('./src/soldier.js?v=0.9.0');
     const cfg = window.__sanguo.cfg;
     const mk = (type, opts = {}) => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 160;
@@ -737,7 +803,7 @@ try {
     art.rollDiff > 10, `diff=${art.rollDiff}`);
   await sp.close();
 
-  // ── v0.8.0：移动端竖屏点击适配（独立真触屏 context） ────────────────
+  // ── v0.9.0：移动端竖屏点击适配（独立真触屏 context） ────────────────
   const mctx = await browser.newContext({
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3,
     isMobile: true, hasTouch: true,
@@ -806,6 +872,14 @@ try {
 
   await mp.evaluate(() => window.__sanguo.openBattle('xudu'));
   await mp.waitForTimeout(350);
+  // 竖屏地址栏 / 滚动条收起时 canvas 会再排一次版，等 layout 连续两帧不变再取坐标，
+  // 否则 tap 用的是旧 rect，几像素漂移就足以让 6px 命中圈落空。
+  await mp.waitForFunction(() => new Promise((resolve) => {
+    const cv = window.__sanguo.cityView;
+    const a = JSON.stringify(cv.layout);
+    requestAnimationFrame(() => requestAnimationFrame(() =>
+      resolve(a === JSON.stringify(cv.layout))));
+  }), null, { timeout: 6000 }).catch(() => {});
   const cu = await mp.evaluate(() => {
     const cv = window.__sanguo.cityView, c = document.getElementById('cityCanvas');
     const r = c.getBoundingClientRect(), f = cv.forces();
@@ -819,12 +893,26 @@ try {
   });
   check('竖屏小地图位图 = CSS×DPR，不被拉伸', cu.attrOk, `cell=${cu.cell.toFixed(1)}px`);
   check('竖屏命中半径不跨格（取最近单位）', cu.hitSelf, `u=${cu.id}`);
-  await mp.touchscreen.tap(cu.x, cu.y);
+  const preTap = await mp.evaluate(() => ({ sel: [...window.__sanguo.cityView.selection],
+    champ: window.__sanguo.cityView.champion }));
+  // 落点按「当下」的实时 rect 重算，不沿用上一条断言里几百毫秒前的坐标
+  const tapPt = await mp.evaluate((id) => {
+    const cv = window.__sanguo.cityView, c = document.getElementById('cityCanvas');
+    const r = c.getBoundingClientRect();
+    const u = [...cv.forces().inside, ...cv.forces().camp].find((x) => x.id === id);
+    const p = cv.unitXY(u);
+    return { x: r.left + p.x, y: r.top + p.y };
+  }, cu.id);
+  await mp.touchscreen.tap(tapPt.x, tapPt.y);
   await mp.waitForTimeout(180);
   const sel1 = await mp.evaluate((id) =>
     ({ sel: window.__sanguo.cityView.selection, wanted: id }), cu.id);
   check('竖屏点第一个兵必中该兵（不再选到邻居）',
-    sel1.sel.includes(cu.id), JSON.stringify(sel1));
+    sel1.sel.includes(cu.id), JSON.stringify({ ...sel1, preTap, cu,
+      hit: await mp.evaluate(([x, y]) => {
+        const c = document.getElementById('cityCanvas'), r = c.getBoundingClientRect();
+        return window.__sanguo.cityView.hitUnit(x - r.left, y - r.top)?.id ?? null;
+      }, [cu.x, cu.y]) }));
 
   // 拖放：把该兵拖到另一格，落点必须与视觉格一致
   const drop = await mp.evaluate((id) => {

@@ -1,4 +1,4 @@
-// 士兵 / 军械立绘 v0.8.0 —— 斜俯视。
+// 士兵 / 军械立绘 v0.9.0 —— 斜俯视。
 //
 // 用户点破的透视错位：小地图是俯视战场，之前画的却是**正面/正侧面站立的
 // 全身立绘**，像证件照贴在地上。这轮按 AI 生成的俯视造型参考板重画：
@@ -118,7 +118,7 @@ function tenon(ctx, P, x, y, w, k) {
 export function drawSoldier(ctx, u, o) {
   const { x, y, s, sec, walk, dir, phase, amp, seed, col } = o;
   // 俯视后单位全高约 13k（立像时是 26k）。定标必须按压缩后的 13k 归一，
-  // 否则 s=10.4 的手机单位只有 5px 高，再极简也读不出来（v0.8.0 初版的坑）。
+  // 否则 s=10.4 的手机单位只有 5px 高，再极简也读不出来（v0.9.0 初版的坑）。
   const k = s / 17;
   const detail = s >= 18 ? 2 : s >= 11 ? 1 : 0;
   const P = o.lightGround ? PAL_ON_PAPER : PAL_ON_INK;

@@ -1,37 +1,38 @@
 // 装配层 v0.7.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.8.0';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.9.0';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.8.0';
+} from './campaign.js?v=0.9.0';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.8.0';
-import { createMapRenderer } from './map-render.js?v=0.8.0';
-import { createCityView } from './city-view.js?v=0.8.0';
+} from './pathfind.js?v=0.9.0';
+import { createMapRenderer } from './map-render.js?v=0.9.0';
+import { createCityView } from './city-view.js?v=0.9.0';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.8.0';
-import { CITIES, cityById } from './map-data.js?v=0.8.0';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.8.0';
+} from './battle-session.js?v=0.9.0';
+import { CITIES, cityById } from './map-data.js?v=0.9.0';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.9.0';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.8.0';
+} from './story.js?v=0.9.0';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.8.0';
-import { TYPE_LABEL } from './terrain.js?v=0.8.0';
-import { createTutorialUI } from './tutorial-ui.js?v=0.8.0';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.8.0';
-import { createShell, facilityCost } from './ui-shell.js?v=0.8.0';
+} from './sync.js?v=0.9.0';
+import { TYPE_LABEL } from './terrain.js?v=0.9.0';
+import { createTutorialUI } from './tutorial-ui.js?v=0.9.0';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.9.0';
+import { createShell, facilityCost } from './ui-shell.js?v=0.9.0';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.8.0';
+} from './persist.js?v=0.9.0';
+import { formationSummary } from './formation.js?v=0.9.0';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -663,7 +664,17 @@ function openBattle(cityId = selectedCity ?? battleCityId ?? CITIES[0].id) {
       toast(res.ok ? (zone === 'inside' ? '已投入城内' : '已撤回城外大营') : res.reason);
       refreshBattleUI();
     },
-    onSelect: (ids) => { if (ids.length) toast(`框选 ${ids.length} 队 · 再拖一次指定方向`); },
+    onSelect: (ids) => { if (ids.length) toast(`框选 ${ids.length} 队 · 点一个位置自动列队`); },
+    onFormationMove: (res, target) => {
+      let ok = 0;
+      for (const a of res.assignments) {
+        const r = deployUnit(state, cityId, a.id, a.zone, a.col, a.row);
+        if (r.ok) ok++;
+      }
+      toast(`${formationSummary(res)} · ${ok} 队开拔${target.zone === 'camp' ? '回大营' : '进城'}`);
+      refreshBattleUI();
+    },
+    onFormationChange: (shape) => toast(`阵型改为${{ line:'横队', block:'方阵', wedge:'楔形' }[shape]}`),
     onDirection: (vec, ids) => {
       const from = bestFromCity({ cityId }).id;
       const res = issueOrder(state, {
@@ -958,10 +969,10 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.8.0').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.8.0').then((r) => r.json()),
-    fetch('./config/story.json?v=0.8.0').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.8.0').then((r) => r.json()),
+    fetch('./config/campaign.json?v=0.9.0').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.9.0').then((r) => r.json()),
+    fetch('./config/story.json?v=0.9.0').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.9.0').then((r) => r.json()),
   ]);
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);
