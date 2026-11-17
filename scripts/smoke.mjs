@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 页面可达性烟测 v0.7.3：率式整套界面 + 机制修补 + 存档 + 双时钟。
+// 页面可达性烟测 v0.7.4：率式整套界面 + 机制修补 + 存档 + 双时钟。
 // 原则：每个能进的层都出得来；文治页反纸、武备页留墨；小地图依旧不拖动。
 import { createRequire } from 'node:module';
 import { spawn } from 'node:child_process';
@@ -63,9 +63,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.7.3 与栅格规模',
+  check('主菜单标注 v0.7.4 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.7.3'));
+    (await page.locator('#menuSub').innerText()).includes('0.7.4'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -548,7 +548,7 @@ try {
   await page.click('#closeHelp');
   check('玩法面板可退出', !(await page.isVisible('#helpPanel')));
 
-  // ── v0.7.3：士兵精细立绘 + 行军动画 ─────────────────────────────────
+  // ── v0.7.4：士兵精细立绘 + 行军动画 ─────────────────────────────────
   const sp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const sErrs = [];
   sp.on('pageerror', (e) => sErrs.push(String(e)));
@@ -620,9 +620,9 @@ try {
     Math.abs(follow.y - (drag.ly + 30)) < 2, JSON.stringify(follow));
   check('士兵动画无 JS 运行时报错', sErrs.length === 0, sErrs.slice(0, 2).join(' | '));
 
-  // ── v0.7.3：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
+  // ── v0.7.4：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
   const art = await sp.evaluate(async () => {
-    const mod = await import('./src/soldier.js?v=0.7.3');
+    const mod = await import('./src/soldier.js?v=0.7.4');
     const cfg = window.__sanguo.cfg;
     const mk = (type, opts = {}) => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 160;
@@ -630,7 +630,7 @@ try {
       g.fillStyle = '#ded7c0'; g.fillRect(0, 0, 160, 160);
       const u = { id: 'probe', type, faction: 'cao', hp: opts.hp ?? 100, maxHp: 100,
         col: 0, row: 0, zone: 'inside' };
-      mod.drawSoldier(g, u, { x: 80, y: 80, s: 64, sec: 1.2,
+      mod.drawSoldier(g, u, { x: 80, y: 80, s: opts.s ?? 64, sec: 1.2,
         walk: !!opts.walk, dir: 1, phase: opts.phase ?? 0, amp: opts.walk ? 1 : 0,
         seed: mod.idSeed(u.id), col: '#6b93ad', def: cfg.units[type],
         selected: false, champion: false, lightGround: true });
@@ -648,6 +648,15 @@ try {
       }
       return maxX - minX;
     };
+    // 俯视斜向器械横向跨度天然小于正侧视图，改用「墨迹面积」判主体量级
+    const inkArea = (d) => {
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) +
+            Math.abs(d[i + 2] - bg[2]) > 40) n++;
+      }
+      return n;
+    };
     const green = (d) => {
       let n = 0;
       for (let y = 0; y < 160; y++) for (let x = 0; x < 160; x++) {
@@ -661,20 +670,43 @@ try {
       for (let i = 0; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 8) n++;
       return n;
     };
+    // 俯视特征采样：兜鍪顶（人形上方）与扁椭圆轮（器械左前轮）应有成片墨色
+    const region = (d, cx, cy, r) => {
+      let n = 0;
+      for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
+        const i = (Math.max(0, Math.min(159, y)) * 160 + Math.max(0, Math.min(159, x))) * 4;
+        if (Math.abs(d[i] - bg[0]) + Math.abs(d[i + 1] - bg[1]) +
+            Math.abs(d[i + 2] - bg[2]) > 40) n++;
+      }
+      return n;
+    };
     const figure = mk('daodun'), engine = mk('chuangnu'), treb = mk('paoshi');
     const full = mk('daodun'), hurt = mk('daodun', { hp: 40 });
     const still = mk('chuangnu'), rolling = mk('chuangnu', { walk: true, phase: 1.4 });
     return {
       kinds: [mod.unitKind('chuangnu'), mod.unitKind('paoshi'), mod.unitKind('daodun')],
       spanFigure: span(figure), spanEngine: span(engine), spanTreb: span(treb),
+      areaFigure: inkArea(figure), areaEngine: inkArea(engine), areaTreb: inkArea(treb),
+      tinyInk: inkArea(mk('daodun', { s: 10.4 })),
+      tinyEngineInk: inkArea(mk('chuangnu', { s: 10.4 })),
+      helmInk: region(figure, 80, 60, 9),      // 兜鍪顶（俯视最显眼）
+      wheelInk: region(engine, 59, 91, 6),     // 床弩左前扁椭圆轮
+      faceInk: region(figure, 80, 74, 4),      // 原本「脸」的位置：俯视应为空暗
       greenFull: green(full), hpDiff: diff(full, hurt), rollDiff: diff(still, rolling),
     };
   });
   check('床弩/抛石机判定为器械，刀盾兵判定为人形',
     JSON.stringify(art.kinds) === '["engine","engine","figure"]', JSON.stringify(art.kinds));
-  check('军械主体横向跨度显著大于人形（不再人举小弩）',
-    art.spanEngine > art.spanFigure * 1.35 && art.spanTreb > art.spanFigure * 1.15,
-    JSON.stringify({ figure: art.spanFigure, bed: art.spanEngine, treb: art.spanTreb }));
+  check('俯视兜鍪顶可见（人形上方成片墨色），不再是正面立像',
+    art.helmInk > 25, `helmInk=${art.helmInk}`);
+  check('器械扁椭圆轮可见（俯视圆变椭圆）',
+    art.wheelInk > 8, `wheelInk=${art.wheelInk}`);
+  check('手机 s=10.4 档是独立极简墨剪影，不糊成一点也不铺满格',
+    art.tinyInk > 18 && art.tinyInk < 260 && art.tinyEngineInk > 18 && art.tinyEngineInk < 320,
+    JSON.stringify({ figure: art.tinyInk, bed: art.tinyEngineInk }));
+  check('军械与甲士同为主体量级，器械不退化成人举道具',
+    art.areaEngine > art.areaFigure * 1.03 && art.areaTreb > art.areaFigure * 1.15,
+    JSON.stringify({ figure: art.areaFigure, bed: art.areaEngine, treb: art.areaTreb }));
   check('满血不画亮绿血条，掉血才浮出暗条',
     art.greenFull === 0 && art.hpDiff > 8,
     JSON.stringify({ greenFull: art.greenFull, hpDiff: art.hpDiff }));
@@ -682,7 +714,7 @@ try {
     art.rollDiff > 10, `diff=${art.rollDiff}`);
   await sp.close();
 
-  // ── v0.7.3：移动端竖屏点击适配（独立真触屏 context） ────────────────
+  // ── v0.7.4：移动端竖屏点击适配（独立真触屏 context） ────────────────
   const mctx = await browser.newContext({
     viewport: { width: 390, height: 844 }, deviceScaleFactor: 3,
     isMobile: true, hasTouch: true,

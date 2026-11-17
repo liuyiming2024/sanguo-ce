@@ -20,8 +20,8 @@ const run = (s, turns, seed = 7) => {
 };
 const ready = () => { const s = mk(); s.cfg.factions.forEach((f) => { f.ai = false; }); collectResources(s); return s; };
 
-test('配置：0.7.3、24px/格、12 类大地图指令、城池小地图尺寸', () => {
-  assert.equal(cfg.meta.version, '0.7.3');
+test('配置：0.7.4、24px/格、12 类大地图指令、城池小地图尺寸', () => {
+  assert.equal(cfg.meta.version, '0.7.4');
   assert.equal(cfg.terrain.tilePx, 24);
   assert.equal(cfg.orders.types.length, 12);
   for (const t of ['claim', 'develop', 'buildFort', 'scout', 'march', 'transfer',
