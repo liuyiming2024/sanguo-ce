@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.9.0', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.9.1', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.9.0'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.9.0"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.9.1'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.9.1"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -408,14 +408,15 @@ ok(/export function dirIndex/.test(dirMod) && /export const DIR8/.test(dirMod) &
   '八向索引必须是确定性最近邻量化，不能靠 scale(-1,1) 镜像');
 ok(/headingFromDelta/.test(dirMod) && /normAngle/.test(dirMod),
   '缺「位移向量 → 朝向」与角度规整');
-ok(/createPortraits/.test(portMod) && /drawImage\(sheet, sx, 0, CW, CH/.test(portMod) &&
+ok(/createPortraits/.test(portMod) && /drawImage\(fr\.sheet, fr\.sx, 0, fr\.sw, fr\.sh/.test(portMod) &&
    /dirIndex\(heading/.test(portMod) && /walkPhase\(o\.walk, o\.phase\)/.test(portMod),
   '位图皮肤必须按 heading 取方向帧、按模拟相位取步态帧，不是固定一张');
-ok(/trooper-sheet\.png/.test(portMod) && /trooper-walk-sheet\.png/.test(portMod),
-  'idle 与 walk 两张 sprite sheet 都必须加载');
+ok(/trooper-sheet\.png/.test(portMod) && /trooper-walk-sheet\.png/.test(portMod) &&
+   /engine-sheet\.png/.test(portMod) && /trooper-tiny-sheet\.png/.test(portMod),
+  '人形 idle/walk、器械八向、手机 tiny 四张 sprite sheet 都必须加载');
 ok(!/Date\.|performance\.|Math\.random/.test(portMod.replace(/^\/\/[\s\S]*?\*\//, '')),
   '位图皮肤不能引入墙钟或随机源，否则破坏确定性重放');
-ok(/unitKind\(u\.type\) !== 'engine' && portraits\.ready && portraits\.draw/.test(cv8b) &&
+ok(/portraits\.ready && portraits\.draw\(ctx, \{ \.\.\.common/.test(cv8b) &&
    /drawSoldier\(ctx, u, \{/.test(cv8b),
   '素材未就绪必须能回退程序化俯视路径，不能白屏');
 ok(/heading: rp\.heading/.test(cv8b) && /unitIdleHeading/.test(cv8b),
@@ -428,7 +429,7 @@ ok(/trooper-sheet|trooper\.json|assets\/units/.test(readFileSync(join(root, 'REA
   'README 缺八向素材说明');
 
 // ── v0.9.0：背面三帧验收锁 / 24 帧步态 / 自动列队 ──────────────────────
-ok(mani.version === '0.9.0' && mani.phases?.length === 3 &&
+ok(mani.version === '0.9.1' && mani.phases?.length === 3 &&
    mani.phases.join(',') === 'idle,stepL,stepR',
   'manifest 必须是 8 向 × 3 相位');
 ok(mani.sheets?.idle === 'trooper-sheet.png' &&
@@ -447,7 +448,11 @@ ok(readdirSync(join(root, 'assets/units')).filter((f) => f.endsWith('.png')).len
 // 把验收结论固化成源图 sha256，防止误把旧的「假背面」图放回仓库。
 const { createHash } = await import('node:crypto');
 const srcDir = join(root, 'assets/units/src');
-ok(existsSync(srcDir) && readdirSync(srcDir).length === 8, '缺 8 张可复现的源图');
+ok(existsSync(srcDir) && readdirSync(srcDir).length >= 10,
+  '缺 8 张人形源图 + 2 张器械基准（都要能一键复现）');
+ok(existsSync(join(srcDir, 'src-engine-ballista.jpg')) &&
+   existsSync(join(srcDir, 'src-engine-trebuchet.jpg')),
+  '缺器械写实基准图');
 for (const [dir, hash] of Object.entries(mani.srcSha256 ?? {})) {
   const f = join(srcDir, `src-${dir}.jpg`);
   if (!existsSync(f)) { ok(false, `源图缺失 ${dir}`); continue; }

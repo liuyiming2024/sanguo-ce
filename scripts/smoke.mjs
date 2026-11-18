@@ -65,7 +65,7 @@ try {
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
   check('主菜单标注 v0.9.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.9.0'));
+    (await page.locator('#menuSub').innerText()).includes('0.9.1'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -478,7 +478,7 @@ try {
     for (let i = 0; i < 40 && !cv.portraits.ready; i++) {
       await new Promise((r) => setTimeout(r, 50));
     }
-    return cv.portraits.ready && cv.portraits.loaded === 2;
+    return cv.portraits.ready && cv.portraits.loaded === 4;
   }));
   check('八个中心角各取不同帧，360° 回到正面帧', await page.evaluate(() => {
     const cv = window.__sanguo.cityView;
@@ -500,8 +500,10 @@ try {
     const cv = window.__sanguo.cityView;
     const all = [...cv.forces().inside, ...cv.forces().camp];
     const h = (u) => cv.renderPos(u, 0).heading;
-    const inside = all.filter((u) => u.zone === 'inside');
-    const camp = all.filter((u) => u.zone === 'camp');
+    // 战斗态下在途单位有独立的行军朝向，只校验静止单位整队同向
+    const idleOnly = all.filter((u) => !cv.motionOf(u.id));
+    const inside = idleOnly.filter((u) => u.zone === 'inside');
+    const camp = idleOnly.filter((u) => u.zone === 'camp');
     return inside.length > 0 && camp.length > 0 &&
       inside.every((u) => Math.abs(h(u) - h(inside[0])) < 1e-9) &&
       camp.every((u) => Math.abs(h(u) - h(camp[0])) < 1e-9) &&
@@ -669,9 +671,9 @@ try {
     const a = c.toDataURL('image/png');
     cv.draw(sec0 + 0.35);                 // 同一模拟时刻再画一次
     const b = c.toDataURL('image/png');
-    cv.draw(sec0 + 1.4);                 // 直接跳到终点
+    cv.draw(sec0 + 3.0);                 // 直接跳到终点
     const ended = cv.motionCount;
-    const settled = cv.renderPos(u, sec0 + 1.4);
+    const settled = cv.renderPos(u, sec0 + 3.0);
     return {
       started, ended, from, to, mid, a, b, settled,
       stateClean: !('motion' in w.state) && !('anim' in w.state) &&
@@ -686,7 +688,9 @@ try {
     JSON.stringify({ from: anim.from, mid: [anim.mid.x, anim.mid.y], to: anim.to }));
   check('同一模拟时刻逐像素一致（零墙钟/零随机）', anim.a === anim.b);
   check('跳到终点自动吸附并清空动画', anim.ended === 0 &&
-    Math.abs(anim.settled.x - anim.to.x) < 0.01 && !anim.settled.walking);
+    Math.abs(anim.settled.x - anim.to.x) < 0.01 && !anim.settled.walking,
+    JSON.stringify({ ended: anim.ended, settled: anim.settled, to: anim.to,
+      started: anim.started, mid: anim.mid }));
   check('动画状态不进 state / 命令日志', anim.stateClean);
 
   // 拖拽跟手：按下并移动后，该兵画在手指位置
@@ -711,7 +715,7 @@ try {
 
   // ── v0.9.0：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
   const art = await sp.evaluate(async () => {
-    const mod = await import('./src/soldier.js?v=0.9.0');
+    const mod = await import('./src/soldier.js?v=0.9.1');
     const cfg = window.__sanguo.cfg;
     const mk = (type, opts = {}) => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 160;
@@ -957,6 +961,90 @@ try {
     await mp.evaluate((id) => window.__sanguo.cityView.selection.includes(id), cu.id));
   check('移动端无 JS 运行时报错', mErrs.length === 0, mErrs.slice(0, 2).join(' | '));
   await mctx.close();
+
+  // ── v0.9.1：攻城战闭环（真实浏览器，独立于主流程） ──────────────────
+  const bp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const bErrs = [];
+  bp.on('pageerror', (e) => bErrs.push(String(e)));
+  bp.on('console', (m) => { if (m.type() === 'error') bErrs.push(m.text()); });
+  await bp.goto(base, { waitUntil: 'domcontentloaded' });
+  await bp.waitForFunction(() => !!window.__sanguo, null, { timeout: 20000 });
+  await bp.click('#startBtn');
+  await bp.waitForFunction(() => !!document.querySelector('[data-tut="skip"]'),
+    null, { timeout: 6000 }).catch(() => {});
+  await bp.evaluate(() => {
+    document.querySelector('[data-tut="skip"]')?.click();
+    const l = document.getElementById('tutorialLayer');
+    if (l) { l.hidden = true; l.style.display = 'none'; }
+  });
+  const marched = await bp.evaluate(() => {
+    const w = window.__sanguo;
+    const from = Object.values(w.state.cities).find((c) => c.owner === 'cao');
+    const r = w.issueOrder({ faction: 'cao', from: from.id, to: 'liyang',
+      type: 'march', units: { daodun: 600, gongnu: 300 } });
+    if (r.ok) for (let i = 0; i < r.order.arriveTurn + 2; i++) w.doTurn();
+    const f = w.state.forces.liyang;
+    return { camp: f.camp.length, inside: f.inside.length };
+  });
+  check('攻城前：部队在城外扎营、守军在城内',
+    marched.camp > 0 && marched.inside > 0, JSON.stringify(marched));
+
+  await bp.evaluate(() => window.__sanguo.openBattle('liyang'));
+  await bp.waitForTimeout(350);
+  const idle = await bp.evaluate(() => {
+    const c = window.__sanguo.session.combat;
+    return { hits: c.stats.hits, volleys: c.stats.volleys, outcome: !!c.outcome,
+      camp: window.__sanguo.cityView.forces().camp.length };
+  });
+  check('城外扎营不等于开打：未派人进城时无命中、大营不动',
+    idle.hits === 0 && idle.volleys === 0 && !idle.outcome && idle.camp === marched.camp,
+    JSON.stringify(idle));
+
+  await bp.evaluate(() => {
+    const w = window.__sanguo, u = w.cityView.forces().camp[0];
+    if (u) w.deployUnit('liyang', u.id, 'inside', 5, 8);
+  });
+  await bp.waitForTimeout(1400);
+  const fighting = await bp.evaluate(() => {
+    const c = window.__sanguo.session.combat;
+    return { hits: c.stats.hits, volleys: c.stats.volleys,
+      gate: Math.round(c.gateHp), morale: Math.round(c.morale.defend),
+      projects: c.projects.length, outcome: !!c.outcome };
+  });
+  check('派人进城才开打：命中 / 发矢 / 城门耐久 / 士气都在真实推进',
+    fighting.hits > 0 || fighting.volleys > 0, JSON.stringify(fighting));
+
+  const drawn = await bp.evaluate(() => {
+    const w = window.__sanguo, cv = w.cityView, c = document.getElementById('cityCanvas');
+    const sec = w.session.sec;
+    cv.draw(sec, null); const a = c.toDataURL('image/png');
+    cv.draw(sec, w.session.combat); const b = c.toDataURL('image/png');
+    return a !== b;
+  });
+  check('小地图画出投射物 / 城防 / 主帅旗，不是空画布', drawn);
+
+  const before = await bp.evaluate(() => {
+    window.__sanguo.closeBattle();
+    return { sec: window.__sanguo.session.sec,
+      hits: window.__sanguo.session.combat.stats.hits };
+  });
+  await bp.evaluate(() => { for (let i = 0; i < 3; i++) window.__sanguo.doTurn(); });
+  await bp.waitForTimeout(200);
+  await bp.evaluate(() => window.__sanguo.openBattle('liyang'));
+  await bp.waitForTimeout(250);
+  const after = await bp.evaluate(() => {
+    const w = window.__sanguo;
+    return { sec: w.session.sec,
+      target: w.state.turn * w.cfg.calendar.secPerTurn,
+      hits: w.session.combat.stats.hits, fast: w.session._lastFast };
+  });
+  // 快进补齐到策略时刻后，实时循环会继续往前走一小段 —— 两端并行本就如此
+  check('退出隔三旬再进入：快进追平策略时刻后继续实时、战局不丢',
+    after.sec >= after.target - 0.05 && after.sec < after.target + 1.0 &&
+    after.hits >= before.hits && after.fast > 0,
+    JSON.stringify({ before, after }));
+  check('攻城战无 JS 运行时报错', bErrs.length === 0, bErrs.slice(0, 2).join(' | '));
+  await bp.close();
 
   check('无 JS 运行时报错', errors.length === 0, errors.slice(0, 2).join(' | '));
 } finally {

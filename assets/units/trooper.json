@@ -1,5 +1,5 @@
 {
-  "version": "0.9.0",
+  "version": "0.9.1",
   "unit": "trooper",
   "style": "写实淡彩 · 墨线勾勒 · 花青赭石 · 平光散光",
   "canvas": [
@@ -16,7 +16,21 @@
   "phaseRule": "静止取 idle；行走按 sin(phase) 符号在 stepL / stepR 间交替",
   "sheets": {
     "idle": "trooper-sheet.png",
-    "walk": "trooper-walk-sheet.png"
+    "walk": "trooper-walk-sheet.png",
+    "engine": "engine-sheet.png",
+    "tiny": "trooper-tiny-sheet.png"
+  },
+  "engine": {
+    "ballista": 0,
+    "trebuchet": 8,
+    "note": "刚体绕垂直轴旋转的 58° 俯视投影派生，非镜像；器械不摆腿，行军用轮架颠簸"
+  },
+  "tiny": {
+    "canvas": [
+      72,
+      108
+    ],
+    "note": "s<13 用轮廓增强小帧，不把 560×820 硬缩成 10px"
   },
   "note": "8 向转身 × 3 相位 = 24 帧，统一画布与脚底基线。背面三帧经人工验收：看不到护心镜 / 腰前蝴蝶结 / 盾面铆钉，只见背带、背甲、盾背握把。步态由 idle 确定性几何派生，非 AI 逐张画腿（避免多腿与盔甲漂移）。背景已抠透明，地面投影由渲染层绘制；运行时只读，不参与状态计算。",
   "srcSha256": {
@@ -29,6 +43,24 @@
     "d6_left": "9d238bfd6034a6a6",
     "d7_front_left": "5d0211c8f3cdcbe2"
   },
+  "engineFiles": [
+    "engine-ballista-d0.png",
+    "engine-ballista-d1.png",
+    "engine-ballista-d2.png",
+    "engine-ballista-d3.png",
+    "engine-ballista-d4.png",
+    "engine-ballista-d5.png",
+    "engine-ballista-d6.png",
+    "engine-ballista-d7.png",
+    "engine-trebuchet-d0.png",
+    "engine-trebuchet-d1.png",
+    "engine-trebuchet-d2.png",
+    "engine-trebuchet-d3.png",
+    "engine-trebuchet-d4.png",
+    "engine-trebuchet-d5.png",
+    "engine-trebuchet-d6.png",
+    "engine-trebuchet-d7.png"
+  ],
   "frames": [
     {
       "index": 0,

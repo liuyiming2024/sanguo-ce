@@ -16,10 +16,12 @@
 // 护心镜 + 按兵种兵器），motion 全是渲染层私有状态，
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
-import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.9.0';
-import { createPortraits } from './portrait.js?v=0.9.0';
-import { headingFromDelta, normAngle } from './direction.js?v=0.9.0';
-import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js?v=0.9.0';
+import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.9.1';
+import { createPortraits } from './portrait.js?v=0.9.1';
+import { headingFromDelta, normAngle } from './direction.js?v=0.9.1';
+import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js?v=0.9.1';
+import { findCityPath, cityObstacles } from './siege-grid.js?v=0.9.1';
+import { formatCalendar } from './calendar.js?v=0.9.1';
 
 const INK = '#0b100e';
 const TEXT = '#e2ddc7', DIM = '#9aa896', GOLD = '#e8c882';
@@ -48,6 +50,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   let circle = null, dragUnit = null, pointer = null;
   let selection = new Set(), champion = null;
   let formationShape = 'line';   // 横队 / 方阵 / 楔形，HUD 右上热区点击切换
+  const pathByUnit = new Map();  // 一次性 A* 路线，渲染层私有，不进 state
+  let currentCombat = null;
   // ── 行军动画（渲染层私有，绝不进 state） ──────────────────────────────
   const motion = new Map();    // id -> {fx,fy,tx,ty,startSec,dur,dir,seed,heading}
   const lastKey = new Map();   // id -> "zone:col:row"，用来检测逻辑位置变化
@@ -100,7 +104,20 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   function tweenAt(m, sec) {
     const t = Math.max(0, Math.min(1, (sec - m.startSec) / m.dur));
     const e = t * t * (3 - 2 * t);            // smoothstep：起步/收步都慢
-    return { x: m.fx + (m.tx - m.fx) * e, y: m.fy + (m.ty - m.fy) * e, t };
+    if (!m.pts || m.pts.length < 2 || !m.segs || m.segs.length !== m.pts.length) {
+      return { x: m.fx + (m.tx - m.fx) * e, y: m.fy + (m.ty - m.fy) * e, t,
+        heading: m.heading ?? 0 };
+    }
+    // 沿 A* waypoint 逐段走：不是一条直线穿过府衙 / 仓井。
+    const total = m.segs.at(-1) || 1;
+    const target = e * total;
+    let i = 0;
+    while (i < m.segs.length - 2 && m.segs[i + 1] < target) i++;
+    const a = m.pts[i], b = m.pts[i + 1];
+    const span = Math.max(1e-6, m.segs[i + 1] - m.segs[i]);
+    const k = Math.max(0, Math.min(1, (target - m.segs[i]) / span));
+    return { x: a.x + (b.x - a.x) * k, y: a.y + (b.y - a.y) * k, t,
+      heading: Math.atan2(b.y - a.y, b.x - a.x) };
   }
 
   /** 每帧开头：把「逻辑位置被改了」翻译成一段从旧点到新点的行军。 */
@@ -121,14 +138,34 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
         if (!from && m) from = tweenAt(m, sec);
         if (!from) from = lastXY.get(u.id) ?? { x: to.x, y: to.y };
         const dist = Math.hypot(to.x - from.x, to.y - from.y);
-        if (dist < 1.2) motion.delete(u.id);
+        if (dist < 1.2) { motion.delete(u.id); pathByUnit.delete(u.id); }
         else {
           const heading = headingFromDelta(to.x - from.x, to.y - from.y,
             lastHeading.get(u.id) ?? 0);
+          // 优先用编队 / 部署算出的 A* 路线；没有才退回单段直线。
+          const L = layout;
+          const raw = pathByUnit.get(u.id); pathByUnit.delete(u.id);
+          let pts = null, segs = null, total = dist;
+          if (raw && raw.length > 1) {
+            pts = [{ x: from.x, y: from.y }];
+            for (const q of raw.slice(1)) {
+              const p = { x: L.ox + (q.col + 0.5) * L.cell,
+                y: L.oy + (q.row + 0.5) * L.cell };
+              if (Math.hypot(p.x - pts.at(-1).x, p.y - pts.at(-1).y) > 1) pts.push(p);
+            }
+            if (Math.hypot(to.x - pts.at(-1).x, to.y - pts.at(-1).y) > 1) pts.push({ x: to.x, y: to.y });
+            if (pts.length > 1) {
+              segs = [0];
+              for (let k = 1; k < pts.length; k++)
+                segs.push(segs.at(-1) + Math.hypot(pts[k].x - pts[k - 1].x, pts[k].y - pts[k - 1].y));
+              total = segs.at(-1);
+            } else pts = null;
+          }
           motion.set(u.id, {
             fx: from.x, fy: from.y, tx: to.x, ty: to.y,
-            startSec: sec, dur: Math.min(0.95, Math.max(0.30, 0.26 + dist / 240)),
+            startSec: sec, dur: Math.min(1.15, Math.max(0.30, 0.26 + total / 420)),
             dir: to.x >= from.x ? 1 : -1, seed: idSeed(u.id), heading,
+            pts, segs,
           });
           lastHeading.set(u.id, heading);
         }
@@ -161,7 +198,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     const amp = Math.min(1, Math.sin(Math.PI * a.t) * 1.15);
     return { x: a.x, y: a.y, walking: true, dir: m.dir,
       phase: (sec - m.startSec) * 11 + m.seed, amp,
-      heading: normAngle(m.heading ?? 0) };
+      heading: normAngle(a.heading ?? m.heading ?? 0) };
   }
 
   const unitXY = (u) => {
@@ -207,7 +244,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   }
 
   // ── 绘制 ─────────────────────────────────────────────────────────────
-  function draw(sec = 0) {
+  function draw(sec = 0, combat = null) {
+    currentCombat = combat;
     // 被动尺寸变化（地址栏收起、横竖屏、面板展开）未必会触发 resize 事件；
     // 每帧用 clientWidth 做一次轻量校验，发现位图与 CSS 尺寸不符就重建。
     if (canvas.clientWidth > 0 && canvas.clientHeight > 0 &&
@@ -233,6 +271,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     drawWall(L, sec);
     drawInner(L, sec);
     for (const u of allUnits()) drawUnit(u, L, sec);
+    if (combat) drawCombat(L, combat, sec);
     drawOverlays(L, sec);
     drawHud(L);
   }
@@ -378,13 +417,102 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
       heading: rp.heading, hp: (u.hp ?? 1) / (u.maxHp || 1),
       selected: selection.has(u.id), champion: u.id === champion,
     };
-    // 人形用八向写实位图（方向变了就换帧，不再镜像翻转）；
-    // 器械仍是程序化俯视木架，素材没到位时整队回退程序化路径。
-    if (unitKind(u.type) !== 'engine' && portraits.ready && portraits.draw(ctx, common)) return;
+    // 人形与器械都走八向写实位图：人形真转身 / 器械刚体旋转投影，
+    // 不再镜像翻转，也不再让器械退回程序化木架。素材未就绪才回退。
+    const engine = unitKind(u.type) === 'engine';
+    if (portraits.ready && portraits.draw(ctx, { ...common,
+      kind: engine ? 'engine' : 'trooper',
+      engine: u.type === 'paoshi' ? 'trebuchet' : 'ballista' })) return;
     drawSoldier(ctx, u, {
       ...common, seed: idSeed(u.id), col: factionColor(u.faction),
       def: cfg.units[u.type], lightGround,
     });
+  }
+
+  /** 单兵部署也沿 A* 走，不穿府衙 / 仓井。 */
+  function setUnitPath(id, from, to) {
+    const r = findCityPath(from, to, { cols: CV.cols, rows: CV.rows,
+      blocked: cityObstacles(cfg) });
+    if (r.ok && r.path.length > 1) pathByUnit.set(id, r.path);
+  }
+
+  /** 战斗层只读可视化：投射物、主帅、城防、士气、终局。不写任何状态。 */
+  function drawCombat(L, c, sec) {
+    const gx = (col) => L.ox + (col + 0.5) * L.cell;
+    const gy = (row) => L.oy + (row + 0.5) * L.cell;
+
+    // 城门 / 府衙耐久：细金条，不盖住城池名称
+    const bars = [
+      { x: L.wallX + 14, y: L.padTop + 4, label: '城门',
+        v: c.gateHp / (c.gateHpMax ?? cfg.battle.gateHp), col: '#c8a86a' },
+      { x: gx(CV.yamen.col) - L.cell * 1.6, y: gy(CV.yamen.row) - L.cell * 1.5,
+        label: '府衙', v: c.yamenHp / (c.yamenHpMax ?? cfg.battle.yamenHp), col: '#b98f6a' },
+    ];
+    ctx.font = '10px "WenQuanYi Micro Hei", serif';
+    ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+    for (const b of bars) {
+      ctx.fillStyle = 'rgba(10,14,12,.55)'; ctx.fillRect(b.x, b.y, 62, 5);
+      ctx.fillStyle = rgba(b.col, 0.85); ctx.fillRect(b.x, b.y, 62 * Math.max(0, Math.min(1, b.v)), 5);
+      ctx.fillStyle = rgba(TEXT, 0.7);
+      ctx.fillText(`${b.label} ${Math.round(b.v * 100)}%`, b.x, b.y + 6);
+    }
+
+    // 主帅：旗纛 + 状态印。被擒 / 阵亡才染朱砂，平时只用金。
+    const cmd = c.commander;
+    if (cmd && cmd.state !== 'captured') {
+      const x = gx(cmd.col), y = gy(cmd.row);
+      const lost = cmd.state === 'dead';
+      ctx.strokeStyle = rgba(GOLD, lost ? 0.3 : 0.8); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(x, y + L.cell * 0.5); ctx.lineTo(x, y - L.cell * 1.1); ctx.stroke();
+      ctx.fillStyle = lost ? 'rgba(80,70,62,.6)' : rgba('#a63129', 0.78);
+      ctx.beginPath();
+      ctx.moveTo(x, y - L.cell * 1.1); ctx.lineTo(x + L.cell * 0.9, y - L.cell * 0.85);
+      ctx.lineTo(x, y - L.cell * 0.6); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = rgba(TEXT, 0.82);
+      ctx.fillText(`${cmd.name} · ${ { inOffice:'在任', exposed:'失护卫', dead:'阵亡', captured:'被擒' }[cmd.state] }`,
+        x - L.cell * 0.5, y + L.cell * 0.62);
+    }
+
+    // 投射物：箭/弩矢是短直线，石弹是带弧高的圆点；全部按格坐标飞
+    for (const p of c.projects ?? []) {
+      const x = gx(p.col), y = gy(p.row);
+      const lift = p.arc ? 3.5 * Math.sin(Math.PI * Math.max(0, Math.min(1, 1 - p.ttl / 4.5))) : 0;
+      ctx.strokeStyle = p.side === 'attack' ? rgba('#d8c89a', 0.9) : rgba('#a9d4e6', 0.9);
+      ctx.lineWidth = p.type === 'stone' ? 2.4 : 1.3;
+      if (p.type === 'stone') {
+        ctx.fillStyle = rgba('#8b8676', 0.95);
+        ctx.beginPath(); ctx.arc(x, y - lift, Math.max(1.6, L.cell * 0.16), 0, Math.PI * 2); ctx.fill();
+      } else {
+        const n = Math.hypot(p.vx, p.vy) || 1;
+        const len = L.cell * (p.type === 'bolt' ? 0.66 : 0.42);
+        ctx.beginPath();
+        ctx.moveTo(x - (p.vx / n) * len, y - lift - (p.vy / n) * len);
+        ctx.lineTo(x, y - lift); ctx.stroke();
+      }
+    }
+
+    // 战况：只放在底部一行，不把「累计逻辑步」升格成一级 UI
+    ctx.textAlign = 'right';
+    ctx.fillStyle = rgba(TEXT, 0.72); ctx.font = '11px "WenQuanYi Micro Hei", serif';
+    ctx.fillText(`士气 攻 ${Math.round(c.morale.attack)} / 守 ${Math.round(c.morale.defend)} · 矢 ${(c.projects ?? []).length}`,
+      W - 12, H - 16);
+    ctx.textAlign = 'left';
+
+    if (c.outcome) {
+      const won = c.outcome.won;
+      const bw = Math.min(W - 40, 360), bh = 54;
+      const bx = (W - bw) / 2, by = H * 0.42;
+      ctx.fillStyle = 'rgba(10,14,12,.88)'; ctx.fillRect(bx, by, bw, bh);
+      ctx.strokeStyle = rgba(won ? GOLD : '#a63129', 0.9); ctx.lineWidth = 1.4;
+      ctx.strokeRect(bx, by, bw, bh);
+      ctx.textAlign = 'center'; ctx.fillStyle = won ? rgba(GOLD, 0.95) : rgba('#e9a99d', 0.95);
+      ctx.font = '600 17px "WenQuanYi Micro Hei", serif';
+      ctx.fillText(won ? `城破 · ${c.outcome.reason}` : `退兵 · ${c.outcome.reason}`, W / 2, by + 12);
+      ctx.font = '11px "WenQuanYi Micro Hei", serif'; ctx.fillStyle = rgba(TEXT, 0.72);
+      ctx.fillText(`${formatCalendar(c.result?.endTurn ?? 0, cfg.calendar, 'date')} · 存活 ${c.result?.survivors ?? 0}`,
+        W / 2, by + 34);
+      ctx.textAlign = 'left';
+    }
   }
 
   function drawOverlays(L, sec) {
@@ -486,6 +614,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
       const id = dragUnit.id;
       dragUnit = null;
       const t = screenToTarget(p.x, p.y);
+      if (t.zone === 'inside' && P.unit?.zone === 'inside') {
+        setUnitPath(id, { col: P.unit.col, row: P.unit.row }, { col: t.col, row: t.row });
+      }
       callbacks.onDeploy(id, t.zone, t.col, t.row, P.unit);
       circle = null;
       return;
@@ -501,7 +632,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
         .map((u) => `${u.col}:${u.row}`));
       const res = assignFormation({
         units: chosen.map((u) => ({ id: u.id, zone: u.zone, col: u.col, row: u.row })),
-        target: t, cols: CV.cols, rows: CV.rows, occupied, shape: formationShape,
+        target: t, cols: CV.cols, rows: CV.rows, occupied,
+        blocked: cityObstacles(cfg), shape: formationShape,
       });
       if (res.assignments.length) {
         callbacks.onFormationMove(res, t);
@@ -571,6 +703,12 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     get viewport() { return { W, H, dpr, attrW: canvas.width, attrH: canvas.height }; },
     get motionCount() { return motion.size; },
     unitKind,
+    setPaths(result) {
+      for (const a of result?.assignments ?? []) {
+        if (a.path && a.path.length > 1) pathByUnit.set(a.id, a.path);
+      }
+    },
+    setUnitPath,
     motionOf: (id) => motion.get(id) ?? null,
     get portraits() { return portraits; },
     frameFor: (heading) => portraits.frameFor(heading),
@@ -584,7 +722,7 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
         .map((u) => `${u.col}:${u.row}`));
       return assignFormation({ units: chosen.map((u) => ({ id: u.id, zone: u.zone,
         col: u.col, row: u.row })), target, cols: CV.cols, rows: CV.rows,
-        occupied, shape: shape ?? formationShape });
+        occupied, blocked: cityObstacles(cfg), shape: shape ?? formationShape });
     },
     renderPos, hitUnit,
     setCallbacks(cb) { callbacks = { ...callbacks, ...cb }; },

@@ -8,6 +8,8 @@ import { createCommandLog, createActorRegistry, appendCommand } from './sync.js'
 import {
   routeCities, findRoute, hasAdjacentTerritory, claimTile, tilesPerTurn,
 } from './pathfind.js';
+import { generalFor, facilityLevel } from './generals.js';
+import { cityObstacles, nearestFree } from './siege-grid.js';
 
 export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } = {}) {
   const terrain = createTerrain(cfg);
@@ -101,7 +103,12 @@ export function cityHidden(state, id) {
 }
 
 export function troopCap(state, id) {
-  return Math.round(state.cities[id].pop * state.cfg.city.popToTroopRatio);
+  const cfg = state.cfg;
+  const lv = facilityLevel(state, id);
+  const gen = generalFor(cfg, state, id);
+  const F = cfg.facilities.effects;
+  const k = 1 + lv * 0.01 + (gen.command - 50) / cfg.generals.effects.commandTroopCapDiv;
+  return Math.round(state.cities[id].pop * cfg.city.popToTroopRatio * k);
 }
 
 function pushMail(state, e) {
@@ -297,8 +304,15 @@ export function makeUnits(state, unitsSpec, faction, zone, cityId) {
     const squads = Math.max(1, Math.min(12, Math.ceil(count / 120)));
     for (let k = 0; k < squads; k++) {
       const idx = n++;
-      const col = zone === 'inside' ? 2 + (idx % 6) : 1 + (idx % 4);
-      const row = zone === 'inside' ? 3 + Math.floor(idx / 6) * 2 : 3 + Math.floor(idx / 4) * 2;
+      let col = zone === 'inside' ? 2 + (idx % 6) : 1 + (idx % 4);
+      let row = zone === 'inside' ? 3 + Math.floor(idx / 6) * 2 : 3 + Math.floor(idx / 4) * 2;
+      // 城内初始布防不能落在府衙 / 仓井 / 城墙上，否则 A* 起点即被堵死。
+      if (zone === 'inside') {
+        const blocked = cityObstacles(state.cfg);
+        const alt = nearestFree({ col, row }, { cols: state.cfg.cityView.cols,
+          rows: state.cfg.cityView.rows, blocked, occupied: new Set() });
+        if (alt) { col = alt.col; row = alt.row; }
+      }
       out.push({
         id: `u${state.nextUnitId++}`, type, faction, zone, cityId,
         hp: def.hp, maxHp: def.hp,
@@ -377,7 +391,8 @@ export function collectResources(state, { apply = true } = {}) {
         iron: 1 + (fl.liantiechang ?? 0) * 0.03,
         grain: 1 + (fl.mofang ?? 0) * 0.03,
       };
-      const glob = 1 + (fl.chengzhufu ?? 0) * 0.02;
+      const lv = facilityLevel(state);
+      const glob = 1 + (fl.chengzhufu ?? 0) * 0.02 + lv * state.cfg.facilities.effects.yieldPerLevel * 0.01;
       for (const k of ['wood', 'stone', 'iron', 'grain']) {
         o[k] = Math.round(o[k] * bonus[k] * glob * 10) / 10;
       }
@@ -590,13 +605,18 @@ export function resolveBattle(state, result) {
   }
   c.garrison = Math.max(0, result.survivors ?? c.garrison);
   c.fatigue = Math.min(100, c.fatigue + 10);
-  // 终局后清掉攻方大营里的残留实体，守方城内保留（城已易主则归属同步）。
+  // 终局兵力回写按存活数，绝不凭空抹掉：城破后大营仍是城外驻军，
+  // 退兵则把城内攻方残部收回大营 —— 这正是「先打着，然后再退出」。
   const f = getForces(state, result.city);
   if (result.won) {
-    f.camp = f.camp.filter((u) => u.faction !== result.attacker);
     for (const u of f.inside) u.faction = result.attacker;
   } else {
-    f.camp = f.camp.filter((u) => u.faction !== result.attacker);
+    const back = f.inside.filter((u) => u.faction === result.attacker && (u.hp ?? 1) > 0);
+    f.inside = f.inside.filter((u) => !back.includes(u));
+    for (const u of back) {
+      u.zone = 'camp'; u.col = 1; u.row = 3 + (f.camp.length % 6) * 2;
+      f.camp.push(u);
+    }
   }
   delete state.battles[result.battleId];
   state.stats.battlesClosed++;

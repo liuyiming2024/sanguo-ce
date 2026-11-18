@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "三国策 · 官渡",
-    "version": "0.9.0",
+    "version": "0.9.1",
     "subtitle": "建安五年 · 官渡章回 · 工笔青绿设色"
   },
   "calendar": {
@@ -254,7 +254,44 @@
       "col": 19,
       "row": 8
     },
-    "_note": "城池小地图即攻城子界面，双时钟仍并行；退出拍快照含 forces。"
+    "_note": "攻城战斗固定步长；格坐标，range 按 pxPerTile 折算。隐藏属性全部只通过溃散/被擒/战损间接生效。 战斗只在玩家把兵派进城里后开打；城外大营由玩家投入，援军按抵达时刻进大营不打断战斗。",
+    "pxPerTile": 20,
+    "maxBattleSec": 180,
+    "commanderGuardMin": 2,
+    "moraleRoutThreshold": 24,
+    "moraleMax": 100,
+    "projectileSpeed": {
+      "arrow": 9.5,
+      "bolt": 13.0,
+      "stone": 5.2
+    },
+    "projectileTtlSec": {
+      "arrow": 3.2,
+      "bolt": 3.0,
+      "stone": 4.5
+    },
+    "meleeCooldownSec": 1.35,
+    "rangedCooldownSec": 2.1,
+    "siegeCooldownSec": 2.8,
+    "stratagemCooldownSec": 6.0,
+    "hitRadiusTiles": 0.62,
+    "routSpeedTilesPerSec": 2.6,
+    "gateHp": 220,
+    "yamenHp": 300,
+    "wallHp": 260,
+    "dmgMoraleFloor": 0.55,
+    "dmgFatigueDiv": 220,
+    "dmgFormationFloor": 0.78,
+    "moraleLossPerAllyDown": 5.5,
+    "moraleLossPerEnemyReinforce": 3.0,
+    "moraleGainPerStratagem": 9.0,
+    "moraleRecoverPerSec": 0.14,
+    "fatiguePerSec": 0.035,
+    "grainDrainPerSec": 0.01,
+    "captureChanceBase": 0.62,
+    "captureLoyaltyDiv": 260,
+    "commanderHp": 90,
+    "commanderExposeRadius": 2.2
   },
   "presentation": {
     "parchment": "#cdc4a7",
@@ -292,6 +329,116 @@
     "deployCostSec": 0.35,
     "circleMinPx": 14,
     "dragThresholdPx": 12,
-    "_note": "城池单独界面：固定视口、不拖动，只有调兵。己方部队初始在城内，敌方在城外大营；拖拽把兵从大营投入城内或撤出。"
-  }
+    "_note": "城池单独界面：固定视口、不拖动，只有调兵。己方部队初始在城内，敌方在城外大营；拖拽把兵从大营投入城内或撤出。",
+    "warehouses": [
+      [
+        6,
+        3
+      ],
+      [
+        6,
+        12
+      ],
+      [
+        14,
+        3
+      ],
+      [
+        14,
+        12
+      ]
+    ],
+    "_obstaclesNote": "府衙 3x3 + 四处仓井 2x2 + 城墙列（城门通道除外）为不可通行格；A* 禁止贴角穿越。"
+  },
+  "generals": {
+    "base": {
+      "command": 62,
+      "force": 58,
+      "intellect": 55,
+      "politics": 54,
+      "loyalty": 70
+    },
+    "perCity": {
+      "xudu": {
+        "name": "荀彧",
+        "command": 78,
+        "force": 32,
+        "intellect": 92,
+        "politics": 96,
+        "loyalty": 94
+      },
+      "ye": {
+        "name": "审配",
+        "command": 74,
+        "force": 55,
+        "intellect": 78,
+        "politics": 80,
+        "loyalty": 88
+      },
+      "guandu": {
+        "name": "淳于琼",
+        "command": 58,
+        "force": 66,
+        "intellect": 38,
+        "politics": 42,
+        "loyalty": 61
+      },
+      "baima": {
+        "name": "颜良",
+        "command": 72,
+        "force": 91,
+        "intellect": 32,
+        "politics": 30,
+        "loyalty": 82
+      },
+      "yanjin": {
+        "name": "文丑",
+        "command": 68,
+        "force": 89,
+        "intellect": 30,
+        "politics": 28,
+        "loyalty": 80
+      }
+    },
+    "effects": {
+      "commandMoraleDiv": 420,
+      "commandTroopCapDiv": 180,
+      "forceMeleeDiv": 300,
+      "intellectRangedDiv": 420,
+      "intellectStratagemDiv": 300,
+      "politicsWallRepairDiv": 260,
+      "loyaltyCaptureDiv": 260
+    },
+    "_note": "统率→士气/带兵上限；武力→近战伤害；智力→远程与计策；政治→城防修复；忠诚→被擒后招降。五维不直接显示数值。"
+  },
+  "facilities": {
+    "effects": {
+      "wallRepairPerLevel": 2.4,
+      "yieldPerLevel": 0.06,
+      "troopCapPerLevel": 14,
+      "gateHpPerLevel": 18,
+      "moralePerLevel": 1.6
+    },
+    "_note": "内政设施等级接进城防修复、产出、征兵上限、城门耐久与初始士气；此前只是展示层。"
+  },
+  "tactics": {
+    "鼓舞": {
+      "morale": 9.0,
+      "kind": "morale",
+      "_note": "军师计策：只改士气"
+    },
+    "疑兵": {
+      "alert": -14,
+      "kind": "alert",
+      "_note": "降敌警觉，使其更难组织拦截"
+    },
+    "火攻": {
+      "wall": -16,
+      "gate": -10,
+      "kind": "siege",
+      "_note": "削城防与城门耐久，不直接伤人"
+    },
+    "_note": "军师零伤害辅助；计策不改物理法则，也不新增法术/召唤/眩晕。"
+  },
+  "version": "0.9.1"
 }

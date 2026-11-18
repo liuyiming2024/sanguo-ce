@@ -113,7 +113,7 @@ test('空选 / 无目标：安全返回空，不抛错', () => {
 test('24 帧资产齐备，步态帧与 idle 确实不同（不是复制同一张）', () => {
   const dir = new URL('../assets/units/', import.meta.url);
   const m = JSON.parse(readFileSync(new URL('trooper.json', dir), 'utf8'));
-  assert.equal(m.version, '0.9.0');
+  assert.equal(m.version, '0.9.1');
   assert.deepEqual(m.phases, ['idle', 'stepL', 'stepR']);
   const pngs = readdirSync(dir).filter((f) => f.endsWith('.png'));
   assert.ok(pngs.length >= 26, `只有 ${pngs.length} 张 PNG`);

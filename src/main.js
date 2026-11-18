@@ -1,38 +1,38 @@
 // 装配层 v0.7.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.9.0';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.9.1';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.9.0';
+} from './campaign.js?v=0.9.1';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.9.0';
-import { createMapRenderer } from './map-render.js?v=0.9.0';
-import { createCityView } from './city-view.js?v=0.9.0';
+} from './pathfind.js?v=0.9.1';
+import { createMapRenderer } from './map-render.js?v=0.9.1';
+import { createCityView } from './city-view.js?v=0.9.1';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.9.0';
-import { CITIES, cityById } from './map-data.js?v=0.9.0';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.9.0';
+} from './battle-session.js?v=0.9.1';
+import { CITIES, cityById } from './map-data.js?v=0.9.1';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.9.1';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.9.0';
+} from './story.js?v=0.9.1';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.9.0';
-import { TYPE_LABEL } from './terrain.js?v=0.9.0';
-import { createTutorialUI } from './tutorial-ui.js?v=0.9.0';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.9.0';
-import { createShell, facilityCost } from './ui-shell.js?v=0.9.0';
+} from './sync.js?v=0.9.1';
+import { TYPE_LABEL } from './terrain.js?v=0.9.1';
+import { createTutorialUI } from './tutorial-ui.js?v=0.9.1';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.9.1';
+import { createShell, facilityCost } from './ui-shell.js?v=0.9.1';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.9.0';
-import { formationSummary } from './formation.js?v=0.9.0';
+} from './persist.js?v=0.9.1';
+import { formationSummary } from './formation.js?v=0.9.1';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -45,6 +45,7 @@ let openingChoice = 'farm', chapterGateWasReady = false;
 let session = null, snapshot = null, battleCityId = null;
 let auto = true, accTurn = 0, last = 0, started = false, dirty = true;
 let selection = null, selectedCity = null, toastTimer = null, saveTick = 0;
+let lastBattleOutcome = null;
 let reports = [];
 
 const heroById = (id) => uiData?.heroes.find((h) => h.id === id) ?? null;
@@ -341,9 +342,14 @@ function refreshBattleUI() {
   $('bFastSteps').textContent = session._lastFast ?? 0;
   $('bSteps').textContent = session.stepsRun;
   const f = getForces(state, session.cityId);
-  $('bForces').textContent = `${f.inside.length} / ${f.camp.length}`;
-  $('bMorale').textContent = `${Math.round(session.morale)} / ${Math.round(session.cityWall)}`;
-  $('bMail').textContent = session.pendingOrders.length;
+  const c = session.combat;
+  $('bForces').textContent = `${f.inside.filter((u) => (u.hp ?? 1) > 0).length} / ${f.camp.length}`;
+  $('bMorale').textContent = c
+    ? `攻 ${Math.round(c.morale.attack)} / 守 ${Math.round(c.morale.defend)} · 门 ${Math.round(c.gateHp)}`
+    : `${Math.round(session.morale)} / ${Math.round(session.cityWall)}`;
+  $('bMail').textContent = c
+    ? `${session.pendingOrders.length} 令 · 矢 ${c.projects.length} · 亡 ${c.stats.kills}`
+    : String(session.pendingOrders.length);
 }
 
 // ── 回合推进 ────────────────────────────────────────────────────────────
@@ -634,6 +640,7 @@ const actions = {
 // ── 城池小地图（攻城子界面） ────────────────────────────────────────────
 function openBattle(cityId = selectedCity ?? battleCityId ?? CITIES[0].id) {
   battleCityId = cityId;
+  if (session?.cityId !== cityId) lastBattleOutcome = null;
   if (!session || session.cityId !== cityId) {
     session = snapshot && snapshot.cityId === cityId
       ? restoreSession(cfg, state, snapshot)
@@ -666,6 +673,7 @@ function openBattle(cityId = selectedCity ?? battleCityId ?? CITIES[0].id) {
     },
     onSelect: (ids) => { if (ids.length) toast(`框选 ${ids.length} 队 · 点一个位置自动列队`); },
     onFormationMove: (res, target) => {
+      cityView.setPaths(res);   // A* 路线交给渲染层，不进 state
       let ok = 0;
       for (const a of res.assignments) {
         const r = deployUnit(state, cityId, a.id, a.zone, a.col, a.row);
@@ -958,21 +966,35 @@ function frame(now) {
       let guard = 0;
       while (accTurn >= per && guard++ < 4) { accTurn -= per; doTurn(); }
     }
-    if (session?.active) { tickSession(session, realDt); refreshBattleUI(); }
+    if (session?.active) {
+      tickSession(session, realDt);
+      refreshBattleUI();
+      const c = session.combat;
+      if (c?.outcome && lastBattleOutcome !== c.outcome.reason) {
+        lastBattleOutcome = c.outcome.reason;
+        const meta = cityById(session.cityId);
+        const msg = `${meta?.name ?? session.cityId} ${c.outcome.won ? '城破' : '退兵'} · ${c.outcome.reason}`;
+        toast(msg); log(msg);
+        pushReport({ title: msg, tag: '战报', red: true,
+          sub: formatCalendar(state.turn, cfg.calendar, 'short'),
+          body: `${formatCalendar(c.result?.endTurn ?? state.turn, cfg.calendar, 'date')}结算：存活 ${c.result?.survivors ?? 0} 兵，发矢 ${c.result?.shots ?? 0}，用计 ${c.result?.stratagems ?? 0}。` });
+        refreshUI();
+      }
+    }
   }
   const needDraw = !state?.settings?.idleStop || dirty || battleOpen || session?.active;
   if (needDraw) { renderer.draw(ctx); dirty = false; }
-  if (cityView && battleOpen) cityView.draw(session?.sec ?? 0);
+  if (cityView && battleOpen) cityView.draw(session?.sec ?? 0, session?.combat ?? null);
   requestAnimationFrame(frame);
 }
 
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.9.0').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.9.0').then((r) => r.json()),
-    fetch('./config/story.json?v=0.9.0').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.9.0').then((r) => r.json()),
+    fetch('./config/campaign.json?v=0.9.1').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.9.1').then((r) => r.json()),
+    fetch('./config/story.json?v=0.9.1').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.9.1').then((r) => r.json()),
   ]);
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);

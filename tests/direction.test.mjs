@@ -91,8 +91,8 @@ test('渲染层是可选皮肤：不进状态、无墙钟、无随机、保留�
     '加载状态污染了存档或状态指纹');
   assert.ok(/portraits\.ready && portraits\.draw/.test(cv) &&
     /drawSoldier\(ctx, u, \{/.test(cv), '素材未就绪必须回退程序化路径');
-  assert.ok(/unitKind\(u\.type\) !== 'engine'/.test(cv),
-    '器械必须保留程序化俯视木架，不能套人形位图');
+  assert.ok(/kind: engine \? 'engine' : 'trooper'/.test(cv),
+    '器械必须走独立的八向刚体旋转帧，不能套人形位图');
   assert.ok(/lastHeading/.test(cv) && /heading: rp\.heading/.test(cv),
     '朝向必须逐帧传给渲染层，不能只靠 dir 镜像');
 });

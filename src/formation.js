@@ -7,6 +7,7 @@
 // 可直接进单测、进命令日志、进重放校验。格位由 city-view 交给 onDeploy 应用，
 // 行军 tween 由渲染层按逻辑格位变化自动产生。
 import { headingFromDelta } from './direction.js';
+import { findCityPath } from './siege-grid.js';
 
 export const FORMATIONS = ['line', 'block', 'wedge'];
 export const FORMATION_LABEL = { line: '横队', block: '方阵', wedge: '楔形' };
@@ -51,7 +52,7 @@ export function formationOffsets(shape = 'line', radius = 12) {
 export function assignFormation(opts) {
   const {
     units = [], target, cols = 24, rows = 16,
-    occupied = new Set(), shape = 'line',
+    occupied = new Set(), blocked = new Set(), shape = 'line',
   } = opts;
   if (!target || units.length === 0) {
     return { assignments: [], heading: 0, formation: shape };
@@ -87,9 +88,15 @@ export function assignFormation(opts) {
     const c = target.col + o.dc, r = target.row + o.dr;
     if (c < 0 || c >= cols || r < 0 || r >= rows) continue;
     const k = key(c, r);
-    if (used.has(k) || occupied.has(k)) continue;
+    if (used.has(k) || occupied.has(k) || blocked.has(k)) continue;
     used.add(k);
-    assignments.push({ id: sorted[assignments.length].id, zone: 'inside', col: c, row: r, slot: assignments.length });
+    const u = sorted[assignments.length];
+    // 每人一条 A* 路线：格继续管哪格能走，渲染层沿 waypoint 分段走，
+    // 不再一条直线穿过府衙 / 仓井。路径不进 state，纯渲染层消费。
+    const pathRes = findCityPath({ col: u.col, row: u.row }, { col: c, row: r },
+      { cols, rows, blocked, occupied: new Set([...occupied, ...used]) });
+    assignments.push({ id: u.id, zone: 'inside', col: c, row: r,
+      slot: assignments.length, path: pathRes.ok ? pathRes.path : null });
   }
   return { assignments, heading, formation: shape };
 }

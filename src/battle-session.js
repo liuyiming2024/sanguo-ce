@@ -5,7 +5,12 @@
 // 用 **同一个 advanceBattleStep()** 以固定步长无渲染空跑到当前时刻 —— 
 // 不另写一套解析结算公式，因此「一直盯着打」与「离开再回来」结果必然一致。
 //
-// 第一轮不实现真实战斗结算，只把接口、快照、快进、邮箱回放与 RNG 状态定死。
+// v0.9.1：接上真实战斗结算。实时与快进仍共用同一个 advanceBattleStep，
+// 战斗层用自己独立的确定性 RNG（与策略层隔离），终局只产 battleResult，
+// 归属/兵力/俘虏由 campaign.resolveBattle 回写，绝不回退到开战回合。
+import { createCombat, stepCombat, combatSummary } from './siege-combat.js';
+import { rngFromSnapshot } from './rng.js';
+import { resolveBattle } from './campaign.js';
 export function createSession(cfg, campaign, cityId, { rngSnapshot = null } = {}) {
   const dt = cfg.battle.fixedStepSec;
   return {
@@ -24,7 +29,14 @@ export function createSession(cfg, campaign, cityId, { rngSnapshot = null } = {}
     cityWall: campaign.cities[cityId]?.wall ?? cfg.city.wallStart,
     commanderState: campaign.cities[cityId]?.commander.state ?? 'inOffice',
     history: [],
+    // 战斗层：纯 JSON 状态 + 独立 RNG 实例（实例本身不进快照，状态进）。
+    combat: createCombat(cfg, campaign, cityId, campaign.forces?.[cityId] ?? null,
+      rngSnapshot ?? { state: 20261114, calls: 0 }),
+    combatRng: null,
+    resolution: null,
   };
+  s.combatRng = rngFromSnapshot(s.combat.rngSnapshot);
+  return s;
 }
 
 /** 唯一的状态推进函数：实时与快进共用，保证两条路径完全一致。 */
@@ -48,11 +60,24 @@ export function advanceBattleStep(session, dt) {
       session.history.push({ atSec: e.atSec, kind: e.kind, city: e.city ?? null });
     }
   }
-  // 隐藏属性按秒漂移（与策略层同一口径）
-  session.morale = Math.min(session.cfg.hidden.moraleMax,
-    session.morale + session.cfg.hidden.moraleDriftPerSec * dt);
-  session.cityWall = Math.max(0,
-    session.cityWall - session.cfg.city.siegeWallDrainPerSec * dt * 0.02);
+  // 真实战斗结算：唯一的推进函数，实时 / 快进都走这里。
+  // 没有攻方单位在城内时只漂移隐藏属性，不会凭空开打（「派人进去打」）。
+  if (session.combat && !session.combat.outcome) {
+    if (!session.combatRng) session.combatRng = rngFromSnapshot(session.combat.rngSnapshot);
+    stepCombat(session, dt, session.combatRng);
+    const c = session.combat;
+    // UI 读的这两个镜像值从战局同步，不再另写一套漂移公式
+    session.morale = c.morale.defend;
+    session.cityWall = Math.round(c.gateHp * 0.4 + c.wall * 0.6);
+    session.commanderState = c.commander.state;
+    // 终局只做一次：战斗层产结果，策略层改归属 / 扣兵力 / 登记俘虏
+    if (c.outcome && !c._resolved) {
+      c._resolved = true;
+      session.resolution = resolveBattle(session.campaign, c.result);
+      session.history.push({ atSec: session.sec, kind: 'battleEnd',
+        city: session.cityId, reason: c.outcome.reason });
+    }
+  }
   return session;
 }
 
@@ -65,8 +90,9 @@ export function enterSession(session, rng) {
   }
   for (let i = 0; i < steps; i++) advanceBattleStep(session, session.cfg.battle.fixedStepSec);
   if (steps > 0) session.sec = targetSec;   // 消除浮点累加漂移
-  // RNG 状态恢复：序列不分叉
-  if (session.rngSnapshot && rng?.restore) rng.restore(session.rngSnapshot);
+  // 战斗层 RNG 从快照重建即可；绝不 restore 策略层 rng —— 那会让离开期间
+  // 策略层已经消耗过的随机序列整体回退，是两端并行下的隐藏分叉源。
+  if (!session.combatRng) session.combatRng = rngFromSnapshot(session.combat.rngSnapshot);
   session.active = true;
   session.turnAtEnter = session.campaign.turn;
   // 若策略层部队池被清空（例如刷新后重建），用快照恢复部署。
@@ -110,6 +136,8 @@ export function leaveSession(session, rng) {
     cityWall: session.cityWall,
     commanderState: session.commanderState,
     historyTail: session.history.slice(-20),
+    combat: JSON.parse(JSON.stringify(session.combat)),
+    resolution: session.resolution,
   };
 }
 
@@ -142,5 +170,17 @@ export function restoreSession(cfg, campaign, snap) {
   s.cityWall = snap.cityWall;
   s.commanderState = snap.commanderState;
   s.history = snap.historyTail?.slice() ?? [];
+  if (snap.combat) {
+    s.combat = JSON.parse(JSON.stringify(snap.combat));
+    // 事件表只留尾部，防止离开一个月后快照无限膨胀
+    s.combat.events = (s.combat.events ?? []).slice(-40);
+    s.combatRng = rngFromSnapshot(s.combat.rngSnapshot);
+    // 两端并行：离开期间策略层新抵达的援军按 id 合并进战局（新单位下一帧
+    // 由 stepCombat 的 ensureUnitState 接管），旧单位沿用快照里的战斗状态。
+    s.combat.blockedKeys = s.combat.blockedKeys ?? [];
+  } else {
+    s.combatRng = rngFromSnapshot(s.combat.rngSnapshot);
+  }
+  s.resolution = snap.resolution ?? null;
   return s;
 }
