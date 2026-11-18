@@ -702,7 +702,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     onChange();
   }
 
-  // ── 十三州全境舆图：demos 的 bg+fg 原样贴入，只加拖/缩，不重画笔法 ────
+  // ── 十三州全境舆图：bg+fg + 按档重渲 + 屏幕空间工笔层与三级注记 ────
   let atlasInst = null;
   function mountAtlas() {
     const c = screen.querySelector('#atlasCanvas');
@@ -716,22 +716,32 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     const base = Math.min(cw / a.W, ch / a.H);
     let zoom = 1, px = 0, py = 0, detail = false;
     function paint() {
+      // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹
+      if (a.setTier) a.setTier(a.tierOf(zoom));
+      // 先按设备像素清屏，再用整数 CSS 尺寸铺底：cw/ch 可能是小数，
+      // 直接 fillRect 会在最后一行留下半透明边，多次 paint 会累积成不复原的脏像素。
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, c.width, c.height);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.fillStyle = '#0e1310'; ctx.fillRect(0, 0, cw, ch);
+      ctx.fillStyle = '#0e1310'; ctx.fillRect(0, 0, c.width / dpr, c.height / dpr);
       ctx.save();
       ctx.translate(cw / 2 + px, ch / 2 + py);
       ctx.scale(zoom * base, zoom * base);
       ctx.translate(-a.W / 2, -a.H / 2);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(a.bg, 0, 0);
-      if (a.fg) ctx.drawImage(a.fg, 0, 0);
+      // 显式目标尺寸：高倍率档的 bg 是超采样图，不能按源尺寸直接贴
+      ctx.drawImage(a.bg, 0, 0, a.W, a.H);
+      if (a.fg) ctx.drawImage(a.fg, 0, 0, a.W, a.H);
       ctx.restore();
-      // 对面最新一版把注记从离屏层拿出来：按比例尺三级显字、屏幕固定字号。
-      // 在 1400×1100 坐标系下调用，再整体映射到实际画布，缩放时字不糊。
+      // 屏幕空间两层：工笔双勾细笔 + 三级注记，都在 1400×1100 坐标系下画，
+      // 再整体映射到实际画布，缩放时字不糊、笔不被拉粗。
       ctx.save();
       ctx.translate(cw / 2 - a.W / 2 * base, ch / 2 - a.H / 2 * base);
       ctx.scale(base, base);
-      a.drawLabels(ctx, { zoom, panX: px / base, panY: py / base, detail });
+      const view = { zoom, panX: px / base, panY: py / base, detail,
+                     showFeatures: !!a.fg, showInk: true };
+      if (a.drawInkDetail) a.drawInkDetail(ctx, view);
+      a.drawLabels(ctx, view);
       ctx.restore();
     }
     let dragging = false, lx = 0, ly = 0;

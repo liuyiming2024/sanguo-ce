@@ -3,6 +3,13 @@
    只做三件事：图幅 / seed 参数化、去掉 demos 的 DOM 交互与合成、
    把注记分级绘制导出成可调用方法（屏幕固定字号，不烘进离屏层）。
    零位图、确定性、无墙钟无随机源。史料依据见 docs/十三州全境取数表.md。
+
+   本轮增量合并（demos 最新一版 → src/atlas.js），对方已有的 drawLabels 接口不变：
+     - brush(hook) 沿笔缘双勾、内留纸白水线；新增 drawInkDetail() 成簇细笔层
+     - makeBg(zb) 按倍率分档重渲，放大不把短笔拉成鱼鳞斜纹；新增 setTier()/tierOf
+     - 山脉灰带与栅栏皴整段删除；泽不填青色片，改断续岸笔 / 水纹 / 芦苇
+     - 州治白圆片改不闭合界画城廓；乌巢圆囷、营垒闭合圈改断续弧笔；黄河纸白芯压暗
+     - 修掉未传 createCanvas 时默认 mk() 的无限递归
  */
 export function createAtlas(opts = {}) {
 
@@ -17,7 +24,11 @@ const x2lon = x => LON0 + x/W*(LON1-LON0);
 const y2lat = y => LAT1 - y/H*(LAT1-LAT0);
 
   let seed = opts.seed ?? 202005;
-  const mk = opts.createCanvas ?? (() => mk());
+  const mk = opts.createCanvas ?? (() => {
+    if (typeof document !== 'undefined' && typeof document.createElement === 'function')
+      return document.createElement('canvas');
+    throw new Error('createAtlas: Node 环境需要 opts.createCanvas');
+  });
 /* 注记不再烘进离屏图层：按比例尺分级、屏幕固定字号绘制，缩放时字不会跟着糊成一团 */
 const labels = [];
 
@@ -64,21 +75,39 @@ function fieldColor(lon,lat){
   return [clamp(c[0]+d,0,255),clamp(c[1]+d,0,255),clamp(c[2]+d*0.8,0,255), r];
 }
 
-/* ---------- 变宽多边形笔：根部聚一点、起粗收尖，一次 fill ---------- */
-function brush(g, pts, w0, w1, color, alpha){
+/* ---------- 变宽多边形笔：根部聚一点、起粗收尖，一次 fill ----------
+   hook=true 时补工笔双勾：沿左右缘各描一线，内侧留一道纸白「水线」。
+   不是给笔加框——缘是笔自己的边界，随提按收尖，中间那道白是染与线之间的留隙。 */
+function brush(g, pts, w0, w1, color, alpha, hook){
   if(pts.length<2) return;
-  const L=[], R=[];
+  const L=[], R=[], LI=[];
   for(let k=0;k<pts.length;k++){
     const p=pts[k], a=pts[Math.max(0,k-1)], b=pts[Math.min(pts.length-1,k+1)];
     let dx=b[0]-a[0], dy=b[1]-a[1]; const m=Math.hypot(dx,dy)||1; dx/=m; dy/=m;
     const t=k/(pts.length-1);
     const w=(lerp(w0,w1,t)) * (0.72+0.42*Math.sin(t*Math.PI));
-    L.push([p[0]-dy*w, p[1]+dx*w]); R.push([p[0]+dy*w, p[1]-dx*w]);
+    L.push([p[0]-dy*w, p[1]+dx*w]);
+    R.push([p[0]+dy*w, p[1]-dx*w]);
+    const inset=Math.min(1.15, w*.58);
+    LI.push([p[0]-dy*(w-inset), p[1]+dx*(w-inset)]);
   }
+  const prev=g.globalAlpha;
   g.beginPath(); g.moveTo(L[0][0],L[0][1]);
   for(let k=1;k<L.length;k++) g.lineTo(L[k][0],L[k][1]);
   for(let k=R.length-1;k>=0;k--) g.lineTo(R[k][0],R[k][1]);
-  g.closePath(); g.globalAlpha=alpha; g.fillStyle=color; g.fill(); g.globalAlpha=1;
+  g.closePath(); g.globalAlpha=prev*alpha; g.fillStyle=color; g.fill(); g.globalAlpha=prev;
+  if(hook){
+    g.save();
+    const stroke=(arr,col,lw,a)=>{
+      g.beginPath(); g.moveTo(arr[0][0],arr[0][1]);
+      for(let k=1;k<arr.length;k++) g.lineTo(arr[k][0],arr[k][1]);
+      g.strokeStyle=col; g.lineWidth=lw; g.globalAlpha=a; g.stroke();
+    };
+    stroke(L,'rgba(36,48,38,.32)',.65,1);
+    stroke(R,'rgba(36,48,38,.24)',.60,1);
+    stroke(LI,'rgba(236,228,206,.52)',.80,1);   // 水线：留一线纸白
+    g.restore();
+  }
 }
 function line(g,pts,color,width,alpha,dash){
   g.beginPath(); g.moveTo(pts[0][0],pts[0][1]);
@@ -264,6 +293,10 @@ const STATES=[
   {n:'益州',p:[[97.8,33.0],[102.0,34.0],[106.4,33.4],[109.4,31.0],[107.4,27.0],[104.0,23.6],[100.6,25.0],[98.0,28.6]]},
   {n:'交趾',p:[[108.0,23.4],[111.6,23.6],[113.4,21.6],[110.0,16.0],[107.0,17.2],[105.4,20.0]]},
 ];
+/* 州治 / 郡治 / 县邑的今地经纬度均为示意近似值，不是权威今地结论。
+   核校须依 docs/东汉郡国今地核查权威口径.md 的 S/A/B/C 等级逐条给出
+   最早出处、版本卷次、隶属、方位里距、今地与异说；待核清单见
+   docs/东汉郡国今地核查待核清单.md。核校完成前不得当作考据数据引用。 */
 const CAPITALS=[
   {n:'雒阳',l:112.45,t:34.62,k:'capital'}, {n:'谯',l:115.78,t:33.85,k:'capital'},
   {n:'邺',l:114.62,t:36.32,k:'capital'},   {n:'昌邑',l:116.10,t:35.07,k:'capital'},
@@ -332,14 +365,19 @@ const LANDMARKS={
   jianhu:[120.58,29.98],      // 会稽鉴湖，东汉永和五年马臻筑
 };
 
-/* ---------- 背景层：连续底罩 + 一次性扫描游走笔触 ---------- */
-function makeBg(){
-  const c=mk(); c.width=W; c.height=H;
+/* ---------- 背景层：连续底罩 + 一次性扫描游走笔触 ----------
+   zb = 笔触密度倍率。大局部时按倍率重渲：笔在逻辑坐标里更密更细（除以 zb），
+   离屏图超采样 S 倍保证清晰；合成后屏幕笔宽 ≈ 原尺寸，不会被拉成鱼鳞斜纹。 */
+function makeBg(zb){
+  zb = zb||1;
+  const S = clamp(Math.ceil(zb),1,3);
+  const c=mk(); c.width=W*S; c.height=H*S;
   const g=c.getContext('2d');
+  g.scale(S,S);
   // 纸底
   g.fillStyle='#e9e3d1'; g.fillRect(0,0,W,H);
   // 连续场底罩：低分辨率生成后平滑放大，无台阶
-  const FW=350, FH=275, im=g.createImageData(FW,FH);
+  const FW=350*S, FH=275*S, im=g.createImageData(FW,FH);
   for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
     const lon=LON0+i/FW*(LON1-LON0), lat=LAT1-j/FH*(LAT1-LAT0);
     const [r,gg,b,reg]=fieldColor(lon,lat);
@@ -365,23 +403,47 @@ function makeBg(){
   border(14,2,'rgba(120,92,52,.52)',2.0);
   border(21,1,'rgba(120,92,52,.26)',1.0);
 
-  // 泽：不规则岸线（一次闭合笔路）+ 芦苇 + 沙洲，不用 ellipse
+  // 泽：不填青色片。只靠断续岸笔 + 顺流水纹 + 芦苇丛把水从纸里读出来。
+  // 底罩的湿场已给水域偏青，这里只给笔，不给色块。
   MARSHES.forEach((m,mi)=>{
     const cx=lon2x(m.l), cy=lat2y(m.t), rx=lon2x(m.l+m.rx)-cx, ry=lat2y(m.t)-lat2y(m.t+m.ry);
-    irregular(g,cx,cy,rx,ry,mi+7,'rgba(74,120,126,.30)','rgba(56,96,104,.38)',1.1);
-    // 岸线再补一道断续水线，笔断意连
-    const edge=irregular(g,cx,cy,rx*1.03,ry*1.03,mi+31,null,'rgba(40,80,86,.26)',.9);
-    for(let k=0;k<edge.length;k+=3)
-      brush(g,[edge[k],[ (edge[k][0]+edge[(k+1)%edge.length][0])/2, (edge[k][1]+edge[(k+1)%edge.length][1])/2 ],edge[(k+2)%edge.length]],.8,.1,'rgba(48,92,98,.4)',.4);
-    const cnt=Math.round(26+m.rx*36);
-    for(let k=0;k<cnt;k++){
-      const a=rnd(k*3.1+m.l)*Math.PI*2, rr=0.52+0.46*rnd(k*5.7+m.t);
-      const x=cx+Math.cos(a)*rx*rr, y=cy+Math.sin(a)*ry*rr;
-      brush(g,[[x,y-3],[x+1,y-6],[x+2,y-9]],1.2,.15,'#3f6f62',.5);
+    const kM=1/zb, N=26;
+    const edge=irregular(g,cx,cy,rx,ry,mi+7,null,null,0);   // 只取点列，不画
+    // 岸线：每隔几段落一笔，笔断意连，不围成闭合圈
+    for(let k=0;k<N;k+=2){
+      if(rnd(mi*37+k*5.1)>.72) continue;
+      brush(g,[edge[k],edge[(k+1)%N],edge[(k+2)%N]],
+            .9*kM,.22*kM,'rgba(52,94,100,.44)',.55);
     }
-    for(let k=0;k<3;k++){
+    // 水纹：沿几条平行弧带，断续短横笔，行距随倍率缩小
+    const rows=Math.max(3,Math.round(4/kM));
+    for(let row=0;row<rows;row++){
+      const f=(row+1)/(rows+1), yy=cy+(f-.5)*2*ry*.86;
+      const half=rx*.88*Math.sqrt(Math.max(0,1-((f-.5)*1.72)**2));
+      const cnt=Math.max(2,Math.round(half/(6*kM)));
+      for(let q=0;q<cnt;q++){
+        if(rnd(mi*53+row*11+q*3.7)>.58) continue;
+        const x=cx-half+2*half*(q+.5)/cnt;
+        const w=(2.2+rnd(mi*7+row*13+q)*3)*kM;
+        brush(g,[[x-w,yy],[x,yy-.7*kM],[x+w,yy+.3*kM]],
+              .7*kM,.18*kM,'rgba(56,104,110,.40)',.46);
+      }
+    }
+    // 芦苇：贴岸成丛，长度/朝向各自独立
+    const cnt=Math.round((24+m.rx*30)/kM);
+    for(let k=0;k<cnt;k++){
+      const a=rnd(k*3.1+m.l)*Math.PI*2, rr=0.66+0.32*rnd(k*5.7+m.t);
+      const x=cx+Math.cos(a)*rx*rr, y=cy+Math.sin(a)*ry*rr;
+      const L=(3+rnd(k*9.3+m.t)*4)*kM;
+      brush(g,[[x,y],[x+.6*kM,y-L*.6],[x+1.6*kM,y-L]],
+            .8*kM,.16*kM,'rgba(58,96,80,.52)',.5);
+    }
+    // 沙洲：几笔浅色短横，不是白椭圆
+    for(let k=0;k<Math.round(3/kM);k++){
       const x=cx+(rnd(k*7.3+m.l)-.5)*rx*1.0, y=cy+(rnd(k*9.1+m.t)-.5)*ry*.9;
-      irregular(g,x,y,rx*.17,ry*.19,mi*5+k+3,'rgba(224,210,172,.68)',null,0);
+      const w=(3+rnd(k*11.7)*3)*kM;
+      brush(g,[[x-w,y],[x,y-.6*kM],[x+w,y+.2*kM]],
+            .9*kM,.3*kM,'rgba(226,212,174,.62)',.6);
     }
   });
 
@@ -389,8 +451,8 @@ function makeBg(){
   RIVERS.forEach((rv,idx)=>{
     const p=P(rv.p);
     line(g,p,'rgba(66,88,86,.38)',rv.w+2.6,.30);
-    line(g,p,'rgba(228,222,202,.50)',rv.w*.86,.45);
-    line(g,p,'rgba(86,116,116,.58)',rv.w*.42,.60);
+    line(g,p,'rgba(190,202,192,.26)',rv.w*.86,.40);   // 原 .50 纸白芯偏亮，压到淡青灰
+    line(g,p,'rgba(74,108,110,.54)',rv.w*.42,.58);
     for(let k=0;k<p.length-1;k++){
       const a=p[k], b=p[k+1], seg=Math.hypot(b[0]-a[0],b[1]-a[1]);
       const n=Math.max(2,Math.round(seg/26));
@@ -402,27 +464,37 @@ function makeBg(){
     }
   });
 
-  // 山脉骨架：沿脊线一次性山脉带 + 顺坡短笔
+  // 山脉不画「山」：航拍俯视只看得见林，山势靠冠层沿脊转向被读出来。
+  // 脊线是断续短笔（笔断意连），顺坡皴随倍率缩小加密，不出现灰带、三角或栅栏。
+  const kR=1/zb;
   RIDGES.forEach((rg,idx)=>{
     const p=P(rg.p);
-    // 山脉带：一笔变宽笔路，两端收尖；脊线走断续短笔（笔断意连，放大后不像划痕）
-    brush(g,p,7*rg.a,3.5*rg.a,'rgba(96,104,84,.26)',.62);
-    for(let k=0;k<p.length-1;k+=2)
-      brush(g,[p[k],[(p[k][0]+p[k+1][0])/2,(p[k][1]+p[k+1][1])/2],p[k+1]],
-            1.1,.25,'rgba(72,78,62,.62)',.60);
-    // 顺坡皴：方向随脊线法向，长度随起伏变
     for(let k=0;k<p.length-1;k++){
-      const a=p[k], b=p[k+1], seg=Math.hypot(b[0]-a[0],b[1]-a[1]);
-      const n=Math.round(seg/12);
+      const a=p[k], b=p[k+1], seg=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+      // 脊：沿段按弧长散点短笔，长度/角度各自独立
+      const nn=Math.max(2,Math.round(seg/(9*kR)));
+      for(let q=0;q<nn;q++){
+        if(rnd(idx*41+k*13+q*3.7)>.62) continue;
+        const t=(q+.5)/nn, x=lerp(a[0],b[0],t), y=lerp(a[1],b[1],t);
+        const L=(4+rnd(idx*7+q)*5)*kR*rg.a;
+        brush(g,[[x-L,y+L*.2],[x,y-L*.35],[x+L*.8,y+L*.2]],
+              .8*kR,.2*kR,'rgba(64,80,62,.42)',.48);
+      }
+      // 顺坡皴：方向随脊线法向，长度随起伏，随倍率缩小加密
+      const n=Math.max(2,Math.round(seg/(11*kR)));
       for(let q=0;q<n;q++){
         const t=(q+.5)/n, x=lerp(a[0],b[0],t), y=lerp(a[1],b[1],t);
-        const side=(q%2?1:-1), len=(9+8*rnd(idx*33+k*7+q))*rg.a;
-        brush(g,[[x,y],[x+2*side,y+len*.5],[x+4*side,y+len]],1.5,.12,'rgba(66,74,58,.55)',.55);
+        const side=(rnd(idx*19+k*5+q)<.5?1:-1);
+        const len=(7+7*rnd(idx*33+k*7+q))*rg.a*kR;
+        brush(g,[[x,y],[x+1.6*side*kR,y+len*.5],[x+3.4*side*kR,y+len]],
+              1.0*kR,.2*kR,'rgba(66,78,60,.44)',.46);
       }
     }
   });
 
   // 地表笔触：不等距扫描游走，笔型 / 密度 / 方向全由连续场决定
+  // k = 1/zb：逻辑坐标里笔更小更密，合成时 ×zoom 放大回屏幕原尺寸 —— 放大不会把笔拉粗
+  const k=1/zb;
   let y=8, ri=0;
   while(y<H-8){
     let x=-18+rnd(y*.37)*32;
@@ -430,23 +502,23 @@ function makeBg(){
       const lon=x2lon(x), lat=y2lat(y), [,, ,r]=fieldColor(lon,lat);
       const n=fbm(lon*1.7,lat*1.9,seed*.002);
       const dens=r.density;
-      const step=lerp(26,8,dens)+rnd(x*.13+y*.07)*8;
+      const step=(lerp(26,8,dens)+rnd(x*.13+y*.07)*8)*k;
       // 边地留白：密度越低越常跳笔，白从笔缝里连续漏出
       if(rnd(x*.031+y*.017) > 0.30+0.68*dens){ x+=step*.7; continue; }
       const ang=r.wind+(n-.5)*1.35+(rnd(x*.019+y*.023)-.5)*.6,
             ca=Math.cos(ang), sa=Math.sin(ang);
-      const rot=(dx,dy)=>[x+dx*ca-dy*sa, y+dx*sa+dy*ca];
+      const rot=(dx,dy)=>[x+dx*ca*k-dy*sa*k, y+dx*sa*k+dy*ca*k];
       // 笔型按场权重概率混合：过渡带里两套笔交错，不出现硬切线
       const pick=rnd(x*.053+y*.021+n*3.1);
       const wDesert=r.desert*0.86, wLing=r.lingnan*0.60, wSouth=r.south*0.92;
       if(pick < wDesert || (lat>40.5 && n>.55)){
         // 沙碛 / 塞北：极稀的横向短弧，笔数最少
-        if(n>.34) brush(g,[rot(-9,0),rot(0,-2),rot(10,1)],.9,.12,'rgba(150,126,88,.40)',.42);
+        if(n>.34) brush(g,[rot(-9,0),rot(0,-2),rot(10,1)],.9*k,.12*k,'rgba(150,126,88,.40)',.42);
       } else if(pick < wDesert+wLing){
-        // 岭南：疏点，不铺满
+        // 岭南：疏笔，不铺满；不用圆点（圆是几何图元）
         if(n>.46){
-          g.beginPath(); g.arc(x,y,1.2+rnd(x*.7)*1.3,0,Math.PI*2);
-          g.fillStyle='rgba(88,110,80,.40)'; g.fill();
+          const s=1.6+rnd(x*.7)*1.8;
+          brush(g,[rot(-s,0),rot(0,-1),rot(s,.6)],.9*k,.3*k,'rgba(88,110,80,.40)',.46);
         }
       } else if(pick < wDesert+wLing+wSouth){
         // 南方：田块只在低频高值区成簇，且随风向倾斜、时有缺笔
@@ -457,22 +529,22 @@ function makeBg(){
           for(let i=0;i<rows;i++){
             if(rnd(x*.53+i*7.1)>.22) continue;
             const dy=i*2.4-s*.6;
-            brush(g,[rot(-s*.9,dy),rot(0,dy-.4),rot(s*.8,dy+.3)],.62,.1,'rgba(64,104,80,.46)',.46);
+            brush(g,[rot(-s*.9,dy),rot(0,dy-.4),rot(s*.8,dy+.3)],.62*k,.1*k,'rgba(64,104,80,.46)',.46);
           }
         } else {
-          brush(g,[rot(-3,3),rot(0,-3),rot(4,2)],1.2,.14,'rgba(46,88,68,.52)',.48);
+          brush(g,[rot(-3,3),rot(0,-3),rot(4,2)],1.2*k,.14*k,'rgba(46,88,68,.52)',.48);
         }
       } else {
         // 北方：横向燥笔束（战后荒田，短、断、稀）
         const c = n>.55 ? 'rgba(56,76,62,.58)' : 'rgba(126,100,64,.50)';
         const L=5+rnd(x*.19)*6;
         const dy=Math.sin(ang)*2;
-        brush(g,[rot(-L,dy),rot(0,dy-1),rot(L,dy+.5)],1.6,.12,c,.52);
-        if(n>.72) brush(g,[rot(-2,3),rot(0,0),rot(3,-3)],1.0,.1,'rgba(50,70,56,.5)',.44);
+        brush(g,[rot(-L,dy),rot(0,dy-1),rot(L,dy+.5)],1.6*k,.12*k,c,.52);
+        if(n>.72) brush(g,[rot(-2,3),rot(0,0),rot(3,-3)],1.0*k,.1*k,'rgba(50,70,56,.5)',.44);
       }
       x+=step;
     }
-    y += 9+rnd(ri*7.3)*8; ri++;
+    y += (9+rnd(ri*7.3)*8)*k; ri++;
   }
   return c;
 }
@@ -537,10 +609,20 @@ function makeFg(){
   for(let k=0;k<=18;k++) war[k]=[war[k][0], war[k][1]+30+(rnd(k*4.3)-.5)*4];
   for(let k=0;k<war.length-1;k+=2)
     brush(g,[war[k],war[k+1],war[Math.min(k+2,war.length-1)]],1.5,.25,'rgb(46,78,62)',.70);  // 曹营长堑
-  for(let k=0;k<9;k++){                                   // 营垒：不规则圈，大小不一、不等距
-    const x=gx-58+k*14+(rnd(k*5.9)-.5)*6, y=gy-22+(rnd(k*3.1)-.5)*4;
-    irregular(g,x,y,3+rnd(k*7)*2.4,2.2+rnd(k*11)*1.6,k+41,null,'rgb(150,110,62)',1.0);
-    irregular(g,x+2,y+31,2.6+rnd(k*13)*2,2+rnd(k*17)*1.4,k+83,null,'rgb(46,78,62)',.95);
+  // 营垒：断续弧笔，不等距、大小不一、缺口各异 —— 不是一串闭合圆泡泡
+  function campArc(g,x,y,rx,ry,key,color){
+    const N=13, st=Math.floor(rnd(key)*5), ln=7+Math.floor(rnd(key*3)*5), pts=[];
+    for(let q=0;q<ln;q++){
+      const a=(st+q)/N*Math.PI*2;
+      pts.push([x+Math.cos(a)*rx*(1+(rnd(key+q)-.5)*.24),
+                y+Math.sin(a)*ry*(1+(rnd(key*7+q)-.5)*.30)]);
+    }
+    brush(g,pts,1.25,.55,color,.72);
+  }
+  for(let k=0;k<9;k++){
+    const x=gx-58+k*14+(rnd(k*5.9)-.5)*9, y=gy-22+(rnd(k*3.1)-.5)*6;
+    campArc(g,x,y,3+rnd(k*7)*2.6,2.2+rnd(k*11)*1.6,k+41,'rgb(150,110,62)');
+    if(k%3!==1) campArc(g,x+2,y+31,2.6+rnd(k*13)*2,2+rnd(k*17)*1.4,k+83,'rgb(46,78,62)');
   }
   for(let k=0;k<18;k++){                                  // 沙堆：断续短弧笔
     const x=gx-60+rnd(k*7.7)*120, y=gy-8+rnd(k*3.9)*7;
@@ -638,11 +720,18 @@ function makeFg(){
   }
   inkNote(g,'白马津',bm[0]+30,bm[1]-18);
 
-  // ⑩ 乌巢粮囷：圆形囷（非方屋）+ 晒场笔
+  // ⑩ 乌巢粮囷：不等距、半径各异的断续囤笔（汉囷为圆，但只画弧，不画闭合圆）
   const wc=P(LANDMARKS.wuchao);
   for(let q=0;q<5;q++){
-    const x=wc[0]-12+q*6, y=wc[1]+(rnd(q*5.1)-.5)*4;
-    irregular(g,x,y,2.4+rnd(q*7)*.8,2.2+rnd(q*11)*.6,450+q,'rgba(196,170,124,.76)','rgb(104,82,56)',1);
+    const x=wc[0]-13+q*6.6+(rnd(q*5.1)-.5)*3, y=wc[1]+(rnd(q*3.7)-.5)*5;
+    const rx=2.2+rnd(q*7)*1.5, ry=1.9+rnd(q*11)*1.1;
+    const st=Math.floor(rnd(q*9)*5), ln=7+Math.floor(rnd(q*13)*4), pts=[];
+    for(let t=0;t<ln;t++){
+      const a=(st+t)/13*Math.PI*2;
+      pts.push([x+Math.cos(a)*rx,y+Math.sin(a)*ry]);
+    }
+    brush(g,pts,.95,.38,'rgb(104,82,56)',.82);
+    brush(g,[[x, y],[x+.4,y-2.2],[x+1,y-4]],.6,.3,'rgb(150,124,84)',.6);   // 囤顶
   }
   for(let k=0;k<5;k++)
     brush(g,[[wc[0]-14, wc[1]+8+k*1.6],[wc[0],wc[1]+7+k*1.6],[wc[0]+15,wc[1]+8+k*1.6]],.6,.1,'rgb(128,104,70)',.45);
@@ -678,8 +767,15 @@ function makeFg(){
   CAPITALS.forEach((p,idx)=>{
     const x=lon2x(p.l), y=lat2y(p.t);
     if(p.k==='capital'){
-      irregular(g,x,y,5.4,4.8,500+idx,'rgba(238,230,208,.88)','rgb(72,56,36)',1.5);
-      irregular(g,x,y,7.6,6.8,600+idx,null,'rgb(200,168,106)',.8);
+      // 界画小城：四段断续墨笔围出不闭合的方廓，加一门缺；不是白圆片
+      const R=5.4, w=.95;
+      const seg=(x1,y1,x2,y2)=>brush(g,[[x+x1,y+y1],[x+(x1+x2)/2,y+(y1+y2)/2-.4],[x+x2,y+y2]],w,.55,'rgb(64,52,36)',.82);
+      if(rnd(idx*7.1)>.16) seg(-R,-R*.8,-R*.2,-R*.8);
+      seg(R*.2,-R*.8,R,-R*.8);
+      seg(R,-R*.8,R,R*.8);
+      seg(R,R*.8,-R*.2,R*.8);
+      if(rnd(idx*3.3)>.2) seg(-R,R*.8,-R,-R*.8);
+      brush(g,[[x-1,y-R*.8],[x,y-R*.8-2],[x+1,y-R*.8]],.7,.4,'rgb(166,49,41)',.7); // 门
       labels.push({mx:x,my:y-16,txt:p.n,level:1,kind:'capital'});
     } else {
       irregular(g,x,y,2.2,2.0,700+idx,'rgb(72,60,42)',null,0);
@@ -729,12 +825,89 @@ function beacon(g,x,y,idx,k){
   }
 }
 
+function beacon(g,x,y,idx,k){
+  const s=3.0+k*2.4;                      // 大小不一
+  g.save(); g.translate(x,y);
+  sealBox(g,s,'rgba(226,210,172,.85)','rgba(78,62,42,.82)');
+  g.restore();
+  irregular(g,x-s-1,y-s-2,1.1,1.1,900+k+x*.01,'rgb(78,62,42)',null,0);  // 角楼
+  irregular(g,x+s-.6,y-s-2,1.1,1.1,910+k+y*.01,'rgb(78,62,42)',null,0);
+  if(idx===0 && k>.62){                 // 积薪：仅部分台有
+    brush(g,[[x,y-s-2],[x+1,y-s-5],[x+1,y-s-9]],.9,.2,'rgb(120,96,64)',.55);
+  }
+}
+
+
+/* ---------- 屏幕空间工笔细笔层：双勾 + 水线，成簇不铺满 ----------
+   与 drawLabels 共用 view{zoom,panX,panY} 坐标系；调用方在同一变换下先画本层再画注记。
+   放大渐显，把被拉大的色块读回「笔」，同时补上工笔最后一道：双勾 + 留水线。 */
+function drawInkDetail(g, view){
+  const zoom=view.zoom;
+  const a=clamp((zoom-1.45)/1.05,0,1);
+  if(a<=0.02 || view.showFeatures===false || view.showInk===false) return 0;
+  const step=clamp(38/Math.sqrt(zoom),15,34);
+  const toMap=(sx,sy)=>[ (sx-W/2-view.panX)/zoom+W/2, (sy-H/2-view.panY)/zoom+H/2 ];
+  g.save(); g.globalAlpha=a*.62;
+  let cnt=0;
+  for(let sy=-step;sy<H+step;sy+=step){
+    for(let sx=-step;sx<W+step;sx+=step){
+      const [mx,my]=toMap(sx,sy);
+      if(mx<0||mx>W||my<0||my>H) continue;
+      const lon=x2lon(mx), lat=y2lat(my);
+      const [,,,r]=fieldColor(lon,lat);
+      const n=fbm(lon*1.7,lat*1.9,seed*.002);
+      const cluster=fbm(lon*.55,lat*.62,seed*.017);
+      if(cluster<.535) continue;
+      const q=rnd(Math.round(lon*140)*.017+Math.round(lat*140)*.031+seed*.0001);
+      if(q > clamp((cluster-.535)*3.4,0,.62)*(0.45+0.55*r.density)) continue;
+      const ang=r.wind+(n-.5)*1.5, ca=Math.cos(ang), sa=Math.sin(ang);
+      const jx=sx+(q-.5)*step*.9, jy=sy+(rnd(q*97+lon)-.5)*step*.9;
+      const rot=(dx,dy)=>[jx+dx*ca-dy*sa, jy+dx*sa+dy*ca];
+      const L=3+rnd(lon*13+lat*7)*4.4;
+      const kind=Math.floor(rnd(lon*71+lat*43)*4);
+      const hook = cluster>.66 && rnd(lon*29+lat*17)<.26;
+      const col = r.desert>.55 ? 'rgba(138,112,78,.44)'
+                : r.south>.52  ? 'rgba(42,82,62,.50)'
+                : r.lingnan>.45? 'rgba(72,100,74,.42)'
+                : n>.55        ? 'rgba(46,70,54,.52)' : 'rgba(114,92,62,.46)';
+      if(kind===0){
+        brush(g,[rot(-L,1),rot(-L*.2,-.6),rot(L,.4)],1.2,.32,col,1,hook);
+      } else if(kind===1){
+        brush(g,[rot(-L*.7,3),rot(0,0),rot(L*.55,-3.4)],1.35,.24,col,1,hook);
+        if(cluster>.70) brush(g,[rot(-L*.3,5),rot(L*.4,2.6)],.7,.22,col,1,false);
+      } else if(kind===2){
+        brush(g,[rot(-L,0),rot(0,-2.2),rot(L,0)],1.5,.42,col,1,cluster>.68);
+        brush(g,[rot(-L*.5,2.4),rot(0,1.4),rot(L*.5,2.6)],.62,.2,col,1,false);
+      } else {
+        for(let t=0;t<3;t++){
+          const d=t*2.3-2, l=L*(.38+rnd(lon*t*19+lat*7)*.5);
+          brush(g,[rot(-l,d),rot(0,d-.8),rot(l*.8,d+.4)],.8,.22,col,1,false);
+        }
+      }
+      cnt++;
+    }
+  }
+  g.restore();
+  return cnt;
+}
+
   // 地物层绘制时把注记收集进 labels；重复调用先清空，避免累积。
   labels.length = 0;
-  const bg = makeBg();
+  // 背景按倍率分档重渲：跨整数档才重算，滚轮 / 拖动仍只做合成
+  const tierOf = z => clamp(Math.round(z),1,3);
+  let tier = clamp(Math.round(opts.tier ?? 1),1,3);
+  let bg = makeBg(tier);
   const fg = opts.fg === false ? null : makeFg();
-  return {
-    bg, fg, labels, drawLabels, W, H,
+  const api = {
+    bg, fg, labels, drawLabels, drawInkDetail, W, H,
     lon2x, lat2y, x2lon, y2lat,
+    tierOf,
+    get tier(){ return tier; },
+    setTier(t){
+      const nt = clamp(Math.round(t),1,3);
+      if(nt !== tier){ tier = nt; bg = makeBg(tier); api.bg = bg; }
+      return bg;
+    },
   };
+  return api;
 }
