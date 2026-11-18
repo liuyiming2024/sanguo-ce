@@ -103,38 +103,72 @@
   const h1 = k => { const v = Math.sin(k*127.1 + seed*0.000131)*43758.5453; return v-Math.floor(v); };
   const clamp=(v,a,b)=>v<a?a:v>b?b:v;
 
-  // ── src/map-data.js 的经纬度锚点 ───────────────────────────────────────
-  const LON_MIN=112.75, LON_MAX=116.15, LAT_MIN=32.65, LAT_MAX=36.65;
+  // ── 经纬度锚点 · 按 docs/扩大范围历史地理取数表.md 逐条落 ─────────────
+  // 图幅由 112.75~116.15 / 32.65~36.65 扩到 112.30~116.75 / 32.30~36.95。
+  // 四向各有史料依据（洛阳东门户 / 大野泽 / 邺与太行南段 / 汝颍上游），
+  // 不是为对称而扩。今地方位均为近似，非考古复原；出处见取数表。
+  const LON_MIN=112.30, LON_MAX=116.75, LAT_MIN=32.30, LAT_MAX=36.95;
+
   const CITIES = [
     ['许都',113.85,34.03,1],['邺',114.40,36.30,1],['汝南',114.36,33.01,2],
     ['陈留',114.53,34.66,2],['黎阳',114.55,35.68,2],['濮阳',115.03,35.75,2],
     ['阳翟',113.52,34.14,2],['谯县',115.78,33.85,2],['中牟',114.03,34.72,3],
     ['白马',114.45,35.55,3],['延津',114.20,35.15,3],['官渡',114.00,34.55,4],
   ];
+  // 扩大后补入的四处有出处地点只作**地标**，不塞进 CITIES：
+  // 否则十六座完整城郭 + 各自城外清场会在中部叠成一片浅田「挖洞」。
+  const LANDMARKS = [
+    ['洛阳',112.48,34.62],   // 虎牢「洛阳东门户」；《理惑论》洛阳城西雍门外佛寺
+    ['荥阳',113.42,34.79],   // 荥泽「西起荥阳以东二十里」；王景自荥阳东筑堤
+    ['浚仪',114.32,34.80],   // 《宋史·河渠志》大梁浚仪西北复分二渠
+    ['阳武',113.98,35.06],   // 官渡水「经阳武县中牟台下」；袁绍军进阳武
+  ];
+  // 乌巢不单列为城：仅挂一处粮囤地物（「绍辎重囤集乌巢」）
+  const GRANARIES = [[114.28,34.93,'乌巢']];
+
   const HUANGHE = [
-    [112.78,34.98],[113.05,35.02],[113.35,35.10],[113.62,35.16],[113.88,35.12],
-    [114.20,35.15],[114.42,35.48],[114.55,35.68],[114.86,35.74],[115.18,35.78],
-    [115.48,36.02],[115.78,36.25],[116.10,36.48],
+    // 西段补到荥阳北：「荥泽下分大河为阴沟」、王景自荥阳东筑堤千里
+    [112.40,34.88],[112.60,34.92],[112.78,34.98],[113.05,35.02],[113.35,35.10],
+    [113.62,35.16],[113.88,35.12],[114.20,35.15],[114.42,35.48],[114.55,35.68],
+    [114.86,35.74],[115.18,35.78],[115.48,36.02],[115.78,36.25],[116.10,36.48],
+    [116.40,36.62],
   ];
   const RIVERS_MINOR = [
-    {name:'颍水',w:1.6,pts:[[113.10,33.20],[113.30,33.55],[113.48,33.90],[113.62,34.12],[113.85,34.28],[114.10,34.40]]},
-    {name:'汝水',w:1.6,pts:[[113.90,32.70],[114.10,32.95],[114.36,33.15],[114.62,33.40],[114.82,33.72],[115.05,33.95]]},
+    {name:'颍水',w:1.6,pts:[[113.08,32.45],[113.10,33.20],[113.30,33.55],[113.48,33.90],[113.62,34.12],[113.85,34.28],[114.10,34.40]]},
+    {name:'汝水',w:1.6,pts:[[113.82,32.35],[113.90,32.70],[114.10,32.95],[114.36,33.15],[114.62,33.40],[114.82,33.72],[115.05,33.95]]},
     {name:'鸿沟',w:1.5,pts:[[113.55,34.30],[113.78,34.42],[114.00,34.55],[114.22,34.62],[114.53,34.66]]},
-    {name:'淇水',w:1.3,pts:[[114.05,36.55],[114.25,36.20],[114.40,35.90],[114.55,35.68]]},
+    {name:'官渡水',w:1.2,pts:[[114.32,34.80],[114.20,34.72],[114.08,34.64],[114.00,34.55]]},
+    // 潩水/济水不画：前者与许下渠线重叠、后者与黄河西段重合，画上只会糊成一团
+    {name:'淇水',w:1.3,pts:[[114.05,36.70],[114.25,36.20],[114.40,35.90],[114.55,35.68]]},
     {name:'荡水',w:1.1,pts:[[114.15,36.45],[114.32,36.32],[114.40,36.30]]},
+  ];
+  // 建安元年许下屯田所开运粮河，兼灌溉；「灌沟南北二口俱有陡门」。
+  // 人工渠比天然河更直、更细、赭土色，是第三套地貌成因，不并入 RIVERS_MINOR。
+  // 今地方位近似，见取数表 §3；不宣称精确里程。
+  const CANALS = [
+    {name:'枣祗河',pts:[[113.88,34.00],[113.98,33.90],[114.08,33.80],[114.22,33.74]]},
+    {name:'玛瑙河',pts:[[113.52,33.86],[113.72,33.82],[113.90,33.80],[114.08,33.78]]},
+    {name:'高底河',pts:[[113.90,34.12],[113.96,34.00],[113.93,33.90],[113.88,33.82]]},
+    {name:'灌沟',  pts:[[113.84,33.72],[113.88,33.82],[113.90,33.92],[113.92,34.02]]},
   ];
   const LAKES = [
     {name:'圃田泽',lon:113.90,lat:34.80,rx:.20,ry:.10},
     {name:'荥泽',  lon:113.30,lat:35.02,rx:.14,ry:.08},
-    {name:'大野泽',lon:115.62,lat:35.42,rx:.30,ry:.16},
+    // 校正：大野泽地望在今山东巨野北，旧值 115.62,35.42 偏西
+    {name:'大野泽',lon:116.05,lat:35.40,rx:.28,ry:.15},
   ];
-  // 航拍视角下这四条不再是「要画的山」，只是地形场的隆起轴：
-  // 画面里看不到峰头、立面、皴，只有由它决定的林冠深浅。
+  // 航拍视角下这些不再是「要画的山」，只是地形场的隆起轴：
+  // 看不到峰头、立面、皴，只有由它决定的林冠深浅。
+  // 删去旧「历山坞」：今地异说多（取数表 C 级），改接太行南段延伸，不臆造专名。
   const RIDGES = [
     {name:'嵩箕林',h:.92,sig:118,pts:[[112.82,33.55],[113.02,33.90],[113.12,34.28],[113.05,34.62],[113.22,34.92]]},
     {name:'箕山坞',h:.74,sig:96, pts:[[113.28,33.35],[113.52,33.62],[113.66,33.95],[113.55,34.20]]},
-    {name:'太行林',h:.96,sig:132,pts:[[114.05,36.62],[114.35,36.40],[114.62,36.18],[114.86,35.95],[115.10,35.80]]},
-    {name:'历山坞',h:.62,sig:92, pts:[[115.35,36.55],[115.60,36.38],[115.82,36.20]]},
+    {name:'太行林',h:.96,sig:132,pts:[[114.05,36.70],[114.35,36.40],[114.62,36.18],[114.86,35.95],[115.10,35.80],[115.40,36.30],[115.62,36.10]]},
+  ];
+  // 官渡沙堆：建安五年「依沙堆为营攻曹，曹军也立营相距」，是微地形不是建筑。
+  // 刻意落在城郭之外，免得被营垒的托光与方框盖掉。
+  const SAND_AXES = [
+    [113.88,34.50],[114.12,34.48],[113.84,34.64],[114.16,34.62],[114.00,34.40],
   ];
   const PASSES = [
     ['虎牢关',113.18,34.82,'pass'],['轘辕关',113.08,34.42,'pass'],
@@ -149,6 +183,8 @@
     ['官渡','延津',[[114.06,34.80],[114.14,35.00]]],
     ['黎阳','邺',[[114.48,35.92],[114.42,36.10]]],
   ];
+  // 有史料依据的前线/军屯据点：这些聚落换坞堡形制，其余仍用田舍
+  const MILITARY = new Set(['官渡','黎阳','白马','延津']);
 
   const proj = (lon,lat) => [
     PAD + (lon-LON_MIN)/(LON_MAX-LON_MIN)*(W-2*PAD),
@@ -161,8 +197,8 @@
   // 这是「一次性连续函数」，不是格网单元：场图只作采样缓存，不参与绘制决策的
   // 重复单元。所有笔触位置由「带 carry 的等高游走」给出，不是遍历场图格子。
   const FW=241, FH=177, DX=W/(FW-1), DY=H/(FH-1);
-  let FIELD=null, WET=null, OPEN=null;
-  let AXES=[], WATER_AXES=[], CITY_PTS=[], LAKE_PTS=[];
+  let FIELD=null, WET=null, OPEN=null, SAND=null;
+  let AXES=[], WATER_AXES=[], CITY_PTS=[], LAKE_PTS=[], SAND_PTS=[];
 
   function segDist2(x,y,P){
     let best=1e12;
@@ -180,8 +216,10 @@
                 ...RIVERS_MINOR.map(r=>({P:resample(r.pts.map(PXY),7),sig:22}))];
     LAKE_PTS=LAKES.map(l=>{const p=proj(l.lon,l.lat);return {x:p[0],y:p[1],rx:l.rx/(LON_MAX-LON_MIN)*(W-2*PAD),ry:l.ry/(LAT_MAX-LAT_MIN)*(H-2*PAD)};});
     CITY_PTS=CITIES.map(c=>{const p=proj(c[1],c[2]);return {x:p[0],y:p[1],r:c[3]===1?76:c[3]===2?64:c[3]===3?56:48};});
+    SAND_PTS=SAND_AXES.map(PXY);
 
-    const raw=new Float32Array(FW*FH), wet=new Float32Array(FW*FH), op=new Float32Array(FW*FH);
+    const raw=new Float32Array(FW*FH), wet=new Float32Array(FW*FH),
+          op=new Float32Array(FW*FH), snd=new Float32Array(FW*FH);
     const off=seed*0.000017;
     for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
       const x=i*DX, y=j*DY, k=j*FW+i;
@@ -213,13 +251,26 @@
       // 图廓内侧渐疏，留一丢丢纸
       const edge=Math.min(x-24,W-24-x,y-24,H-24-y);
       if(edge<30) o=Math.max(o,(30-edge)/30*.72);
+      // 官渡沙堆：几组低矮断续沙岗，被中频项切开，不是规则圆饼。
+      // 单独成场，不去动 e —— 否则全局 min/max 归一化会让整幅林冠色阶漂移。
+      let sd=0;
+      for(const s of SAND_PTS){
+        const d2=(x-s[0])**2+(y-s[1])**2;
+        // 叠一层高频：边缘由植被破碎地退让，不是高斯圆斑的软边
+        const m=.52+.30*Math.sin(x*.031+y*.024+off*3)*Math.cos(y*.027-x*.019)
+                   +.18*Math.sin(x*.071-y*.053+1.7)*Math.cos(x*.043+y*.061);
+        const g=Math.exp(-d2/(2*40*40))*(.48+.52*m);
+        sd=Math.max(sd,g);
+      }
+      // 非线性响应：低值不赭、高值才露干土，边界明确但不硬
+      sd=smooth(.18,.72,sd);
       // 沙洲只在泽里漏，不把整条河岸清空（沙洲由 lakes() 单独画）
-      raw[k]=e; wet[k]=wmax; op[k]=clamp(o,0,1);
+      raw[k]=e; wet[k]=wmax; op[k]=clamp(o,0,1); snd[k]=clamp(sd,0,1);
     }
     let mn=1e9,mx=-1e9;
     for(let k=0;k<raw.length;k++){ if(raw[k]<mn)mn=raw[k]; if(raw[k]>mx)mx=raw[k]; }
     for(let k=0;k<raw.length;k++) raw[k]=clamp((raw[k]-mn)/(mx-mn||1),0,1);
-    FIELD=raw; WET=wet; OPEN=op;
+    FIELD=raw; WET=wet; OPEN=op; SAND=snd;
   }
   const bil=(A,x,y)=>{
     const gx=clamp(x/DX,0,FW-1.001), gy=clamp(y/DY,0,FH-1.001);
@@ -229,6 +280,7 @@
   const field=(x,y)=>bil(FIELD,x,y);
   const wetness=(x,y)=>bil(WET,x,y);
   const openness=(x,y)=>bil(OPEN,x,y);
+  const sand=(x,y)=>bil(SAND,x,y);
   const grad=(x,y)=>[
     (field(x+5,y)-field(x-5,y))/10,
     (field(x,y+5)-field(x,y-5))/10,
@@ -328,9 +380,9 @@
   // 边界清晰的同色块 —— 那本身就是"色块平铺"。改成锚点间线性插值，
   // 湿度/受光/树种只做连续小幅偏移，色相没有台阶，笔与笔之间也没有色界。
   const CANOPY = [
-    [0.00,[186,160,110]],  // 浅田赭黄（仍是笔色，不是纸白）
-    [0.16,[172,150,103]],
-    [0.30,[142,138, 96]],
+    [0.00,[176,150, 98]],  // 浅田赭黄（仍是笔色，不是纸白）
+    [0.16,[164,142, 96]],
+    [0.30,[138,134, 92]],
     [0.46,[108,126, 92]],
     [0.62,[ 72, 96, 72]],
     [0.80,[ 48, 74, 70]],
@@ -380,13 +432,15 @@
     const img=sc.createImageData(FW,FH);
     for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
       const k=j*FW+i, p=k*4;
-      const e=FIELD[k], ww=WET[k], o=OPEN[k];
+      const e=FIELD[k], ww=WET[k], o=OPEN[k], sd=SAND[k];
       const gx=(FIELD[k+(i<FW-1?1:0)]-FIELD[k-(i>0?1:0)])*.5;
       const lit=clamp(.5-gx*9,0,1);
-      const [r,g,b]=canopyRGB(e,ww,lit,h1(i*.37+j*.61));
+      const [r0,g0,b0]=canopyRGB(e,ww,lit,h1(i*.37+j*.61));
+      // 官渡沙堆：底罩往赭土偏、罩得更实 —— 是「露出干土」，不是「露出纸」。
+      const r=r0+(164-r0)*sd*.92, g=g0+(138-g0)*sd*.92, b=b0+(100-b0)*sd*.92;
       // 深林沉、浅田淡；即使留白意愿最高处也留一层极淡赭底，
       // 白只从场值低的地方连续地漏一丢丢，不出现硬边空场。
-      const a=clamp((.20+e*.44+ww*.06)*(1-o*.60)+.07,0,.70);
+      const a=clamp((.20+e*.44+ww*.06)*(1-o*.60)+.07+sd*.17,0,.78);
       img.data[p]=clamp(r,0,255); img.data[p+1]=clamp(g,0,255);
       img.data[p+2]=clamp(b,0,255); img.data[p+3]=a*255;
     }
@@ -449,11 +503,14 @@
     const col=palette(e,w,lit,h1(x*.071+y*.093+seed*.000017));
     // 中频项让相邻田块顺地势换向，而不是整片同向排成苇席斜纹；
     // 仍是连续角场，没有把画面切成规整方格。
+    // 叠一层更低频的大尺度换向：不同区域的田块整体朝向不同，
+    // 放大到 ×3 才不会读成整片同向的苇席斜纹（那又是平铺）。
     const rowA=windAt(x,y)+Math.PI/2
-             + Math.sin(x*.006+y*.004)*.28
-             + Math.sin(x*.019-y*.013+2.3)*.55
-             + Math.cos(x*.014+y*.021+.8)*.32
-             + carry*.06;
+             + Math.sin(x*.0031-y*.0022+.7)*.42
+             + Math.sin(x*.006+y*.004)*.34
+             + Math.sin(x*.019-y*.013+2.3)*.72
+             + Math.cos(x*.014+y*.021+.8)*.46
+             + carry*.08;
     const n=3+Math.floor(rnd()*3);
     const L=rr(6,13)*(1-w*.30);
     ctx.fillStyle=rgba(col,clamp(.30+e*.30,.30,.60));
@@ -463,6 +520,24 @@
       const ca=Math.cos(rowA), sa=Math.sin(rowA);
       const x0=x-ca*L*.30-sa*off, y0=y-sa*L*.30+ca*off;
       brush(ctx,x0,y0,x0+ca*L,y0+sa*L,rr(.42,.72),rr(.10,.24));
+    }
+    ctx.fill();
+  }
+
+  // ── 沙岗笔：官渡「依沙堆为营」的微地形 ────────────────────────────────
+  // 与林冠簇、田畴笔都不同：根部不聚、横向断续、起粗收尖、赭土色。
+  // 由 SAND 连续场决定在哪出现、出现多少，不是全图撒同一种符号。
+  function sandTuft(x,y,carry){
+    const a=windAt(x,y)+Math.PI/2+rr(-.32,.32);
+    const ca=Math.cos(a), sa=Math.sin(a);
+    const n=2+Math.floor(rnd()*3);
+    ctx.fillStyle=rgba('#9c8154',clamp(.40+rnd()*.24,.36,.66));
+    ctx.beginPath();
+    for(let k=0;k<n;k++){
+      const L=rr(4,11), off=(k-(n-1)/2)*rr(2.0,3.4)+carry*.5;
+      const x0=x-sa*off, y0=y+ca*off;
+      brush(ctx,x0-ca*L*.5,y0-sa*L*.5,x0+ca*L*.5,y0+sa*L*.5,
+            rr(.55,.95),rr(.08,.22));
     }
     ctx.fill();
   }
@@ -494,12 +569,17 @@
                  +rowSkew*(x-W/2)*.02;
         if(rnd()<dens && rnd()>o*.20){
           const nx=x+rr(-1.6,1.6), ny=yy+rr(-1.4,1.4);
-          const ee=clamp(field(nx,ny)+rr(-.05,.05),0,1);
-          const ww=wetness(nx,ny);
-          // 概率连续混合，不做硬阈值切换：过渡带是散的，不会出现一条分界
-          const fieldness=1-smooth(.22,.40,ee);
-          if(rnd()<fieldness) fieldTuft(nx,ny,ee,ww,carry);
-          else                tuft(nx,ny,ee,ww,carry+rowIdx*.3);
+          const sd=sand(nx,ny);
+          // 官渡沙堆：林冠让位给断续沙笔，露出赭土 —— 概率连续，无硬边界
+          if(sd>.26 && rnd()<sd*.88){ sandTuft(nx,ny,carry); }
+          else {
+            const ee=clamp(field(nx,ny)+rr(-.05,.05),0,1);
+            const ww=wetness(nx,ny);
+            // 概率连续混合，不做硬阈值切换：过渡带是散的，不会出现一条分界
+            const fieldness=1-smooth(.22,.40,ee);
+            if(rnd()<fieldness) fieldTuft(nx,ny,ee,ww,carry);
+            else                tuft(nx,ny,ee,ww,carry+rowIdx*.3);
+          }
         }
         carry=clamp(carry+rr(-.5,.5),-2.2,2.2);
         x+=step;
@@ -555,6 +635,93 @@
     }
   }
 
+  // ── 许下屯田沟洫：建安五年正在发生的地表 ────────────────────────────
+  // 建安元年枣祗募民屯田许下，开枣祗河/玛瑙河/高底河/灌沟，「引流以溉」，
+  // 灌沟「南北二口俱有陡门」。人工渠更直、更细、赭土色，是第三套地貌成因。
+  // 渠身与沟洫都挂 CANALS 真实锚点，笔数/长度/角度/陡门由局部场 + carry 连续给，
+  // 没有可复制的图章，也不画成等距网格。
+  function canalWorks(){
+    for (const c of CANALS) {
+      const P=resample(c.pts.map(PXY),6), F=frames(P);
+      // 渠身：笔断意连的细赭线
+      for(let i=0;i<P.length-8;i+=13){
+        const Q=P.slice(i,Math.min(P.length,i+9));
+        if(Q.length>2) hardRibbon(ctx,Q,
+          {w:1.05,col:'#8d7a52',alpha:.30,head:.08,tail:.22,sk:rr(0,99),seg:2});
+      }
+      // 两侧平行沟洫：沿渠弧长游走，步进不等、角度带 carry
+      let carry=rr(-1,1);
+      for(let i=8;i<P.length-8;){
+        const p=P[i], f=F[i];
+        const side=rnd()>.5?1:-1;
+        const perp=Math.atan2(f.ny,f.nx)+carry*.14;
+        const ca=Math.cos(perp), sa=Math.sin(perp);
+        const n=2+Math.floor(rnd()*3);
+        const L=rr(12,26)*(1-openness(p[0],p[1])*.30);
+        const base=rr(8,15)*side;
+        for(let k=0;k<n;k++){
+          const off=(k-(n-1)/2)*rr(3.2,4.8);
+          const x0=p[0]+f.nx*base-sa*off, y0=p[1]+f.ny*base+ca*off;
+          hardRibbon(ctx,[[x0-ca*L*.5,y0-sa*L*.5],[x0+ca*L*.5,y0+sa*L*.5]],
+            {w:.7,col:'#8a7550',alpha:rr(.15,.29),head:.08,tail:.28,sk:rr(0,99),seg:2});
+        }
+        // 陡门：只在部分沟口，两短竖夹一门，不宣称精确间距
+        if(rnd()<.30){
+          const gx=p[0]+f.nx*base, gy=p[1]+f.ny*base;
+          ctx.save(); ctx.strokeStyle='rgba(86,72,48,.58)'; ctx.lineWidth=1;
+          ctx.beginPath();
+          for(const s of [-1,1]){
+            const tx=f.tx*s*3.2, ty=f.ty*s*3.2;
+            ctx.moveTo(gx+tx-f.nx*4,gy+ty-f.ny*4);
+            ctx.lineTo(gx+tx+f.nx*4,gy+ty+f.ny*4);
+          }
+          ctx.stroke(); ctx.restore();
+        }
+        carry=clamp(carry+rr(-.5,.5),-2,2);
+        i+=Math.round(rr(10,17));
+      }
+      const q=P[Math.floor(P.length*.55)];
+      vertical(c.name,q[0]+7,q[1]-9,8,'#6e5b3a',.62);
+    }
+  }
+
+  // ── 黄河金堤 / 水门：汉代系统堤防 ─────────────────────────────────────
+  // 汉人称黄河大堤为「金堤」；王景「十里立一水门，令更相洄注」。
+  // 沿黄河岸线弧长铺断续夯土堤（赭），斗门只在部分堤段出现 ——
+  // 建安五年是否仍完整沿用十里之制无直接记载，故不画成等距闸门阵列。
+  function dykes(){
+    const g=RIVER_GEO.find(r=>r.major);
+    if(!g) return;
+    for(const side of [1,-1]){
+      let carry=rr(-1,1);
+      for(let i=8;i<g.P.length-10;){
+        const step=Math.round(rr(15,27));
+        const off=g.width+9+carry*1.8;
+        const Q=[];
+        for(let j=0;j<step && i+j<g.P.length-8;j++){
+          const q=g.P[i+j], f=g.F[Math.min(i+j,g.F.length-1)];
+          Q.push([q[0]+f.nx*off*side,q[1]+f.ny*off*side]);
+        }
+        if(Q.length>2) hardRibbon(ctx,Q,
+          {w:1.7,col:'#9a7a48',alpha:.46,head:.06,tail:.20,sk:rr(0,99),seg:2});
+        if(rnd()<.34 && Q.length>3){
+          const q=Q[Math.floor(Q.length/2)];
+          const f=g.F[Math.min(i+Math.floor(step/2),g.F.length-1)];
+          ctx.save(); ctx.strokeStyle='rgba(86,72,48,.60)'; ctx.lineWidth=1;
+          ctx.beginPath();
+          for(const s of [-1,1]){
+            const tx=f.tx*s*3.1, ty=f.ty*s*3.1;
+            ctx.moveTo(q[0]+tx-f.nx*4,q[1]+ty-f.ny*4);
+            ctx.lineTo(q[0]+tx+f.nx*4,q[1]+ty+f.ny*4);
+          }
+          ctx.stroke(); ctx.restore();
+        }
+        carry=clamp(carry+rr(-.5,.5),-2,2);
+        i+=step+Math.round(rr(4,10));
+      }
+    }
+  }
+
   // ── 湿林带：必须在水画完之后跑（RIVER_GEO 那时才有数据） ─────────────
   // 上一版把它塞在 surfaceCover() 里，而 RIVER_GEO 由 river() 填充，
   // 调用顺序在前，整个循环空转 —— 河两岸因此是秃的。
@@ -604,13 +771,46 @@
       ctx.fillStyle=rgba('#4a6b6c',.62); ctx.fill(path);
       ctx.fillStyle=rgba('#36595c',.24); ctx.fill(path);
       ctx.strokeStyle=rgba('#3c5b58',.42); ctx.lineWidth=.9; ctx.stroke(path);
-      // 沙洲：留一丢丢纸
-      for(let i=0;i<5;i++){
-        const a=rr(0,Math.PI*2), R=rr(.15,.7);
+      // 圃田泽「九沟九泽二十四浦」：泽面不是一整块青，是有沙洲、有水汊、
+      // 有蒲苇的湿地。沙洲漏一丢丢纸，其余全是笔，不是平铺贴图。
+      const big = L.name==='圃田泽';
+      const reeds=[];
+      for(let i=0;i<(big?9:5);i++){
+        const a=rr(0,Math.PI*2), R=rr(.15,.72);
         const x=cx+Math.cos(a)*rx*R, y=cy+Math.sin(a)*ry*R;
-        ctx.fillStyle=rgba('#e9e0ca',rr(.45,.78));
-        ctx.beginPath(); ctx.ellipse(x,y,rr(5,13),rr(1.6,3.4),a,0,Math.PI*2); ctx.fill();
+        const rw=rr(5,13), rh=rr(1.6,3.4);
+        ctx.fillStyle=rgba('#e9e0ca',rr(.42,.72));
+        ctx.beginPath(); ctx.ellipse(x,y,rw,rh,a,0,Math.PI*2); ctx.fill();
+        reeds.push({x,y,r:Math.max(rw,rh)});
       }
+      // 分割水道：从泽心向外，笔断意连，不连成一条贯穿全画的「路」
+      for(let i=0;i<(big?8:3);i++){
+        const a=rr(0,Math.PI*2), r0=rr(.10,.34), a2=a+rr(-.9,.9), len=rr(.45,.90);
+        const x0=cx+Math.cos(a)*rx*r0, y0=cy+Math.sin(a)*ry*r0;
+        hardRibbon(ctx,[[x0,y0],
+          [x0+Math.cos(a2)*rx*len*.5,y0+Math.sin(a2)*ry*len*.5],
+          [x0+Math.cos(a2)*rx*len,y0+Math.sin(a2)*ry*len]],
+          {w:1.0,col:'#7fa8a6',alpha:.26,head:.08,tail:.24,sk:rr(0,99),seg:2});
+      }
+      // 蒲苇：沿各沙洲缘的一次性游走。萑苻泽「泽中多生蒲草」；
+      // 得名另有麻黄草说，故只作丛生草本，不指定物种、不画叶片图章。
+      // 全泽合成一条 path 一次 fill，笔与笔之间没有叠色接缝。
+      let carry=rr(-1,1);
+      ctx.fillStyle=rgba('#546b4a',.44);
+      ctx.beginPath();
+      for(const s of reeds){
+        const n=5+Math.floor(rr(0,5));
+        for(let k=0;k<n;k++){
+          const t=k/n*Math.PI*2+carry*.2;
+          const px=s.x+Math.cos(t)*s.r*rr(1.0,1.7), py=s.y+Math.sin(t)*s.r*rr(.7,1.3);
+          const ang=t+Math.PI/2+rr(-.35,.35)+carry*.10;
+          const L2=rr(4,9);
+          brush(ctx,px,py,px+Math.cos(ang)*L2,py+Math.sin(ang)*L2,
+                rr(.6,1.1),rr(.08,.20));
+        }
+        carry=clamp(carry+rr(-.5,.5),-2,2);
+      }
+      ctx.fill();
       for (let i=0;i<11;i++) {
         const y=cy+rr(-ry*.6,ry*.6), x=cx+rr(-rx*.6,rx*.15), l=rr(rx*.16,rx*.44);
         ribbon(ctx,[[x,y],[x+l*.5,y+rr(-1,1)],[x+l,y]],
@@ -671,7 +871,7 @@
     for(let i=0;i<big.length;i++) ctx.strokeText(big[i],tx,ty+i*bp);
     ctx.restore();
     vertical(big,tx,ty,bs,'#f2ead4',.94,1.34);
-    vertical('建安五年庚辰 · 空中俯瞰 · 纵横不拘实距',
+    vertical('建安五年庚辰 · 西至洛阳东至大野 · 空中俯瞰',
       tx+30,ty+6,10,'#f0e9d5',.76,1.24);
 
     // 朱印
@@ -688,7 +888,7 @@
     ctx.save();
     ctx.font=`10px ${font}`; ctx.textAlign='right'; ctx.textBaseline='bottom';
     ctx.fillStyle='rgba(56,54,42,.80)';
-    ctx.fillText('每方约百里 · 以水系为脉络',bx+bw,by-10);
+    ctx.fillText('每方约三十里 · 纵横不拘实距',bx+bw,by-10);
     ctx.strokeStyle='rgba(95,90,69,.82)'; ctx.lineWidth=.9;
     ctx.strokeRect(bx,by,bw,6);
     ctx.fillStyle='rgba(95,90,69,.82)';
@@ -697,16 +897,114 @@
   }
 
   // ── 以下为「地物层」：有实地位置，由上层数据叠压，不属于背景 ───────────
-  function archBridge(x,y,w) {
-    ctx.save();
-    ctx.strokeStyle='rgba(88,78,56,.86)'; ctx.lineWidth=1;
+  // 形制考订：战国已有木石梁桥、渭水浮桥，前 541 年临晋关已有黄河浮桥；
+  // 东汉虽已有裸拱（新野画像砖），石拱桥成熟要到隋。故这里不用江南式石拱
+  // （那是南宋《平江图》305 座拱桥的语汇），支流用平梁、大河用舟桥。
+  function beamBridge(x,y,ang,w) {
+    ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+    ctx.strokeStyle='rgba(88,78,56,.84)'; ctx.lineWidth=1.2;
     ctx.beginPath();
-    ctx.moveTo(x-w/2,y+3); ctx.quadraticCurveTo(x,y-6,x+w/2,y+3);
-    ctx.moveTo(x-w/2,y+6); ctx.quadraticCurveTo(x,y-3,x+w/2,y+6);
+    ctx.moveTo(-w/2,-2.6); ctx.lineTo(w/2,-2.6);
+    ctx.moveTo(-w/2,2.6);  ctx.lineTo(w/2,2.6);
     ctx.stroke();
-    ctx.strokeStyle='rgba(247,239,216,.7)'; ctx.lineWidth=.5;
-    ctx.beginPath(); ctx.moveTo(x-w/2+1,y+4.4); ctx.quadraticCurveTo(x,y-4.6,x+w/2-1,y+4.4); ctx.stroke();
+    ctx.strokeStyle='rgba(247,239,216,.66)'; ctx.lineWidth=.5;
+    ctx.beginPath(); ctx.moveTo(-w/2+1,-1.2); ctx.lineTo(w/2-1,-1.2); ctx.stroke();
+    // 桥墩：不等距，由位置连续给，不是等分小竖线
+    let px=-w/2+2;
+    while(px<w/2-1){
+      ctx.strokeStyle='rgba(88,78,56,.6)'; ctx.lineWidth=.8;
+      ctx.beginPath(); ctx.moveTo(px,-3.4); ctx.lineTo(px,3.4); ctx.stroke();
+      px+=rr(5,9);
+    }
     ctx.restore();
+  }
+  function pontoonBridge(x,y,ang,w) {
+    ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+    // 两道连接梁：平梁，不拱
+    ctx.strokeStyle='rgba(88,78,56,.82)'; ctx.lineWidth=1.4;
+    ctx.beginPath();
+    ctx.moveTo(-w/2,-2.4); ctx.lineTo(w/2,-2.4);
+    ctx.moveTo(-w/2,2.4);  ctx.lineTo(w/2,2.4);
+    ctx.stroke();
+    // 舟排：每舟宽与间距连续变化，不等距复制
+    let px=-w/2;
+    while(px<w/2-3){
+      const bw=rr(4,7);
+      ctx.strokeStyle='rgba(240,236,218,.80)'; ctx.lineWidth=.8;
+      ctx.beginPath();
+      ctx.moveTo(px,-3.4); ctx.lineTo(px+bw*.2,3.4);
+      ctx.lineTo(px+bw*.8,3.4); ctx.lineTo(px+bw,-3.4);
+      ctx.stroke();
+      px+=bw+rr(1.4,3.2);
+    }
+    ctx.restore();
+  }
+
+  // 扩大后补入的地标：只画小方城 + 竖排名，不画托光/浅田环/印，
+  // 也不进 CITY_PTS 清场。它们有实地出处，但不该抢十二座主城的层级。
+  function landmarks() {
+    for(const [name,lon,lat] of LANDMARKS){
+      const [x,y]=proj(lon,lat), s=9, h=s*.70;
+      ctx.save();
+      ctx.strokeStyle='rgba(68,66,52,.78)'; ctx.lineWidth=1;
+      ctx.strokeRect(x-s,y-h,s*2,h*2);
+      ctx.strokeStyle='rgba(247,239,216,.58)'; ctx.lineWidth=.5;
+      ctx.strokeRect(x-s+1.2,y-h+1.2,s*2-2.4,h*2-2.4);
+      for(const [ox,oy] of [[x-s,y-h],[x+s,y+h]]){
+        ctx.strokeStyle='rgba(68,66,52,.72)'; ctx.lineWidth=.8;
+        ctx.strokeRect(ox-1.8,oy-1.8,3.6,3.6);
+      }
+      ctx.restore();
+      const deep=field(x,y)>.52;
+      vertical(name,x+s+4,y-h,9,deep?'#f3ecd8':'#33352c',.88);
+    }
+  }
+
+  // 东汉坞堡：平面近方、四周高墙、前后门设门楼、四隅角楼；
+  // 武威雷台陶楼院角楼间还连飞桥。俯视天生就是「方围墙 + 四角小方块」。
+  // 尺寸/朝向/飞桥有无由 h1(x,y) 连续决定，不是同一张图章复制。
+  function walledHold(x,y,ang,sc) {
+    const s=rr(11,16)*sc;
+    ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+    ctx.strokeStyle='rgba(68,66,52,.88)'; ctx.lineWidth=1.1;
+    ctx.strokeRect(-s,-s*.80,s*2,s*1.60);
+    ctx.strokeStyle='rgba(240,234,214,.78)'; ctx.lineWidth=.6;
+    ctx.strokeRect(-s+1.4,-s*.80+1.4,s*2-2.8,s*1.60-2.8);
+    for(const [ox,oy] of [[-s,-s*.80],[s,-s*.80],[-s,s*.80],[s,s*.80]]){
+      const u=rr(2.6,4.2)*sc;
+      ctx.strokeStyle='rgba(68,66,52,.90)'; ctx.lineWidth=1;
+      ctx.strokeRect(ox-u/2,oy-u/2,u,u);
+      ctx.fillStyle='rgba(240,234,214,.52)';
+      ctx.fillRect(ox-u/2+1,oy-u/2+1,u-2,u-2);
+    }
+    // 门楼（南面）
+    ctx.strokeStyle='rgba(68,66,52,.82)'; ctx.lineWidth=1;
+    ctx.strokeRect(-s*.22,s*.80-2.5,s*.44,4.5);
+    // 飞桥只部分坞堡有，避免整片同款
+    if(h1(x*.11+y*.13)>.62){
+      ctx.strokeStyle='rgba(88,78,56,.55)'; ctx.lineWidth=.7;
+      ctx.beginPath(); ctx.moveTo(-s,-s*.80); ctx.lineTo(s,-s*.80); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 乌巢粮囤：「绍辎重囤集乌巢」，只挂一处，成组方形屋基 + 晒场，不单列为城
+  function granaries() {
+    for(const [lon,lat,name] of GRANARIES){
+      const [x,y]=proj(lon,lat);
+      const a=nearestRiver(x,y).a;
+      ctx.save(); ctx.translate(x,y); ctx.rotate(a);
+      ctx.strokeStyle='rgba(68,66,52,.80)'; ctx.lineWidth=1;
+      for(let k=0;k<5;k++){
+        const w=rr(6,9), h=rr(4,6);
+        const ox=(k%3-1)*11+rr(-2,2), oy=Math.floor(k/3)*9+rr(-2,2);
+        ctx.strokeRect(ox-w/2,oy-h/2,w,h);
+      }
+      ctx.strokeStyle='rgba(226,214,176,.46)'; ctx.lineWidth=.7;
+      ctx.strokeRect(-19,14,38,5);
+      ctx.restore();
+      vertical(name,x+16,y-12,9,'#f0e9d5',.78);
+    }
   }
   function boat(x,y,sail) {
     const l=6+sail*4;
@@ -877,10 +1175,12 @@
     ctx.restore();
   }
   function settlements() {
-    const names=['坞','聚','邮','市','屯','里','邑','堡','驿','仓'];
+    const civilNames=['聚','邮','市','里','邑','驿','仓','井','陂','塘'];
+    const warNames=['坞','壁','屯','垒','营'];
     CITIES.forEach((c,ci)=>{
       const rank=c[3];
       const [cx,cy]=proj(c[1],c[2]);
+      const military=MILITARY.has(c[0]);
       const n=rank===1?5:rank===2?3:rank===3?2:1;
       for (let k=0;k<n;k++) {
         const a=(k/n)*Math.PI*2+h1(ci*7+k)*1.4;
@@ -888,10 +1188,16 @@
         const x=cx+Math.cos(a)*R, y=cy+Math.sin(a)*R*.78;
         if (x<60||x>W-60||y<60||y>H-60||inDeepCanopy(x,y)) continue;
         const ang=nearestRiver(x,y).a+rr(-.35,.35);
-        hamlet(x,y,ang,2+Math.floor(h1(ci*13+k*3)*3),rr(.85,1.25));
-        croft(x+Math.cos(ang)*16,y+Math.sin(ang)*16,ang+Math.PI/2,
-              3+Math.floor(h1(ci*5+k)*4));
-        vertical(names[(ci*3+k)%names.length],x+11,y-9,8,'#f0e9d5',rr(.52,.70));
+        if(military){
+          // 有史料依据的前线/军屯据点：黄巾后豪强「修坞筑堡」，方墙四角楼
+          walledHold(x,y,ang,rr(.85,1.25));
+          vertical(warNames[(ci+k)%warNames.length],x+14,y-11,8,'#f0e9d5',rr(.58,.76));
+        } else {
+          hamlet(x,y,ang,2+Math.floor(h1(ci*13+k*3)*3),rr(.85,1.25));
+          croft(x+Math.cos(ang)*16,y+Math.sin(ang)*16,ang+Math.PI/2,
+                3+Math.floor(h1(ci*5+k)*4));
+          vertical(civilNames[(ci*3+k)%civilNames.length],x+11,y-9,8,'#f0e9d5',rr(.52,.70));
+        }
       }
     });
     PASSES.filter(p=>p[3]==='pass').forEach((p,pi)=>{
@@ -907,19 +1213,31 @@
     });
   }
   function bridgesBoats() {
-    const onRiver=(pts,ts) => { const P=resample(pts.map(PXY),5); return ts.map(t=>P[Math.floor(t*(P.length-1))]); };
-    for (const p of onRiver(HUANGHE,[.16,.34,.52,.70,.86])) archBridge(p[0]+rr(-6,6),p[1]+rr(-4,4),rr(15,24));
-    for (const r of RIVERS_MINOR) for (const p of onRiver(r.pts,[.30,.68])) archBridge(p[0],p[1]+2,rr(12,18));
-    onRiver(HUANGHE,[.10,.24,.40,.58,.74,.92]).forEach((p,i)=>
-      boat(p[0]+rr(-8,8),p[1]+rr(-6,6),h1(i+3)));
-    onRiver(RIVERS_MINOR[0].pts,[.2,.55,.85]).forEach((p,i)=>
-      boat(p[0]+rr(-6,6),p[1]+rr(-5,5),h1(i+11)));
-    const b=PXY([114.00,34.55]); archBridge(b[0],b[1],20);
+    const onRiver=(pts,ts) => {
+      const P=resample(pts.map(PXY),5), F=frames(P);
+      return ts.map(t=>{
+        const i=Math.floor(t*(P.length-1));
+        return {p:P[i],ang:Math.atan2(F[i].ty,F[i].tx)+Math.PI/2};
+      });
+    };
+    // 黄河级水面：舟桥（浮桥），不是石拱
+    for (const q of onRiver(HUANGHE,[.16,.34,.52,.70,.86]))
+      pontoonBridge(q.p[0]+rr(-6,6),q.p[1]+rr(-4,4),q.ang,rr(18,26));
+    // 支流：木石平梁桥
+    for (const r of RIVERS_MINOR) for (const q of onRiver(r.pts,[.30,.68]))
+      beamBridge(q.p[0],q.p[1]+2,q.ang,rr(12,18));
+    onRiver(HUANGHE,[.10,.24,.40,.58,.74,.92]).forEach((q,i)=>
+      boat(q.p[0]+rr(-8,8),q.p[1]+rr(-6,6),h1(i+3)));
+    onRiver(RIVERS_MINOR[0].pts,[.2,.55,.85]).forEach((q,i)=>
+      boat(q.p[0]+rr(-6,6),q.p[1]+rr(-5,5),h1(i+11)));
+    // 官渡：渠水南岸官方渡口，用舟桥 + 码头，不画拱
+    const b=PXY([114.00,34.55]);
+    pontoonBridge(b[0],b[1],nearestRiver(b[0],b[1]).a+Math.PI/2,20);
   }
 
   // ── 分层渲染 ──────────────────────────────────────────────────────────
-  // 背景层：纸 → 廓 → 建场 → 林冠面覆盖 → 泽/河 → 湿林带
-  // 地物层：桥舟 → 聚落 → 城 → 关津
+  // 背景层：纸 → 廓 → 建场 → 薄罩 → 林冠/田畴/沙岗 → 沟洫 → 泽/河 → 湿林 → 金堤
+  // 地物层：桥舟 → 聚落/坞堡 → 粮囤 → 城 → 关津
   // 两层都与 zoom 无关、各渲一次到离屏；缩放/平移/切层只做合成。
   // 只有「重落一笔」换 seed 才重建 —— 否则滚轮每动一下都要重画上万个树冠团。
   function renderLayers(){
@@ -931,19 +1249,23 @@
     ctx.clearRect(0,0,W,H);
     paper(); border();
     buildField();
-    fieldWash();                         // 工笔第一道工序：先罩连续底色
-    surfaceCover();                      // 再叠顺场笔势的树冠短笔
-    lakes();
+    fieldWash();                         // 工笔第一道工序：先罩连续底色（含官渡赭土）
+    surfaceCover();                      // 再叠顺场笔势的树冠 / 田畴 / 沙岗短笔
+    canalWorks();                        // 建安五年许下屯田沟洫 + 陡门
+    lakes();                             // 二十四浦 / 沙洲 / 蒲苇
     river(HUANGHE,8.6,'河水',true);
     for (const r of RIVERS_MINOR) river(r.pts,r.w,r.name,false);
     wetBands();                          // 岸上的深青湿林，盖在水边而不是水下
+    dykes();                             // 金堤断续夯土线 + 水门（压在湿林之上）
     inscriptions();                      // 图面题识，随图缩放
 
     ctx = featCtx;
     ctx.setTransform(SS,0,0,SS,0,0);
     ctx.clearRect(0,0,W,H);
-    bridgesBoats();
-    settlements();
+    bridgesBoats();                      // 舟桥 / 平梁，无石拱
+    settlements();                       // 军屯坞堡 / 民屯田舍
+    granaries();                         // 乌巢粮囤
+    landmarks();                         // 扩大后补入的四处有出处地标
     for (const c of CITIES) city(c);
     passesFords();
 
