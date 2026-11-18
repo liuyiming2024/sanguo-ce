@@ -6,7 +6,6 @@
 <meta name="theme-color" content="#0a0d0c">
 <link rel="icon" href="data:,">
 <title>三国策 · 官渡</title>
-<link rel="stylesheet" href="./styles/main.css?v=0.9.2">
 </head>
 <body>
 
@@ -181,6 +180,16 @@
 </section>
 
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-<script type="module" src="./src/main.js?v=0.9.2"></script>
+<script type="module">
+  // 缓存指纹的唯一来源：src/version.js。HTML 里不写死任何版本号。
+  import { VERSION } from './src/version.js';
+  const q = `?v=${VERSION}`;
+  const link = document.createElement('link');
+  link.rel = 'stylesheet'; link.href = `./styles/main.css${q}`;
+  document.head.appendChild(link);
+  const boot = document.createElement('script');
+  boot.type = 'module'; boot.src = `./src/main.js${q}`;
+  document.body.appendChild(boot);
+</script>
 </body>
 </html>

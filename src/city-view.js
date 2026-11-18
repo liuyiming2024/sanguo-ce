@@ -16,13 +16,13 @@
 // 护心镜 + 按兵种兵器），motion 全是渲染层私有状态，
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
-import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.9.2';
-import { createPortraits } from './portrait.js?v=0.9.2';
-import { headingFromDelta, normAngle } from './direction.js?v=0.9.2';
-import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js?v=0.9.2';
-import { findCityPath, cityObstacles } from './siege-grid.js?v=0.9.2';
-import { formatCalendar } from './calendar.js?v=0.9.2';
-import { conditionLine } from './condition.js?v=0.9.2';
+import { drawSoldier, idSeed, unitKind } from './soldier.js';
+import { createPortraits } from './portrait.js';
+import { headingFromDelta, normAngle } from './direction.js';
+import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js';
+import { findCityPath, cityObstacles } from './siege-grid.js';
+import { formatCalendar } from './calendar.js';
+import { conditionLine } from './condition.js';
 
 const INK = '#0b100e';
 const TEXT = '#e2ddc7', DIM = '#9aa896', GOLD = '#e8c882';
@@ -50,7 +50,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   let layout = null;
   let circle = null, dragUnit = null, pointer = null;
   let selection = new Set(), champion = null;
-  let formationShape = 'line';   // 横队 / 方阵 / 楔形，HUD 右上热区点击切换
+  // 默认方阵：用户口径「列队不是让你列纵队啊，是让你列方阵嘛」。
+  // 框选后点位置直接收成方阵，不再默认拉成一长条横队 / 纵队。
+  let formationShape = 'block';  // 横队 / 方阵 / 楔形，HUD 右上热区点击切换
   const pathByUnit = new Map();  // 一次性 A* 路线，渲染层私有，不进 state
   let currentCombat = null;
   // ── 行军动画（渲染层私有，绝不进 state） ──────────────────────────────
@@ -162,11 +164,21 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
               total = segs.at(-1);
             } else pts = null;
           }
+          // 跨步与速度物理绑定（v0.9.3）：
+          //   视觉步幅由 soldier.js 的 k = s/17 与 amp 决定（随单位宽度缩放）；
+          //   步频基准 1.75 步/秒（步态周期 2π/11 ≈ 0.571s）；
+          //   行军速度按兵种 def.speed 归一，dur = dist / unitSpeed；
+          //   renderPos 里 phaseRate = 11 × (unitSpeed / 34) 同步缩放步频。
+          // 三者同源：快走快摆、慢走慢摆，不可能「腿小抖、身飞奔」。
+          // 速度钳制 4–68 px/s（约 3.4 身位/秒 @ s=20），重甲不会跑成博尔特。
+          const def = cfg.units[u.type] ?? { speed: 20 };
+          const unitSpeed = Math.max(4, Math.min(68, (def.speed / 26) * 34));
+          const dur = Math.max(0.28, total / unitSpeed);
           motion.set(u.id, {
             fx: from.x, fy: from.y, tx: to.x, ty: to.y,
-            startSec: sec, dur: Math.min(1.15, Math.max(0.30, 0.26 + total / 420)),
+            startSec: sec, dur,
             dir: to.x >= from.x ? 1 : -1, seed: idSeed(u.id), heading,
-            pts, segs,
+            speed: unitSpeed, pts, segs,
           });
           lastHeading.set(u.id, heading);
         }
@@ -197,8 +209,12 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     // 离开一个月再回来：sec 跳变远超 dur，直接吸附终点，不补跑一段没人的行军。
     if (a.t >= 1) { motion.delete(u.id); return still(m.tx, m.ty); }
     const amp = Math.min(1, Math.sin(Math.PI * a.t) * 1.15);
+    // 相位速率按真实速度缩放：跨步频率 ∝ 速度，保证快走快摆、慢走慢摆，
+    // 不会出现「身速 60px/s、腿速 1.75 步/s」的错位。基准 11 rad/s @ 34px/s。
+    const spd = m.speed ?? 34;
+    const phaseRate = 11 * (spd / 34);
     return { x: a.x, y: a.y, walking: true, dir: m.dir,
-      phase: (sec - m.startSec) * 11 + m.seed, amp,
+      phase: (sec - m.startSec) * phaseRate + m.seed, amp,
       heading: normAngle(a.heading ?? m.heading ?? 0) };
   }
 

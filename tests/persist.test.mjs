@@ -6,12 +6,14 @@ import { createRng, rngFromSnapshot } from '../src/rng.js';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
 } from '../src/persist.js';
+import { VERSION } from '../src/version.js';
 
 const cfg = JSON.parse(readFileSync(new URL('../config/campaign.json', import.meta.url), 'utf8'));
 const uiData = JSON.parse(readFileSync(new URL('../config/ui-data.json', import.meta.url), 'utf8'));
 
 function mk() {
   const c = JSON.parse(JSON.stringify(cfg));
+  c.meta.version = VERSION; c.version = VERSION;   // 模拟装配层注入
   c.factions.forEach((f) => { f.ai = false; });
   const s = createCampaign(c, { seed: 20261114 });
   s.facilities = Object.fromEntries(uiData.facilities.map((f) => [f.id, f.lv]));
@@ -34,7 +36,7 @@ test('存档是纯 JSON，不含循环引用 / 函数 / DOM', () => {
   const text = JSON.stringify(raw);
   assert.ok(text.length > 100);
   assert.equal(JSON.parse(text).v, 1);
-  assert.equal(raw.version, '0.9.2');
+  assert.equal(raw.version, VERSION);
 });
 
 test('地形按 seed 重建，只存与初始地图不同的格子', () => {

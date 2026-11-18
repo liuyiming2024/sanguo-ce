@@ -35,6 +35,11 @@ jobs:
           test -f config/campaign.json
           test -f src/main.js
           grep -q 'type="module"' index.html
-          V=$(node -p "require('./config/campaign.json').meta.version")
-          grep -q "?v=$V" index.html
-          grep -q "?v=$V" src/main.js
+          grep -q 'type="module"' index.html
+          V=$(node --input-type=module -e "import {VERSION} from './src/version.js'; process.stdout.write(VERSION)")
+          echo "唯一版本源 src/version.js -> $V"
+          case "$V" in 0.*) ;; *) echo '大版本号必须保持 0'; exit 1;; esac
+          grep -q 'src/version.js' index.html
+          grep -q 'cfg.meta.version = VERSION' src/main.js
+          if grep -qE '\?v=[0-9]+\.[0-9]+' index.html; then echo 'HTML 又写死了版本戳'; exit 1; fi
+          if grep -rE '\?v=[0-9]+\.[0-9]+' src/ scripts/; then echo '源码又写死了版本戳'; exit 1; fi

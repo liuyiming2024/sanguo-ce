@@ -9,6 +9,7 @@ import { createSession, enterSession, leaveSession, restoreSession } from '../sr
 import { hasAdjacentTerritory } from '../src/pathfind.js';
 import { createRng } from '../src/rng.js';
 import { CITIES } from '../src/map-data.js';
+import { VERSION } from '../src/version.js';
 
 const cfg = JSON.parse(readFileSync(new URL('../config/campaign.json', import.meta.url), 'utf8'));
 const mk = (opt = {}) => createCampaign(JSON.parse(JSON.stringify(cfg)), { seed: 20261114, ...opt });
@@ -20,8 +21,9 @@ const run = (s, turns, seed = 7) => {
 };
 const ready = () => { const s = mk(); s.cfg.factions.forEach((f) => { f.ai = false; }); collectResources(s); return s; };
 
-test('配置：0.9.2、24px/格、12 类大地图指令、城池小地图尺寸', () => {
-  assert.equal(cfg.meta.version, '0.9.2');
+test('配置：版本唯一源 / 24px/格、12 类大地图指令、城池小地图尺寸', () => {
+  assert.match(VERSION, /^0\.\d+\.\d+$/, '大版本号必须保持 0');
+  assert.equal(cfg.meta.version, undefined, '配置不该存版本字面量（唯一来源 src/version.js）');
   assert.equal(cfg.terrain.tilePx, 24);
   assert.equal(cfg.orders.types.length, 12);
   for (const t of ['claim', 'develop', 'buildFort', 'scout', 'march', 'transfer',

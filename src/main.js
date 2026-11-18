@@ -1,39 +1,40 @@
 // 装配层 v0.7.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.9.2';
+import { createRng, rngFromSnapshot } from './rng.js';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.9.2';
+} from './campaign.js';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.9.2';
-import { createMapRenderer } from './map-render.js?v=0.9.2';
-import { createCityView } from './city-view.js?v=0.9.2';
+} from './pathfind.js';
+import { createMapRenderer } from './map-render.js';
+import { createCityView } from './city-view.js';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.9.2';
-import { CITIES, cityById } from './map-data.js?v=0.9.2';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.9.2';
-import { cityCondition } from './condition.js?v=0.9.2';
+} from './battle-session.js';
+import { CITIES, cityById } from './map-data.js';
+import { formatCalendar, calendarParts } from './calendar.js';
+import { cityCondition } from './condition.js';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.9.2';
+} from './story.js';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.9.2';
-import { TYPE_LABEL } from './terrain.js?v=0.9.2';
-import { createTutorialUI } from './tutorial-ui.js?v=0.9.2';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.9.2';
-import { createShell, facilityCost } from './ui-shell.js?v=0.9.2';
+} from './sync.js';
+import { TYPE_LABEL } from './terrain.js';
+import { createTutorialUI } from './tutorial-ui.js';
+import { awaitedEvents, stepCount } from './tutorial.js';
+import { createShell, facilityCost } from './ui-shell.js';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.9.2';
-import { formationSummary } from './formation.js?v=0.9.2';
+} from './persist.js';
+import { formationSummary } from './formation.js';
+import { VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -345,7 +346,10 @@ function refreshBattleUI() {
   $('bSteps').textContent = session.stepsRun;
   const f = getForces(state, session.cityId);
   const c = session.combat;
-  $('bForces').textContent = `${f.inside.filter((u) => (u.hp ?? 1) > 0).length} / ${f.camp.length}`;
+  // 分母取大营存活数：阵亡单位不占「可出战」名额。旧版用 f.camp.length，
+  // 即开战前的初始编制，导致交战中途出现「出战兵 300/0」这类与画面不符的读数。
+  const aliveCamp = f.camp.filter((u) => (u.hp ?? 1) > 0).length;
+  $('bForces').textContent = `${f.inside.filter((u) => (u.hp ?? 1) > 0).length} / ${aliveCamp}`;
   $('bMorale').textContent = c
     ? `攻 ${Math.round(c.morale.attack)} / 守 ${Math.round(c.morale.defend)} · 门 ${Math.round(c.gateHp)}`
     : `${Math.round(session.morale)} / ${Math.round(session.cityWall)}`;
@@ -997,11 +1001,14 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.9.2').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.9.2').then((r) => r.json()),
-    fetch('./config/story.json?v=0.9.2').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.9.2').then((r) => r.json()),
+    fetch('./config/campaign.json').then((r) => r.json()),
+    fetch('./config/ui-data.json').then((r) => r.json()),
+    fetch('./config/story.json').then((r) => r.json()),
+    fetch('./config/tutorial.json').then((r) => r.json()),
   ]);
+  // 版本号只来自 src/version.js：装配时注入，存档 / 界面 / 军令帖都读它，
+  // 配置文件里不再存任何版本字面量。
+  cfg.meta.version = VERSION; cfg.version = VERSION;
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);
   state = newCampaign('cao');

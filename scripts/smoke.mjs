@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import net from 'node:net';
+import { VERSION } from '../src/version.js';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require('/usr/local/lib/node_modules/playwright');
@@ -63,9 +64,9 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注 v0.9.0 与栅格规模',
+  check('主菜单标注当前版本与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.9.2'));
+    (await page.locator('#menuSub').innerText()).includes(VERSION));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -555,11 +556,18 @@ try {
     const all = [...f.inside, ...f.camp];
     const us = ids.map((id) => all.find((u) => u.id === id)).filter(Boolean);
     const ks = us.map((u) => `${u.col}:${u.row}`);
-    return { n: us.length, rows: new Set(us.map((u) => u.row)).size,
-      uniq: new Set(ks).size, motion: cv.motionCount, keys: ks };
+    const rows = [...new Set(us.map((u) => u.row))];
+    const cols = [...new Set(us.map((u) => u.col))];
+    return { n: us.length, rows: rows.length, cols: cols.length,
+      rowSpan: Math.max(...rows) - Math.min(...rows) + 1,
+      colSpan: Math.max(...cols) - Math.min(...cols) + 1,
+      uniq: new Set(ks).size, motion: cv.motionCount, keys: ks,
+      shape: cv.formationShape };
   }, selIds);
-  check('框选后点位置：整队自动列队并开拔（不是各走各的）',
-    selCount >= 2 && formed.n === selCount && formed.rows === 1 &&
+  // 默认方阵：紧凑成块（有横向展开、不是一条竖线），且确实开拔在走。
+  check('框选后点位置：整队自动列方阵并开拔（不是各走各的）',
+    selCount >= 2 && formed.n === selCount && formed.shape === 'block' &&
+    formed.cols >= 2 && formed.rowSpan <= formed.cols &&
     formed.uniq === formed.n && formed.motion > 0,
     JSON.stringify({ selCount, ...formed }));
 
@@ -665,18 +673,22 @@ try {
     w.deployUnit('xudu', u.id, 'inside', 12, 9);
     cv.draw(sec0 + 0.001);
     const started = cv.motionCount;
-    const mid = cv.renderPos(u, sec0 + 0.35);
+    // 行军 dur 现在由兵种速度算出（不再是写死的 1.15s 上限），
+    // 所以「跳到终点」必须按这一段真实的 dur 跳，而不是拍一个 3 秒。
+    const dur = cv.motionOf(u.id)?.dur ?? 3;
+    const midT = sec0 + dur * 0.35, endT = sec0 + dur + 1;
+    const mid = cv.renderPos(u, midT);
     const to = cv.unitXY(u);
-    cv.draw(sec0 + 0.35);
+    cv.draw(midT);
     const a = c.toDataURL('image/png');
-    cv.draw(sec0 + 0.35);                 // 同一模拟时刻再画一次
+    cv.draw(midT);                        // 同一模拟时刻再画一次
     const b = c.toDataURL('image/png');
-    cv.draw(sec0 + 3.0);                 // 直接跳到终点
+    cv.draw(endT);                        // 直接跳到终点
     const ended = cv.motionCount;
-    const settled = cv.renderPos(u, sec0 + 3.0);
+    const settled = cv.renderPos(u, endT);
     return {
       started, ended, from, to, mid, a, b, settled,
-      stateClean: !('motion' in w.state) && !('anim' in w.state) &&
+      dur, stateClean: !('motion' in w.state) && !('anim' in w.state) &&
         !JSON.stringify(w.state.commandLog).includes('motion'),
       finger: w.state.stats,
     };
@@ -715,7 +727,7 @@ try {
 
   // ── v0.9.0：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
   const art = await sp.evaluate(async () => {
-    const mod = await import('./src/soldier.js?v=0.9.2');
+    const mod = await import('./src/soldier.js');
     const cfg = window.__sanguo.cfg;
     const mk = (type, opts = {}) => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 160;
@@ -1045,7 +1057,7 @@ try {
     JSON.stringify({ before, after }));
   // ── v0.9.2：粮草常驻 / 严重时大概 debuff ───────────────────────────
   const condAt = async () => bp.evaluate(async () => {
-    const m = await import('./src/condition.js?v=0.9.2');
+    const m = await import('./src/condition.js');
     const w = window.__sanguo, cv = w.cityView;
     const us = [...cv.forces().inside, ...cv.forces().camp];
     return {
@@ -1103,7 +1115,7 @@ try {
       return /攻 \d+ \/ 守 \d+/.test(el.textContent);
     }));
   check('斥候情报缺粮草字段时不会误报断粮告急', await bp.evaluate(async () => {
-    const m = await import('./src/condition.js?v=0.9.2');
+    const m = await import('./src/condition.js');
     const w = window.__sanguo;
     const scout = { morale: 72, fatigue: 0, garrison: 2000, wall: 100 };
     return m.cityCondition(w.cfg, scout, { grainKnown: false }).text === '如常' &&

@@ -7,6 +7,7 @@ import { CITIES, PASSES, ROADS, validateMap } from '../src/map-data.js';
 import { validateConnectivity, routeCities, tilesPerTurn, hasAdjacentTerritory } from '../src/pathfind.js';
 import { createCampaign, collectResources, issueOrder } from '../src/campaign.js';
 import { calendarParts, formatCalendar, cnYear } from '../src/calendar.js';
+import { VERSION } from '../src/version.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const cfg = JSON.parse(readFileSync(join(root, 'config/campaign.json'), 'utf8'));
@@ -14,7 +15,14 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.9.2', 'meta.version 与生成物指纹不一致');
+// 版本号唯一来源：src/version.js。配置文件、HTML、模块 import 都不再存字面量。
+ok(/^0\.\d+\.\d+$/.test(VERSION), 'VERSION 格式非法，大版本号必须保持 0');
+ok(!('version' in cfg.meta) && !('version' in cfg),
+  '配置里又写了版本字面量，改版本只需动 src/version.js');
+const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const maniCfg = JSON.parse(readFileSync(join(root, 'assets/units/trooper.json'), 'utf8'));
+ok(!('version' in pkg) && !('version' in maniCfg),
+  'package.json / trooper.json 不该再存版本字面量');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -74,6 +82,8 @@ ok(r.order?.arriveTurn > 0, '命令不应即时生效');
 // 导航/指纹静态检查
 const html = readFileSync(join(root, 'index.html'), 'utf8');
 const main = readFileSync(join(root, 'src/main.js'), 'utf8');
+ok(main.includes('cfg.meta.version = VERSION'),
+  '装配层没把 VERSION 注入 cfg，存档与军令帖会丢版本');
 for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'closeBattleX', 'leaveBattle', 'helpPanel', 'closeHelpX', 'mainMenu', 'startBtn',
   'cityCanvas', 'cityPanel', 'closeCityX', 'orderList', 'closeOrderX', 'tileCmds',
@@ -81,8 +91,19 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.9.2'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.9.2"), 'ESM import 缺少版本指纹');
+ok(html.includes('src/version.js') && html.includes('?v=${VERSION}'),
+  'HTML 入口没从 version.js 注入缓存指纹');
+// 排除 version.js 自身；文件头的历史注释（v0.9.0 / v0.9.2）不是版本常量，
+// 升版本时不需要动，所以只拦「带引号」的版本字面量与 ?v= 硬编码戳。
+const allSrc = readdirSync(join(root, 'src'))
+  .filter((f) => f.endsWith('.js') && f !== 'version.js')
+  .map((f) => readFileSync(join(root, 'src', f), 'utf8')).join('\n');
+const allMjs = readdirSync(join(root, 'scripts')).filter((f) => f.endsWith('.mjs'))
+  .map((f) => readFileSync(join(root, 'scripts', f), 'utf8')).join('\n');
+ok(!/\?v=\d/.test(html + main + allSrc + allMjs),
+  '代码里又出现硬编码 ?v= 版本戳，升版本会漏改');
+ok(!/['"]0\.9\.\d['"]/.test(allSrc),
+  '源码里除了 version.js 不该还有带引号的版本字面量');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -363,8 +384,17 @@ ok(/export function drawSoldier\(ctx, u, o\)/.test(sol) &&
    /drawSoldier\(ctx, u, \{/.test(cv8), '精细立绘没接进小地图');
 ok(!/Math\.random|Date\.now|performance\.now|new Image|drawImage/.test(sol + cv8),
   '士兵层出现墙钟/随机源/位图，破坏确定性与零位图架构');
-ok(/phase: \(sec - m\.startSec\) \* 11 \+ m\.seed/.test(cv8),
-  '行军相位必须只取模拟时间 sec + id 派生种子');
+ok(/phase: \(sec - m\.startSec\) \* phaseRate \+ m\.seed/.test(cv8) &&
+   /const phaseRate = 11 \* \(spd \/ 34\)/.test(cv8),
+  '行军相位必须只取模拟时间 sec + id 派生种子，且速率随真实速度缩放');
+ok(/const unitSpeed = Math\.max\(4, Math\.min\(68/.test(cv8) &&
+   /const dur = Math\.max\(0\.28, total \/ unitSpeed\)/.test(cv8) &&
+   !/total \/ 420/.test(cv8),
+  '行军耗时必须由兵种速度与距离算出，不能再用 420 魔法常数让人飞奔');
+ok(/speed: unitSpeed/.test(cv8) && !/stride:/.test(cv8),
+  'motion 必须带真实速度，且不留未消费的 stride 死字段');
+ok(/let formationShape = 'block'/.test(cv8),
+  '默认阵型必须是方阵，不能默认拉成横队/纵队');
 ok(/function syncMotion/.test(cv8) && /function tweenAt/.test(cv8) &&
    /function renderPos/.test(cv8), '缺行军插值三层');
 ok(/if \(a\.t >= 1\) \{ motion\.delete/.test(cv8),
@@ -471,7 +501,7 @@ ok(/trooper-sheet|trooper\.json|assets\/units/.test(readFileSync(join(root, 'REA
   'README 缺八向素材说明');
 
 // ── v0.9.0：背面三帧验收锁 / 24 帧步态 / 自动列队 ──────────────────────
-ok(mani.version === '0.9.2' && mani.phases?.length === 3 &&
+ok(!('version' in mani) && mani.phases?.length === 3 &&
    mani.phases.join(',') === 'idle,stepL,stepR',
   'manifest 必须是 8 向 × 3 相位');
 ok(mani.sheets?.idle === 'trooper-sheet.png' &&
