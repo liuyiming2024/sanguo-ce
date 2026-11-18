@@ -549,7 +549,7 @@ ok(!/document|canvas|Date\.|performance\.|Math\.random/.test(formMod.replace(/^\
 ok(/onFormationMove/.test(mainMod) && /deployUnit\(state, cityId, a\.id/.test(mainMod),
   '编队结果必须逐队写回部署，不能只画个圈');
 
-// ── v0.9.4：对面全境舆图接入 / 典籍总揽 / 文档总揽 ────────────────────
+// ── v0.9.4：对面两版舆图接入 / 典籍总揽 / 文档总揽 ────────────────────
 const atlas = readFileSync(join(root, 'src/atlas.js'), 'utf8');
 const shellSrc = readFileSync(join(root, 'src/ui-shell.js'), 'utf8');
 const hist = JSON.parse(readFileSync(join(root, 'config/historica.json'), 'utf8'));
@@ -561,13 +561,25 @@ ok(/export function createAtlas/.test(atlas) &&
   '全境内核必须参数化图幅与 seed，不能写死在内部');
 ok(!/document\.getElementById|addEventListener|Math\.random|Date\.now|performance\.now|new Image/.test(atlas),
   'atlas.js 不能带 DOM 交互 / 墙钟 / 随机源 / 位图，否则确定性与零位图破功');
-ok(/fg: false/.test(mr7) && /g\.drawImage\(a\.bg, 0, 0, W, H\)/.test(mr7) &&
-   !/g\.drawImage\(a\.fg/.test(mr7),
-  '战区大地图只能贴 bg 背景层；贴 fg 会与上层城郭/注记重影');
-ok(/LON0: 112\.75, LON1: 116\.15, LAT0: 32\.65, LAT1: 36\.65/.test(mr7),
-  '战区图幅必须与 map-data.js / terrain.js 的投影范围一致');
+const gd = readFileSync(join(root, 'src/guandu.js'), 'utf8');
+const gink = readFileSync(join(root, 'src/ink-stroke.js'), 'utf8');
+ok(/export function renderGuanduLayers/.test(gd) && /export const InkStroke/.test(gink),
+  '对面官渡舆图内核与 MIT 笔触原语必须各自可复用');
+const gdCode = gd.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+ok(!/document\.getElementById|addEventListener|requestAnimationFrame|Math\.random|Date\.now|performance\.now|new Image/.test(gdCode),
+  '官渡内核不能带 DOM 交互 / 墙钟 / 随机源 / 位图');
+ok(/renderLayers\(\)/.test(gd) && /inscriptions\(\)/.test(gd) && /passesFords\(\)/.test(gd),
+  '背景层与地物层要整套跑完，不许只画一半');
+ok(/G_LON_MIN/.test(gd) && /crop: \{ sx/.test(gd),
+  '裁切矩形必须由 map-data.js 的游戏图幅反算，不能写死像素');
+ok(/renderGuanduLayers\(\{\}\)/.test(mr7) &&
+   /g\.drawImage\(a\.bg, sx, sy, sw, sh, 0, 0, W, H\)/.test(mr7) &&
+   /g\.drawImage\(a\.feat, sx, sy, sw, sh, 0, 0, W, H\)/.test(mr7),
+  '战区大地图必须整份贴入 bg + feat，并按 crop 精确对齐逻辑格');
+ok(/if \(style !== 'atlas'\) drawAnnotations\(ctx\)/.test(mr7),
+  '对面已画城名/关津/题识，上层静态注记必须让开，否则重影');
 ok(/createAtlas\(\{\}\)/.test(shellSrc) && /a\.bg/.test(shellSrc) && /a\.fg/.test(shellSrc),
-  '全境舆图浏览页必须用 bg + fg 全份（默认十三州图幅）');
+  '典籍页全境舆图浏览必须用 bg + fg 全份（十三州图幅）');
 ok(demos.includes('建安五年全境舆图.html') && demos.includes('官渡舆图笔势重绘.html'),
   '对面 demos 实验文件必须完整保留，不能覆盖');
 

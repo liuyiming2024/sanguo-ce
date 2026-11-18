@@ -1,14 +1,16 @@
-/* 十三州全境舆图渲染内核 —— 由 demos/建安五年全境舆图.html 机械抽出。
-   连续场 + 一次性路径生成，无格网平铺、无位图。史料依据见
-   docs/十三州全境取数表.md、docs/背景层落地清单.md。
-   笔法、连续场、色板、史料主景锚点一字未改；只做两件事：
-     1) 图幅 / seed 参数化（战区大地图用官渡图幅，典籍页用十三州全境图幅）；
-     2) 去掉 demos 的 DOM 交互与合成，改为返回 bg / fg 两层离屏 canvas，
-        由调用方贴到自己的画布。零位图、确定性、无墙钟无随机源。 */
+/* 十三州全境舆图渲染内核 —— 由 demos/建安五年全境舆图.html（对面最新一版）机械抽出。
+   连续场 + 变宽短笔 + 十三处史料主景 + 三级注记分级，函数体与常量一字未改。
+   只做三件事：图幅 / seed 参数化、去掉 demos 的 DOM 交互与合成、
+   把注记分级绘制导出成可调用方法（屏幕固定字号，不烘进离屏层）。
+   零位图、确定性、无墙钟无随机源。史料依据见 docs/十三州全境取数表.md。
+ */
 export function createAtlas(opts = {}) {
+
+/* 建安五年全境舆图。全部由连续场 + 一次性路径生成，无格网平铺、无位图。
+   史料依据见 docs/十三州全境取数表.md、docs/背景层落地清单.md。 */
   const W = opts.W ?? 1400, H = opts.H ?? 1100;
   const LON0 = opts.LON0 ?? 93, LON1 = opts.LON1 ?? 126,
-        LAT0 = opts.LAT0 ?? 15, LAT1 = opts.LAT1 ?? 43;           // 图幅：西止玉门、东含乐浪、南含日南
+        LAT0 = opts.LAT0 ?? 15, LAT1 = opts.LAT1 ?? 43;   // 西止玉门、东含乐浪、南含日南
 const lon2x = l => (l-LON0)/(LON1-LON0)*W;
 const lat2y = t => (LAT1-t)/(LAT1-LAT0)*H;
 const x2lon = x => LON0 + x/W*(LON1-LON0);
@@ -16,6 +18,8 @@ const y2lat = y => LAT1 - y/H*(LAT1-LAT0);
 
   let seed = opts.seed ?? 202005;
   const mk = opts.createCanvas ?? (() => mk());
+/* 注记不再烘进离屏图层：按比例尺分级、屏幕固定字号绘制，缩放时字不会跟着糊成一团 */
+const labels = [];
 
 /* ---------- 确定性噪声 ---------- */
 function h2(i,j,s){ const n = Math.sin(i*127.1 + j*311.7 + s*74.7)*43758.5453; return n-Math.floor(n); }
@@ -105,27 +109,83 @@ function irregular(g,cx,cy,rx,ry,key,fill,stroke,lw){
   return pts;
 }
 /* 竖排题名：逐字落笔，带纸白描边，密背景上仍读得出 */
-function vlabel(g,txt,x,y,size,color,halo){
+function vlabel(g,txt,x,y,size,color,halo,step){
   g.textAlign='center'; g.textBaseline='middle'; g.font=`${size}px serif`;
   g.lineWidth=2.6; g.strokeStyle=halo||'rgba(236,228,206,.80)';
+  const d=step||size+2;
   for(let i=0;i<txt.length;i++){
-    const yy=y+i*(size+2);
+    const yy=y+i*d;
     g.strokeText(txt[i],x,yy); g.fillStyle=color; g.fillText(txt[i],x,yy);
   }
   g.textBaseline='alphabetic';
 }
-/* 一级朱题：全图只给少数几处，重点靠朱色 + 竖排 + 字级点明 */
+/* 一级朱题：朱点随图走，文字与纸衬交给屏幕注记层（缩放时不被拉大） */
 function sealLabel(g,txt,x,y){
-  const n=txt.length, cy=y+12+(n-1)*17/2;
-  irregular(g,x,cy,10,n*9+7,x*.1+y*.07,'rgba(233,227,209,.80)',null,0);
   irregular(g,x,y-2,2.3,2.3,x*.1+y*.07+1,'rgba(166,49,41,.78)',null,0);
-  vlabel(g,txt,x,y+12,15,'rgba(116,38,30,.95)','rgba(236,228,206,.92)');
+  labels.push({mx:x,my:y,txt,level:1,kind:'seal'});
 }
-/* 二级墨注：有个性但不抢，横排小字 */
+/* 二级墨注：有个性但不抢，随比例尺第二档出现 */
 function inkNote(g,txt,x,y){
-  g.font='10px serif'; g.textAlign='left'; g.lineWidth=2.2;
-  g.strokeStyle='rgba(236,228,206,.86)'; g.strokeText(txt,x,y);
-  g.fillStyle='rgba(64,52,38,.86)'; g.fillText(txt,x,y);
+  labels.push({mx:x,my:y,txt,level:2,kind:'ink'});
+}
+/* 注记分级绘制：屏幕固定字号，只按档微调字级；位置随图变换 */
+function drawLabels(g, view){
+  const k=clamp(0.90+0.10*view.zoom,0.90,1.18);
+  const L2=view.zoom>=1.15 || (view.detail && view.zoom>=0.85);
+  const L3=view.zoom>=2.00 || (view.detail && view.zoom>=1.30);
+  const sc=(mx,my)=>[W/2+view.panX+(mx-W/2)*view.zoom, H/2+view.panY+(my-H/2)*view.zoom];
+  const prio={seal:0,capital:1,state:2,cmd:3,ink:3,county:4};
+  const placed=[];
+  // 先按重要性落字；包围盒相交的下级注记自动跳过 —— 密处少显，疏处多显
+  for(const L of [...labels].sort((a,b)=>(prio[a.kind]??9)-(prio[b.kind]??9))){
+    if(L.level>=2 && !L2) continue;
+    if(L.level>=3 && !L3) continue;
+    const [sx,sy]=sc(L.mx,L.my);
+    if(sx<-90||sx>W+90||sy<-90||sy>H+90) continue;
+    const fs = L.kind==='seal'?15*k : L.kind==='capital'?12*k : L.kind==='state'?11*k
+             : L.kind==='cmd'?10*k : L.kind==='county'?9*k : 10*k;
+    const vert = L.kind==='seal'||L.kind==='capital';
+    const bw = vert ? fs*1.55 : L.txt.length*fs*.98;
+    const bh = vert ? L.txt.length*(fs+2)*1.05 : fs*1.40;
+    const cy = L.kind==='seal' ? sy+12*k+(L.txt.length-1)*(15*k+2)/2
+             : vert ? sy+(L.txt.length-1)*(fs+2)/2 : sy;
+    const box=[sx-bw/2,cy-bh/2,sx+bw/2,cy+bh/2];
+    if(placed.some(q=>box[0]<q[2]&&box[2]>q[0]&&box[1]<q[3]&&box[3]>q[1])) continue;
+    placed.push(box);
+    if(L.kind==='seal'){
+      const n=L.txt.length, s=15*k, step=s+2, y0=sy+12*k, cy=y0+(n-1)*step/2;
+      irregular(g,sx,cy,10*k,n*9*k+7,sx*.1+sy*.07,'rgba(233,227,209,.80)',null,0);
+      vlabel(g,L.txt,sx,y0,s,'rgba(116,38,30,.95)','rgba(236,228,206,.92)',step);
+    } else if(L.kind==='capital'){
+      vlabel(g,L.txt,sx,sy,12*k,'rgba(38,32,24,.94)','rgba(236,228,206,.90)',12*k+2);
+    } else if(L.kind==='state'){
+      g.font=`${11*k}px serif`; g.textAlign='left'; g.lineWidth=2.4;
+      g.strokeStyle='rgba(236,228,206,.75)'; g.strokeText(L.txt,sx,sy);
+      g.fillStyle='rgba(140,58,44,.72)'; g.fillText(L.txt,sx,sy);
+    } else if(L.kind==='cmd'){
+      g.font=`${10*k}px serif`; g.textAlign='center'; g.lineWidth=2;
+      g.strokeStyle='rgba(236,228,206,.65)'; g.strokeText(L.txt,sx,sy);
+      g.fillStyle='rgba(52,44,32,.76)'; g.fillText(L.txt,sx,sy);
+    } else if(L.kind==='county'){
+      g.font=`${9*k}px serif`; g.textAlign='center'; g.lineWidth=1.8;
+      g.strokeStyle='rgba(236,228,206,.58)'; g.strokeText(L.txt,sx,sy);
+      g.fillStyle='rgba(72,62,46,.62)'; g.fillText(L.txt,sx,sy);
+    } else { // ink
+      g.font=`${10*k}px serif`; g.textAlign='left'; g.lineWidth=2.2;
+      g.strokeStyle='rgba(236,228,206,.86)'; g.strokeText(L.txt,sx,sy);
+      g.fillStyle='rgba(64,52,38,.86)'; g.fillText(L.txt,sx,sy);
+    }
+  }
+  if(view.detail){
+    g.font='bold 16px serif'; g.textAlign='left'; g.lineWidth=3.2;
+    g.strokeStyle='rgba(236,228,206,.92)'; g.strokeText('中原详图 · 官渡至许都',22,32);
+    g.fillStyle='rgba(40,34,26,.92)'; g.fillText('中原详图 · 官渡至许都',22,32);
+    g.font='11px serif'; g.lineWidth=2.4; g.strokeStyle='rgba(236,228,206,.88)';
+    g.strokeText('汉末县邑与战具按比例尺逐层显字 · 势力归属由上层逻辑给出',22,50);
+    g.fillStyle='rgba(64,52,38,.88)';
+    g.fillText('汉末县邑与战具按比例尺逐层显字 · 势力归属由上层逻辑给出',22,50);
+  }
+  return L3?'注记 L3 县邑':L2?'注记 L2 郡治':'注记 L1 州治';
 }
 /* 注记引笔：极淡，只在远处主景用，不喧宾夺主 */
 function lead(g,from,tx,ty){
@@ -230,6 +290,31 @@ const CAPITALS=[
   {n:'平舆',l:114.63,t:33.05,k:'cmd'},     {n:'睢阳',l:115.65,t:34.42,k:'cmd'},
   {n:'郴',l:113.01,t:25.77,k:'cmd'},       {n:'泉陵',l:111.61,t:26.42,k:'cmd'},
 ];
+/* 三级注记：汉末真实县邑，集中司隶河南尹/河内、兖州陈留/东郡、豫州颍川/汝南/梁/沛/陈、冀州魏郡。
+   今地坐标为示意近似值，接回 src/ 前须逐条核坐标。全境倍率下不显示，只在大局部出现。 */
+const COUNTIES=[
+  ['中牟',114.02,34.52],['阳武',114.05,35.05],['酸枣',114.10,35.00],['封丘',114.42,35.03],
+  ['浚仪',114.35,34.80],['陈留',114.55,34.65],['雍丘',114.78,34.55],['外黄',114.90,34.85],
+  ['尉氏',114.19,34.42],['扶沟',114.30,34.10],['阳夏',114.85,33.95],['圉',114.60,34.25],
+  ['长社',113.75,34.15],['阳翟',113.49,34.14],['鄢陵',114.20,34.10],['新汲',114.15,34.00],
+  ['临颍',113.95,33.80],['郾',114.00,33.65],['召陵',114.15,33.60],['西平',113.95,33.40],
+  ['上蔡',114.25,33.25],['汝阳',114.60,33.10],['项',114.90,33.35],['陈',114.88,33.73],
+  ['朗陵',113.90,32.90],['新息',114.75,32.30],['期思',115.10,32.30],['慎阳',114.40,32.60],
+  ['安成',114.20,32.60],['西华',114.50,33.55],['长平',114.60,33.75],
+  ['蒙',115.70,34.60],['虞',115.85,34.55],['下邑',116.10,34.30],['砀',116.30,34.40],
+  ['宁陵',115.35,34.50],['襄邑',115.05,34.40],['苦',115.60,33.75],['柘',115.30,34.00],
+  ['蕲',116.10,33.70],['铚',116.30,33.60],
+  ['白马',114.42,35.55],['燕',114.30,35.45],['濮阳',115.03,35.75],['鄄城',115.50,35.55],
+  ['廪丘',115.65,35.70],['东阿',116.20,36.30],['范',115.80,35.90],['谷城',116.30,36.25],
+  ['东武阳',115.70,36.00],['聊城',116.05,36.45],['卫',114.60,35.60],['汲',114.05,35.45],
+  ['朝歌',114.20,35.60],['荡阴',114.35,35.90],['内黄',114.90,35.85],['繁阳',114.90,35.95],
+  ['元城',115.20,36.30],['馆陶',115.35,36.55],
+  ['共',113.80,35.50],['获嘉',113.65,35.30],['修武',113.45,35.25],['野王',112.95,35.15],
+  ['河阳',112.80,34.95],['轵',112.60,35.10],['怀',113.05,35.00],['武德',113.35,35.05],
+  ['宛',112.53,33.00],['叶',113.20,33.30],['鲁阳',112.90,33.60],['新野',112.35,32.50],
+  ['穰',112.10,32.80],['京',113.30,34.75],['密',113.40,34.55],['新郑',113.72,34.40],
+  ['原武',113.95,35.00],['故市',113.55,34.85],['荥阳',113.40,34.85],
+];
 /* 主景锚点：史料点名、俯视有辨识度的地物。势力层不画（与玩家动态相关）。 */
 const LANDMARKS={
   guandu:[114.35,35.00],      // 官渡：依沙塠为屯，东西数十里
@@ -320,15 +405,11 @@ function makeBg(){
   // 山脉骨架：沿脊线一次性山脉带 + 顺坡短笔
   RIDGES.forEach((rg,idx)=>{
     const p=P(rg.p);
-    // 山脉带
-    g.beginPath(); g.moveTo(p[0][0],p[0][1]-8*rg.a);
-    for(let k=0;k<p.length;k++){
-      const q=p[k], wob=Math.sin(k*2.1+idx)*5*rg.a;
-      g.lineTo(q[0],q[1]-9*rg.a+wob);
-    }
-    for(let k=p.length-1;k>=0;k--) g.lineTo(p[k][0],p[k][1]+9*rg.a);
-    g.closePath(); g.fillStyle='rgba(96,104,84,.30)'; g.fill();
-    line(g,p,'rgba(72,78,62,.72)',1.6*rg.a,.8);
+    // 山脉带：一笔变宽笔路，两端收尖；脊线走断续短笔（笔断意连，放大后不像划痕）
+    brush(g,p,7*rg.a,3.5*rg.a,'rgba(96,104,84,.26)',.62);
+    for(let k=0;k<p.length-1;k+=2)
+      brush(g,[p[k],[(p[k][0]+p[k+1][0])/2,(p[k][1]+p[k+1][1])/2],p[k+1]],
+            1.1,.25,'rgba(72,78,62,.62)',.60);
     // 顺坡皴：方向随脊线法向，长度随起伏变
     for(let k=0;k<p.length-1;k++){
       const a=p[k], b=p[k+1], seg=Math.hypot(b[0]-a[0],b[1]-a[1]);
@@ -400,6 +481,7 @@ function makeBg(){
 function makeFg(){
   const c=mk(); c.width=W; c.height=H;
   const g=c.getContext('2d');
+  labels.length=0;
 
   // 势力层不画：归属随玩家局内动态变化，由上层逻辑负责，背景只给地与物。
 
@@ -420,9 +502,8 @@ function makeFg(){
         t=t2;
       }
     }
-    const c=p[0]; g.font='12px serif'; g.textAlign='left';
-    g.lineWidth=2.4; g.strokeStyle='rgba(236,228,206,.75)'; g.strokeText(s.n,c[0]+5,c[1]+14);
-    g.fillStyle='rgba(140,58,44,.72)'; g.fillText(s.n,c[0]+5,c[1]+14);
+    const c=p[0];
+    labels.push({mx:c[0]+5,my:c[1]+14,txt:s.n,level:2,kind:'state'});
   });
 
   // 长城三重 + 沿线烽燧
@@ -593,19 +674,23 @@ function makeFg(){
     irregular(g,jh[0]-9+k*9,jh[1]+9,1.6,1.8,480+k,'rgba(214,198,160,.8)','rgb(96,78,54)',.9);
   inkNote(g,'鉴湖',jh[0]+18,jh[1]+12);
 
-  // 州治 / 郡治分级：不规则墨点 + 竖排（州治）/ 横注（郡治），不用方块
+  // 州治 / 郡治分级：不规则墨点随图走，文字交给注记层
   CAPITALS.forEach((p,idx)=>{
     const x=lon2x(p.l), y=lat2y(p.t);
     if(p.k==='capital'){
       irregular(g,x,y,5.4,4.8,500+idx,'rgba(238,230,208,.88)','rgb(72,56,36)',1.5);
       irregular(g,x,y,7.6,6.8,600+idx,null,'rgb(200,168,106)',.8);
-      vlabel(g,p.n,x,y-16,12,'rgba(38,32,24,.94)','rgba(236,228,206,.9)');
+      labels.push({mx:x,my:y-16,txt:p.n,level:1,kind:'capital'});
     } else {
       irregular(g,x,y,2.2,2.0,700+idx,'rgb(72,60,42)',null,0);
-      g.fillStyle='rgba(52,44,32,.72)'; g.font='10px serif'; g.textAlign='center';
-      g.lineWidth=2; g.strokeStyle='rgba(236,228,206,.65)'; g.strokeText(p.n,x,y-6);
-      g.fillText(p.n, x, y-6);
+      labels.push({mx:x,my:y-6,txt:p.n,level:2,kind:'cmd'});
     }
+  });
+  // 三级县邑：极小墨点，仅大局部 / 高倍率下显字
+  COUNTIES.forEach((c,idx)=>{
+    const x=lon2x(c[1]), y=lat2y(c[2]);
+    irregular(g,x,y,1.4,1.3,800+idx,'rgba(72,60,42,.70)',null,0);
+    labels.push({mx:x,my:y-5,txt:c[0],level:3,kind:'county'});
   });
 
   // 题识、比例尺、朱印（随图走，不悬在纸外）
@@ -644,10 +729,12 @@ function beacon(g,x,y,idx,k){
   }
 }
 
-  // 战区大地图只要背景层：地物（城郭/关津/领地/朱题）由游戏上层按局内状态动态画，
-  // 不重复贴一遍 fg。典籍页的「十三州全境舆图」才要 bg + fg 全份。
+  // 地物层绘制时把注记收集进 labels；重复调用先清空，避免累积。
+  labels.length = 0;
   const bg = makeBg();
   const fg = opts.fg === false ? null : makeFg();
-  return { bg, fg, W, H, lon2x, lat2y, x2lon, y2lat };
+  return {
+    bg, fg, labels, drawLabels, W, H,
+    lon2x, lat2y, x2lon, y2lat,
+  };
 }
-

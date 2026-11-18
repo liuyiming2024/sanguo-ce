@@ -56,14 +56,17 @@ test('后台文档有总揽 / 细目 / 取舍 / 重难四章，且明确「不�
   assert.ok(doc.includes('床弩') && doc.includes('《武经总要》'), '文档未收本作战场单位形制');
 });
 
-test('全境舆图内核：确定性、零位图、参数化，且战区只贴背景层', () => {
+test('全境舆图内核：确定性、零位图、参数化；战区用官渡内核整份贴入', () => {
   assert.match(atlas, /export function createAtlas/);
   assert.match(atlas, /opts\.LON0 \?\? 93/);
   assert.doesNotMatch(atlas, /Math\.random|Date\.now|performance\.now|new Image|addEventListener|document\.getElementById/);
-  assert.match(render, /fg: false/);
-  assert.match(render, /g\.drawImage\(a\.bg, 0, 0, W, H\)/);
-  assert.doesNotMatch(render, /g\.drawImage\(a\.fg/);
-  assert.match(render, /LON0: 112\.75, LON1: 116\.15/);
+  const guandu = read('src/guandu.js');
+  assert.match(guandu, /export function renderGuanduLayers/);
+  assert.match(guandu, /G_LON_MIN/);
+  assert.match(render, /renderGuanduLayers\(\{\}\)/);
+  assert.match(render, /g\.drawImage\(a\.bg, sx, sy, sw, sh, 0, 0, W, H\)/);
+  assert.match(render, /g\.drawImage\(a\.feat, sx, sy, sw, sh, 0, 0, W, H\)/);
+  assert.match(render, /if \(style !== 'atlas'\) drawAnnotations/);
 });
 
 test('界面装配：典籍页 / 全境页 / 纸页 / 入口 / canvas 挂载齐全', () => {

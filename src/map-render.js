@@ -3,15 +3,18 @@
 // → 城郭（城墙垛口 + 角楼 + 城门 + 旗纛）→ 地名注记 → 领地边界与动态层。
 // 全部离屏预渲染一次，主画布只做视口 blit + 动态叠加；不使用 ctx.filter / Math.random。
 //
-// v0.9.4：默认背景层换成对面的《建安五年全境舆图》渲染内核（见 atlas.js）。
-//   连续场 + 变宽短笔，笔法与色板原样接进来；只把图幅参数化到官渡战区，
-//   且只取 bg（背景层）：城郭/关津/领地/朱题由上层按局内状态动态画，不重复。
+// v0.9.4：默认整张地图换成对面的《官渡舆图》渲染内核（见 guandu.js）。
+//   连续林冠场 + 变宽笔 + 史料地物（城郭/关津/舟桥/坞堡/沟洫/金堤/二十四浦）
+//   全部原样接进来，bg + feat 两层一次贴入；不再自己画地形。
+//   对面图幅 112.30~116.75/32.30~36.95 比游戏图幅大，按同一 proj() 反算
+//   像素窗口裁切，城郭与 144×108 逻辑格精确对齐，点选/A*/领地不受影响。
+//   上层只保留动态层（领地、可达、军令、选中、易主旗、缩略 HUD）。
 //   gongbi / jiehua 两种旧画法保留作 A/B 复核（?style=gongbi|jiehua）。
 //   terrain.js / map-data.js / A* / 存档 / 策略层一行未动。
 import { CITIES, RIVERS_MINOR, RIDGES, LAKES, PASSES, geoToTile, project } from './map-data.js';
 import { T, TYPE_LABEL } from './terrain.js';
 import { paintGongbi, GONGBI } from './gongbi.js';
-import { createAtlas } from './atlas.js';
+import { renderGuanduLayers } from './guandu.js';
 
 const PAL = {
   plain: '#3f4c3c', farmland: '#5d6641', forest: '#2c4133', hill: '#4a4e3c',
@@ -274,14 +277,12 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     paintGongbi(g, { W, H, TP, terrain, cfg });
   }
   function buildAtlasBase() {
-    // 官渡战区图幅，与 map-data.js / terrain.js 的投影范围一致。
-    const a = createAtlas({
-      LON0: 112.75, LON1: 116.15, LAT0: 32.65, LAT1: 36.65,
-      fg: false,                       // 地物留给上层动态绘制
-    });
-    // atlas 自带 1400×1100 绢底；等比铺满 3456×2592 离屏，笔宽随整体缩放，
-    // 主画布再按 camera.scale 缩回，视觉密度与 demos 定稿一致。
-    g.drawImage(a.bg, 0, 0, W, H);
+    const a = renderGuanduLayers({});
+    const { sx, sy, sw, sh } = a.crop;
+    // 背景层 + 地物层全份贴入：对面的笔法、题识、城郭、关津一次到位。
+    // 源矩形按经纬度窗口算出，与 terrain.tiles 的格位天然对齐。
+    g.drawImage(a.bg, sx, sy, sw, sh, 0, 0, W, H);
+    g.drawImage(a.feat, sx, sy, sw, sh, 0, 0, W, H);
   }
   function buildBase() {
     // 每次重建前把离屏上下文恢复到同一基线：lineCap / alpha / dash 等状态
@@ -584,7 +585,9 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
 
     drawBorders(ctx);
     drawCityFlags(ctx);
-    drawAnnotations(ctx);      // 文字/注记在屏幕空间，不随离屏缩放糊掉
+    // atlas 模式的城名 / 关津 / 山水题识已画在对面地物层里，再画一遍会重影；
+    // 旧画法仍走屏幕空间注记。
+    if (style !== 'atlas') drawAnnotations(ctx);
     drawLevels(ctx);
 
     if (reachable.length) {

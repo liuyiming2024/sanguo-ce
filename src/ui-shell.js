@@ -630,6 +630,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
         <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="in">放 大</button>
         <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="out">缩 小</button>
         <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="reset">复 位</button>
+        <button class="bigBtn ghost" type="button" data-act="atlasDetail" aria-pressed="false">中原详图</button>
       </div>
       <canvas id="atlasCanvas" aria-label="建安五年十三州全境舆图"></canvas>
       <p class="readBody">此图全幅十三州，与行台沙盘之豫兖战区非同一图幅。背景层为地表成因，
@@ -713,7 +714,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr);
     const ctx = c.getContext('2d');
     const base = Math.min(cw / a.W, ch / a.H);
-    let zoom = 1, px = 0, py = 0;
+    let zoom = 1, px = 0, py = 0, detail = false;
     function paint() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.fillStyle = '#0e1310'; ctx.fillRect(0, 0, cw, ch);
@@ -724,6 +725,13 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(a.bg, 0, 0);
       if (a.fg) ctx.drawImage(a.fg, 0, 0);
+      ctx.restore();
+      // 对面最新一版把注记从离屏层拿出来：按比例尺三级显字、屏幕固定字号。
+      // 在 1400×1100 坐标系下调用，再整体映射到实际画布，缩放时字不糊。
+      ctx.save();
+      ctx.translate(cw / 2 - a.W / 2 * base, ch / 2 - a.H / 2 * base);
+      ctx.scale(base, base);
+      a.drawLabels(ctx, { zoom, panX: px / base, panY: py / base, detail });
       ctx.restore();
     }
     let dragging = false, lx = 0, ly = 0;
@@ -749,6 +757,13 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       zoom(what) {
         if (what === 'reset') { zoom = 1; px = 0; py = 0; }
         else zoom = Math.max(0.5, Math.min(6, zoom * (what === 'in' ? 1.28 : 1 / 1.28)));
+        paint();
+      },
+      toggleDetail(btn) {
+        detail = !detail;
+        btn?.setAttribute('aria-pressed', String(detail));
+        if (btn) btn.textContent = detail ? '返回全境' : '中原详图';
+        if (detail) zoom = Math.max(zoom, 1.3);
         paint();
       },
     };
@@ -828,6 +843,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       }
       case 'atlasView': navigate('atlasView'); break;
       case 'atlasZoom': atlasInst?.zoom(el.dataset.d); break;
+      case 'atlasDetail': atlasInst?.toggleDetail(el); break;
       default: break;
     }
   });

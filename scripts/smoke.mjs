@@ -134,8 +134,8 @@ try {
     return window.__sanguo.tutUI.done && document.getElementById('tutorialLayer').hidden;
   }));
 
-  // ── v0.9.4：默认接对面全境笔法；gongbi / jiehua 保留作 A/B 复核 ──────
-  check('默认背景是对面全境笔法（atlas），不是旧工笔/界画', await page.evaluate(() =>
+  // ── v0.9.4：默认接对面官渡舆图；gongbi / jiehua 保留作 A/B 复核 ──────
+  check('默认整张地图是对面官渡舆图（atlas），不是旧工笔/界画', await page.evaluate(() =>
     window.__sanguo.style === 'atlas' && window.__sanguo.renderer.style === 'atlas'));
   const ab = await page.evaluate(() => {
     const r = window.__sanguo.renderer;
