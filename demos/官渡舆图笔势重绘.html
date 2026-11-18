@@ -205,8 +205,10 @@
       // 城外清场：只留一圈紧凑的浅田，范围别摊开成大片空场
       let o=0;
       for(const c of CITY_PTS){
-        const g=Math.exp(-((x-c.x)**2+(y-c.y)**2)/(2*(c.r*.62)**2));
-        o=Math.max(o,g); e-=.22*g;
+        // 清场只给紧凑一圈浅田；上一版 sigma 偏大，几座城叠起来在中部
+        // 连成一大片纯纸白，读成"挖了个洞"而不是"城外开阔地"。
+        const g=Math.exp(-((x-c.x)**2+(y-c.y)**2)/(2*(c.r*.48)**2));
+        o=Math.max(o,g); e-=.16*g;
       }
       // 图廓内侧渐疏，留一丢丢纸
       const edge=Math.min(x-24,W-24-x,y-24,H-24-y);
@@ -321,41 +323,146 @@
     ctx.restore();
   }
 
-  // ── 林冠色：由场值、湿度、受光连续给出 ────────────────────────────────
-  // 深林墨青 → 中林汁绿 → 灌丛橄榄 → 草甸赭黄 → 城外浅田近纸色。
-  function palette(e,w,lit){
-    const q=h1(Math.floor(e*97)+Math.floor(w*31)+Math.floor(lit*17));
-    if(w>.62) return q>.5?'#36534f':'#3f5b52';           // 湿林
-    if(e>.74) return lit>.55?(q>.5?'#566a48':'#4a6042'):(q>.5?'#334c40':'#2f443b');
-    if(e>.58) return lit>.55?(q>.5?'#66784f':'#5b6d48'):(q>.5?'#3e5743':'#476049');
-    if(e>.42) return q>.5?'#71805a':'#7c865e';
-    if(e>.28) return q>.5?'#8d8f68':'#99946b';
-    if(e>.16) return q>.5?'#9f936a':'#a89b71';
-    return q>.5?'#ada073':'#b6a87c';                      // 浅田：浅，但仍是笔不是纸
+  // ── 林冠色：连续色阶，不是离散色片 ────────────────────────────────────
+  // 上一版用一串 if 把场值切成 7 档、每档两个随机色，放大后就是一片片
+  // 边界清晰的同色块 —— 那本身就是"色块平铺"。改成锚点间线性插值，
+  // 湿度/受光/树种只做连续小幅偏移，色相没有台阶，笔与笔之间也没有色界。
+  const CANOPY = [
+    [0.00,[186,160,110]],  // 浅田赭黄（仍是笔色，不是纸白）
+    [0.16,[172,150,103]],
+    [0.30,[142,138, 96]],
+    [0.46,[108,126, 92]],
+    [0.62,[ 72, 96, 72]],
+    [0.80,[ 48, 74, 70]],
+    [1.00,[ 34, 56, 56]],  // 深林墨青
+  ];
+  function canopyRGB(e,w,lit,sp){
+    let i=0; while(i<CANOPY.length-2 && CANOPY[i+1][0]<e) i++;
+    const a=CANOPY[i], b=CANOPY[i+1];
+    const t=clamp((e-a[0])/(b[0]-a[0]||1),0,1);
+    let r=a[1][0]+(b[1][0]-a[1][0])*t,
+        g=a[1][1]+(b[1][1]-a[1][1])*t,
+        bb=a[1][2]+(b[1][2]-a[1][2])*t;
+    // 湿度往花青偏，受光往赭黄提，都是连续的，不做阈值切换
+    r-=w*22; g+=w*2;  bb+=w*18;   // 湿林往花青偏，与赭黄田拉开冷暖
+    r+=lit*9; g+=lit*7; bb-=lit*5;
+    // 树种微扰：只在同一色阶内轻微摆动，不再二选一换整块色
+    const q=(sp||0)*2-1;
+    return [r+q*4, g+q*5, bb+q*3];
+  }
+  function palette(e,w,lit,sp){
+    const [r,g,bb]=canopyRGB(e,w,lit,sp);
+    const hx=v=>clamp(Math.round(v),0,255).toString(16).padStart(2,'0');
+    return `#${hx(r)}${hx(g)}${hx(bb)}`;   // rgba() 工具只认 hex
   }
 
-  // ── 一个树冠团：当场按场值画 2~5 个方硬短笔 ──────────────────────────
-  // 没有图章函数：团的大小、笔数、朝向、色全由 (x,y) 的场值与传入的 carry
-  // 连续决定，相邻团共享 carry，所以不是复制粘贴。
+  // 风势：整片林冠的笔都顺场梯度的法向摆，而不是各自随机。
+  // 画面里仍然没有"山"，但笔势会顺着脊轴与沟谷走，山势因此被读出来。
+  // 加一层中频项，让相邻区域的笔势连续渐变 —— 否则全图同向，会读成
+  // 另一种纹样平铺（上一版放大后像"撒了一层竹叶"就是栽在这儿）。
+  function windAt(x,y){
+    const [gx,gy]=grad(x,y);
+    return Math.atan2(-gx,gy+1e-6)*.22
+         + Math.sin(x*.0042+y*.0031+seed*.000013)*.34
+         + Math.sin(x*.011-y*.008+1.7)*.26;
+  }
+
+  // ── 连续场薄罩：工笔的「先罩底色，再叠笔」 ────────────────────────────
+  // 笔改细之后必然留缝，白底会从缝里大面积回到画面（实测露纸 45%）。
+  // 这不是把纸盖住，而是按地理铺一层连续底色：深林处罩得沉、浅田处罩得淡、
+  // 沙洲与城外环几乎不罩 —— 白只从场值低的地方连续地漏一丢丢。
+  // 做法是把场图直接写成 FW×FH 的 ImageData 再放大绘制：浏览器双线性插值
+  // 得到完全连续、没有台阶也没有重复单元的一层，不是色块也不是渐变贴图。
+  function fieldWash(){
+    const small=document.createElement('canvas');
+    small.width=FW; small.height=FH;
+    const sc=small.getContext('2d');
+    const img=sc.createImageData(FW,FH);
+    for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
+      const k=j*FW+i, p=k*4;
+      const e=FIELD[k], ww=WET[k], o=OPEN[k];
+      const gx=(FIELD[k+(i<FW-1?1:0)]-FIELD[k-(i>0?1:0)])*.5;
+      const lit=clamp(.5-gx*9,0,1);
+      const [r,g,b]=canopyRGB(e,ww,lit,h1(i*.37+j*.61));
+      // 深林沉、浅田淡；即使留白意愿最高处也留一层极淡赭底，
+      // 白只从场值低的地方连续地漏一丢丢，不出现硬边空场。
+      const a=clamp((.20+e*.44+ww*.06)*(1-o*.60)+.07,0,.70);
+      img.data[p]=clamp(r,0,255); img.data[p+1]=clamp(g,0,255);
+      img.data[p+2]=clamp(b,0,255); img.data[p+3]=a*255;
+    }
+    sc.putImageData(img,0,0);
+    ctx.save();
+    ctx.imageSmoothingEnabled=true;
+    ctx.imageSmoothingQuality='high';
+    ctx.drawImage(small,0,0,W,H);   // 低分辨率场 → 全幅，连续无台阶
+    ctx.restore();
+  }
+
+  // 变宽短笔：起粗收尖的一次运笔，顶点累积进调用方的 path，
+  // 不新建 Path2D、不逐笔 fill —— 上万团仍能一次 fill 完成。
+  function brush(path,x0,y0,x1,y1,w0,w1){
+    const dx=x1-x0, dy=y1-y0, L=Math.hypot(dx,dy)||1;
+    const nx=-dy/L, ny=dx/L;
+    path.moveTo(x0+nx*w0, y0+ny*w0);
+    path.lineTo(x0-nx*w0, y0-ny*w0);
+    path.lineTo(x1-nx*w1, y1-ny*w1);
+    path.lineTo(x1+nx*w1, y1+ny*w1);
+    path.closePath();
+  }
+
+  // ── 一个树冠团：顺场风势的一次运笔，不是方硬色片 ─────────────────────
+  // 放大到 ×3 后点彩感的根源有两个：色板是离散档（已改连续插值），团是
+  // 一个闭合五边形（像小色片）。这里换成「根部聚一点、起粗收尖」的变宽短笔，
+  // 笔向由连续场梯度给的主风势 + 扇形展开，三套笔型按场值连续混合而不是
+  // 分档切换：深林针叶细长收尖、中场阔叶短粗成簇、浅田灌丛横走扁平。
+  // 没有图章函数：笔数/长度/宽度/色/朝向全由 (x,y) 的场值与 carry 连续决定。
   function tuft(x,y,e,w,carry){
     const lit=clamp(.5-grad(x,y)[1]*2.2,0,1);
-    const col=palette(e,w,lit);
-    const s=2.9+e*4.1+rr(-.4,.6);
-    const n=3+Math.floor(e*3+rnd()*1.6);
-    ctx.fillStyle=rgba(col,clamp(.52+e*.40+(w*.08),.52,.96));
-    // 一个团的所有短笔合成一条路径、一次 fill：既快，又让笔与笔之间没有
-    // 叠色接缝，读成「一片树冠」而不是几个小方块。
+    const sp=h1(x*.071+y*.093+seed*.000017);
+    const col=palette(e,w,lit,sp);
+    const wind=windAt(x,y);
+    const needle=smooth(.44,.74,e);        // 高场：针叶多，夹角小、笔更长
+    const shrub =1-smooth(.14,.40,e);      // 低场：灌丛多，横走、笔更扁
+    const s=2.5+e*3.6+rr(-.3,.5);
+    const n=4+Math.floor(e*2+rnd()*2);
+    ctx.fillStyle=rgba(col,clamp(.62+e*.32+w*.05,.62,.97));
     ctx.beginPath();
     for(let k=0;k<n;k++){
-      const a=carry*.28+rr(-.7,.7)+k*.9;
-      const ox=Math.cos(a)*s*rr(.2,1.0), oy=Math.sin(a)*s*rr(.2,.9);
-      const px=x+ox, py=y+oy, u=s*rr(.5,1.15), v=s*rr(.45,.95);
-      ctx.moveTo(px-u,py+v*.35);
-      ctx.lineTo(px-u*.55,py-v);
-      ctx.lineTo(px+u*.7,py-v*.75);
-      ctx.lineTo(px+u,py+v*.5);
-      ctx.lineTo(px-u*.2,py+v);
-      ctx.closePath();
+      const spread=(k-(n-1)/2)/Math.max(1,n-1);
+      const fan=spread*(1.55-needle*.72+shrub*.60)+rr(-.34,.34);
+      const a=wind+fan+carry*.10;
+      // 根部聚在一处，笔尖向外 —— 一簇像从同一个点长出来
+      const x0=x+rr(-s*.30,s*.30), y0=y+rr(-s*.30,s*.30);
+      const len=s*rr(.72,1.18)*(1+needle*.30)*(1-shrub*.22);
+      const w0=rr(1.55,2.65)*(1+shrub*.30)*(1-needle*.14);
+      brush(ctx,x0,y0,x0+Math.cos(a)*len,y0+Math.sin(a)*len,w0,w0*rr(.10,.30));
+    }
+    ctx.fill();                            // 一簇一次 fill，笔间无叠色接缝
+  }
+
+  // ── 田畴笔：低场区不是"浅色的小树冠"，是成组平行的细短笔 ────────────
+  // 古舆图城外开阔地用田埂短笔，不用林冠团。笔更细、更长、同向成组，
+  // 行向由一个低频连续角场给（不是每处随机）。若低场也一律画 tuft，
+  // 整幅就变成一张同质感花纹壁纸 —— 地貌必须换语法，不只是换颜色。
+  function fieldTuft(x,y,e,w,carry){
+    const lit=clamp(.5-grad(x,y)[1]*2.2,0,1);
+    const col=palette(e,w,lit,h1(x*.071+y*.093+seed*.000017));
+    // 中频项让相邻田块顺地势换向，而不是整片同向排成苇席斜纹；
+    // 仍是连续角场，没有把画面切成规整方格。
+    const rowA=windAt(x,y)+Math.PI/2
+             + Math.sin(x*.006+y*.004)*.28
+             + Math.sin(x*.019-y*.013+2.3)*.55
+             + Math.cos(x*.014+y*.021+.8)*.32
+             + carry*.06;
+    const n=3+Math.floor(rnd()*3);
+    const L=rr(6,13)*(1-w*.30);
+    ctx.fillStyle=rgba(col,clamp(.30+e*.30,.30,.60));
+    ctx.beginPath();
+    for(let k=0;k<n;k++){
+      const off=(k-(n-1)/2)*rr(1.9,2.7);
+      const ca=Math.cos(rowA), sa=Math.sin(rowA);
+      const x0=x-ca*L*.30-sa*off, y0=y-sa*L*.30+ca*off;
+      brush(ctx,x0,y0,x0+ca*L,y0+sa*L,rr(.42,.72),rr(.10,.24));
     }
     ctx.fill();
   }
@@ -379,20 +486,26 @@
         const e=field(x,rowY), w=wetness(x,rowY), o=openness(x,rowY);
         // 覆盖率：低场区也要铺（草甸/浅田），只是色浅、笔疏；只有城外环、
         // 沙洲、图廓内侧才真正漏纸。
-        const dens=clamp(.90+e*.10-w*.04-o*.44,.20,.99);
-        const step=clamp(6.3-e*1.7,4.3,6.6);
+        // 深林几乎不留缝，浅田笔组之间露出淡赭底罩 —— 密度也随场值走，
+        // 不再全域一个密度，避免整幅读成同一张花纹。
+        const dens=clamp(.54+e*.44-w*.04-o*.20,.26,.99);
+        const step=clamp(5.7-e*1.4,4.0,6.0);
         const yy=rowY+Math.sin(x*.013+rowIdx*.7)*2.1+carry*.34
                  +rowSkew*(x-W/2)*.02;
-        if(rnd()<dens && rnd()>o*.30){
+        if(rnd()<dens && rnd()>o*.20){
           const nx=x+rr(-1.6,1.6), ny=yy+rr(-1.4,1.4);
-          tuft(nx,ny,clamp(field(nx,ny)+rr(-.05,.05),0,1),
-               wetness(nx,ny),carry+rowIdx*.3);
+          const ee=clamp(field(nx,ny)+rr(-.05,.05),0,1);
+          const ww=wetness(nx,ny);
+          // 概率连续混合，不做硬阈值切换：过渡带是散的，不会出现一条分界
+          const fieldness=1-smooth(.22,.40,ee);
+          if(rnd()<fieldness) fieldTuft(nx,ny,ee,ww,carry);
+          else                tuft(nx,ny,ee,ww,carry+rowIdx*.3);
         }
         carry=clamp(carry+rr(-.5,.5),-2.2,2.2);
         x+=step;
       }
       // 行距由这一行平均场强给：深林略挤，开阔地略疏，但都不超过 8px
-      rowY+=clamp(7.9-field(W*.5,rowY)*2.1,5.4,8.4)+rr(-.5,.5);
+      rowY+=clamp(7.1-field(W*.5,rowY)*1.8,5.0,7.6)+rr(-.5,.5);
       rowIdx++;
     }
 
@@ -404,10 +517,10 @@
       let px=rr(30,W-30), py=t;
       while(px>26&&px<W-26&&py>26&&py<H-26){
         const e=field(px,py), w=wetness(px,py), o=openness(px,py);
-        if(e<.62&&e>.12&&rnd()<.30+e*.30-o*.42){
+        if(e<.64&&e>.26&&rnd()<.30+e*.30-o*.42){
           const L=rr(3,8)*(1+e*.5);
           hardRibbon(ctx,[[px,py],[px+ca*L,py+sa*L+carry*.3]],
-            {w:rr(.5,1.0),col:e>.4?'#6b7a55':'#9a9269',
+            {w:rr(.5,1.0),col:palette(e,w,.45,h1(px*.05+py*.07)),
              alpha:rr(.16,.32)*(1-o*.5),head:.10,tail:.42,sk:rr(0,99),seg:2});
         }
         carry=clamp(carry+rr(-.5,.5),-2,2);
@@ -423,10 +536,10 @@
       const L=rr(60,190);
       for(let s=0;s<L;s+=rr(5,9)){
         const e=field(x,y), o=openness(x,y);
-        if(e>.10&&rnd()<.62-o*.3){
+        if(e>.28&&rnd()<.62-o*.3){
           const l=rr(2.5,6.5)*(1+e*.4);
           hardRibbon(ctx,[[x,y],[x+Math.cos(a)*l,y+Math.sin(a)*l+carry*.2]],
-            {w:rr(.45,.85),col:e>.55?'#2f4a3c':e>.30?'#6b7a52':'#9b9269',
+            {w:rr(.45,.85),col:palette(e,wetness(x,y),.5,h1(x*.061+y*.083)),
              alpha:rr(.12,.26),head:.10,tail:.44,sk:rr(0,99),seg:2});
         }
         carry=clamp(carry+rr(-.4,.4),-2,2);
@@ -612,6 +725,15 @@
     const s=rank===1?30:rank===2?24:rank===3?20:17, h=s*.64;
     const L=x-s,R=x+s,T=y-h,B=y+h;
     ctx.save();
+    // 柔边托光：工笔的「托底」。中部官渡/中牟/陈留几座城叠得近，
+    // 细线在密笔背景上会糊成一团；一层渐隐的纸光让城浮出来，
+    // 但边缘是软的，不是之前那个实心浅田椭圆的贴纸感。
+    const cityGlow=ctx.createRadialGradient(x,y,s*.35,x,y,s*2.5);
+    cityGlow.addColorStop(0,'rgba(242,235,214,.46)');
+    cityGlow.addColorStop(.55,'rgba(242,235,214,.20)');
+    cityGlow.addColorStop(1,'rgba(242,235,214,0)');
+    ctx.fillStyle=cityGlow;
+    ctx.beginPath(); ctx.arc(x,y,s*2.5,0,Math.PI*2); ctx.fill();
     // 城外浅田环：用断续浅笔暗示，不填一个实心圆饼（贴纸感太重）。
     // 真正的过渡已由连续场的城外清场给出，这里只补一圈田埂短笔。
     const RX=s*2.45, RY=h*2.85;
@@ -809,7 +931,8 @@
     ctx.clearRect(0,0,W,H);
     paper(); border();
     buildField();
-    surfaceCover();
+    fieldWash();                         // 工笔第一道工序：先罩连续底色
+    surfaceCover();                      // 再叠顺场笔势的树冠短笔
     lakes();
     river(HUANGHE,8.6,'河水',true);
     for (const r of RIVERS_MINOR) river(r.pts,r.w,r.name,false);
