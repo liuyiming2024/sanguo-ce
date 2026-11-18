@@ -1,38 +1,39 @@
 // 装配层 v0.7.0：唯一引用 DOM / rAF / localStorage 的地方。
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
-import { createRng, rngFromSnapshot } from './rng.js?v=0.9.1';
+import { createRng, rngFromSnapshot } from './rng.js?v=0.9.2';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
-} from './campaign.js?v=0.9.1';
+} from './campaign.js?v=0.9.2';
 import {
   reachableTiles, hasAdjacentTerritory, routeCities,
-} from './pathfind.js?v=0.9.1';
-import { createMapRenderer } from './map-render.js?v=0.9.1';
-import { createCityView } from './city-view.js?v=0.9.1';
+} from './pathfind.js?v=0.9.2';
+import { createMapRenderer } from './map-render.js?v=0.9.2';
+import { createCityView } from './city-view.js?v=0.9.2';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
-} from './battle-session.js?v=0.9.1';
-import { CITIES, cityById } from './map-data.js?v=0.9.1';
-import { formatCalendar, calendarParts } from './calendar.js?v=0.9.1';
+} from './battle-session.js?v=0.9.2';
+import { CITIES, cityById } from './map-data.js?v=0.9.2';
+import { formatCalendar, calendarParts } from './calendar.js?v=0.9.2';
+import { cityCondition } from './condition.js?v=0.9.2';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails,
-} from './story.js?v=0.9.1';
+} from './story.js?v=0.9.2';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
   createLoopbackTransport, createBroadcastTransport, stateFingerprint,
-} from './sync.js?v=0.9.1';
-import { TYPE_LABEL } from './terrain.js?v=0.9.1';
-import { createTutorialUI } from './tutorial-ui.js?v=0.9.1';
-import { awaitedEvents, stepCount } from './tutorial.js?v=0.9.1';
-import { createShell, facilityCost } from './ui-shell.js?v=0.9.1';
+} from './sync.js?v=0.9.2';
+import { TYPE_LABEL } from './terrain.js?v=0.9.2';
+import { createTutorialUI } from './tutorial-ui.js?v=0.9.2';
+import { awaitedEvents, stepCount } from './tutorial.js?v=0.9.2';
+import { createShell, facilityCost } from './ui-shell.js?v=0.9.2';
 import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
-} from './persist.js?v=0.9.1';
-import { formationSummary } from './formation.js?v=0.9.1';
+} from './persist.js?v=0.9.2';
+import { formationSummary } from './formation.js?v=0.9.2';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('map');
@@ -291,7 +292,8 @@ function showCity(cityId) {
   const rows = [
     ['城池等级', meta.rank === 1 ? '都城' : meta.rank === 2 ? '郡治' : meta.rank === 3 ? '县邑' : '营垒'],
     ['人口', o.pop.toLocaleString('zh-CN')], ['守军', o.garrison.toLocaleString('zh-CN')],
-    ['城防', Math.round(o.wall)], ['士气', o.morale], ['粮草', o.grain.toLocaleString('zh-CN')],
+    ['城防', Math.round(o.wall)], ['军心', cityCondition(cfg, o).text],
+    ['粮草', o.grain.toLocaleString('zh-CN')],
     ['城内部队', `${o.inside} 队`], ['城外大营', `${o.camp} 队`],
     ['垒寨', o.forts], ['状态', o.besieged ? '被围' : '安定'],
   ];
@@ -300,7 +302,7 @@ function showCity(cityId) {
   const intel = $('cityIntel');
   if (o.intel && o.intel.owner !== state.playerFaction) {
     intel.hidden = false;
-    intel.innerHTML = `斥候回报（${formatCalendar(o.intel.turn, cfg.calendar, 'short')}）：守军 ${o.intel.garrison.toLocaleString('zh-CN')} · 城防 ${o.intel.wall} · 士气 ${o.intel.morale}`;
+    intel.innerHTML = `斥候回报（${formatCalendar(o.intel.turn, cfg.calendar, 'short')}）：守军 ${o.intel.garrison.toLocaleString('zh-CN')} · 城防 ${o.intel.wall} · 军心 ${cityCondition(cfg, o.intel, { grainKnown: false }).text}`;
   } else intel.hidden = true;
   $('recruitBtn').disabled = o.owner !== state.playerFaction;
   $('scoutCityBtn').disabled = o.owner === state.playerFaction;
@@ -350,6 +352,10 @@ function refreshBattleUI() {
   $('bMail').textContent = c
     ? `${session.pendingOrders.length} 令 · 矢 ${c.projects.length} · 亡 ${c.stats.kills}`
     : String(session.pendingOrders.length);
+  // 精确粮草只留在折叠的「军情细目」里；主界面给的是大概档位。
+  $('bGrain').textContent = c
+    ? `攻 ${Math.round(c.grain.attack)} / 守 ${Math.round(c.grain.defend)} · 矢 ${c.projects.length}`
+    : '—';
 }
 
 // ── 回合推进 ────────────────────────────────────────────────────────────
@@ -991,10 +997,10 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   [cfg, uiData, story, tutorialDef] = await Promise.all([
-    fetch('./config/campaign.json?v=0.9.1').then((r) => r.json()),
-    fetch('./config/ui-data.json?v=0.9.1').then((r) => r.json()),
-    fetch('./config/story.json?v=0.9.1').then((r) => r.json()),
-    fetch('./config/tutorial.json?v=0.9.1').then((r) => r.json()),
+    fetch('./config/campaign.json?v=0.9.2').then((r) => r.json()),
+    fetch('./config/ui-data.json?v=0.9.2').then((r) => r.json()),
+    fetch('./config/story.json?v=0.9.2').then((r) => r.json()),
+    fetch('./config/tutorial.json?v=0.9.2').then((r) => r.json()),
   ]);
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);

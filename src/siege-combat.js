@@ -1,4 +1,4 @@
-// 攻城战斗结算（v0.9.1）。纯逻辑：无 DOM / 墙钟 / Math.random，固定步长，
+// 攻城战斗结算（v0.9.2）。纯逻辑：无 DOM / 墙钟 / Math.random，固定步长，
 // 实时与快照快进共用同一个 stepCombat，因此「盯着打」与「隔月回来」必然一致。
 //
 // 口径界线：战斗层只产 battleResult（胜负 / 主帅是否被擒 / 存活兵力 / 耗时）；
@@ -8,6 +8,10 @@
 import { cityObstacles, findCityPath, nearestExit, keyOf } from './siege-grid.js';
 import { headingFromDelta, normAngle } from './direction.js';
 import { generalFor, facilityLevel } from './generals.js';
+import {
+  moraleFactor, fatigueFactor, formationFactor, hungerFactor, marchFactor,
+  initialGrain, conditionLine,
+} from './condition.js';
 
 const alive = (u) => u && u.state !== 'dead' && u.state !== 'escaped' && (u.hp ?? 1) > 0;
 const dist = (a, b) => Math.hypot(a.col - b.col, a.row - b.row);
@@ -36,7 +40,8 @@ export function createCombat(cfg, campaign, cityId, forcesRef, rngSnapshot) {
     morale: { attack: cfg.hidden.moraleStart,
       defend: Math.min(B.moraleMax, cfg.hidden.moraleStart + F.moralePerLevel * lvl) },
     alert: { attack: cfg.hidden.alertStart, defend: cfg.hidden.alertStart },
-    grain: { attack: 100, defend: 100 },
+    // 粮草不是假血条：按「存粮够吃几旬」从策略层真实库存/城存粮折算。
+    grain: initialGrain(cfg, campaign, cityId, forcesRef, attacker),
     wall: B.wallHp + F.wallRepairPerLevel * lvl,
     gateHp: B.gateHp + F.gateHpPerLevel * lvl,
     yamenHp: B.yamenHp,
@@ -75,7 +80,7 @@ function ensureUnitState(cfg, u, side) {
   return u;
 }
 
-function moveToward(cfg, u, goal, dt, blocked, occupied) {
+function moveToward(cfg, c, u, goal, dt, blocked, occupied) {
   const def = cfg.units[u.type];
   const speedTiles = Math.max(0.35, def.speed / cfg.battle.pxPerTile);
   const now = u.pathAt + dt;
@@ -89,7 +94,8 @@ function moveToward(cfg, u, goal, dt, blocked, occupied) {
     else u.path = null;
     u.pathAt = 0;
   }
-  let budget = speedTiles * dt;
+  // 断粮时行军迟滞：debuff 不只是文字，兵是真的走得慢。
+  let budget = speedTiles * dt * marchFactor(cfg, c.grain[u.side]);
   while (budget > 0 && u.path && u.pathIdx < u.path.length - 1) {
     const next = u.path[u.pathIdx + 1];
     const dx = next.col - u.col, dy = next.row - u.row;
@@ -103,17 +109,19 @@ function moveToward(cfg, u, goal, dt, blocked, occupied) {
   }
 }
 
-function damageOf(cfg, def, gen, u, targetSide) {
+function damageOf(cfg, c, def, gen, u, targetSide) {
   const B = cfg.battle, E = cfg.generals.effects;
-  const moraleK = B.dmgMoraleFloor + (1 - B.dmgMoraleFloor) * Math.max(0, Math.min(100, u.morale)) / 100;
-  const fatigueK = Math.max(0.5, 1 - u.fatigue / B.dmgFatigueDiv);
-  const formK = B.dmgFormationFloor + (1 - B.dmgFormationFloor) * Math.max(0, Math.min(100, u.formation)) / 100;
+  // 与 condition.js 同源：界面上那句「约减一两成」就是这几个系数乘出来的。
+  const moraleK = moraleFactor(B, u.morale);
+  const fatigueK = fatigueFactor(B, u.fatigue);
+  const formK = formationFactor(B, u.formation);
+  const hungerK = hungerFactor(cfg, c.grain[u.side]);
   const g = def.projectile
     ? (gen.intellect - 50) / E.intellectRangedDiv
     : (gen.force - 50) / E.forceMeleeDiv;
   // 守方主帅统率只加成守军（拦截效率），攻方用自己主帅的统率折算士气
   const cmdK = 1 + (targetSide === 'defend' ? (gen.command - 50) / E.commandMoraleDiv : 0);
-  return def.dmg * moraleK * fatigueK * formK * (1 + g) * cmdK;
+  return def.dmg * moraleK * fatigueK * formK * hungerK * (1 + g) * cmdK;
 }
 
 function applyDamage(cfg, c, u, dmg, src, rng) {
@@ -150,7 +158,7 @@ function consumeOrders(session, c, cfg) {
         const def = cfg.units[u.type];
         if (!def) continue;
         if (def.projectile) {
-          spawnProjectile(cfg, c, u, def, dir.x, dir.y, damageOf(cfg, def, c.general, u, u.side === 'attack' ? 'defend' : 'attack'));
+          spawnProjectile(cfg, c, u, def, dir.x, dir.y, damageOf(cfg, c, def, c.general, u, u.side === 'attack' ? 'defend' : 'attack'));
           u.cooldown = Math.max(u.cooldown, cfg.battle.rangedCooldownSec);
         } else {
           // 近战单位吃同一条指令 = 向该方向突击，不是站着不动
@@ -303,7 +311,7 @@ export function stepCombat(session, dt, rng) {
 
     if (target && best <= rangeTiles && u.cooldown <= 0) {
       u.targetId = target.id;
-      const dmg = damageOf(cfg, def, c.general, u, target.side);
+      const dmg = damageOf(cfg, c, def, c.general, u, target.side);
       if (def.projectile) {
         spawnProjectile(cfg, c, u, def, target.col - u.col, target.row - u.row, dmg);
         u.cooldown = B.rangedCooldownSec * (def.projectile === 'stone' ? 1.7 : 1);
@@ -313,7 +321,7 @@ export function stepCombat(session, dt, rng) {
         u.heading = normAngle(headingFromDelta(target.col - u.col, target.row - u.row, u.heading));
       }
     } else if (target && best > rangeTiles) {
-      moveToward(cfg, u, { col: Math.round(target.col), row: Math.round(target.row) }, dt, blocked, otherOcc);
+      moveToward(cfg, c, u, { col: Math.round(target.col), row: Math.round(target.row) }, dt, blocked, otherOcc);
     } else if (!target && u.side === 'attack') {
       // 无近敌：器械与重甲拆城门 / 府衙，其余向府衙推进
       const goal = { col: c.gateHp > 0 ? cfg.cityView.gate.col + 2 : cfg.cityView.yamen.col - 2,
@@ -322,7 +330,7 @@ export function stepCombat(session, dt, rng) {
         const dGate = Math.hypot(u.col - cfg.cityView.gate.col, u.row - cfg.cityView.gate.row);
         const dYamen = Math.hypot(u.col - cfg.cityView.yamen.col, u.row - cfg.cityView.yamen.row);
         if (u.cooldown <= 0 && (dGate <= rangeTiles || dYamen <= rangeTiles)) {
-          const dmg = damageOf(cfg, def, c.general, u, 'defend');
+          const dmg = damageOf(cfg, c, def, c.general, u, 'defend');
           if (dYamen <= rangeTiles && c.gateHp <= 0) {
             c.yamenHp = Math.max(0, c.yamenHp - dmg);
             c.events.push({ sec: +c.sec.toFixed(3), kind: 'yamenHit', dmg: +dmg.toFixed(2) });
@@ -333,9 +341,9 @@ export function stepCombat(session, dt, rng) {
           }
           u.cooldown = B.siegeCooldownSec;
         } else if (dGate > rangeTiles && dYamen > rangeTiles) {
-          moveToward(cfg, u, goal, dt, blocked, otherOcc);
+          moveToward(cfg, c, u, goal, dt, blocked, otherOcc);
         }
-      } else moveToward(cfg, u, goal, dt, blocked, otherOcc);
+      } else moveToward(cfg, c, u, goal, dt, blocked, otherOcc);
     }
   }
 
@@ -348,7 +356,11 @@ export function stepCombat(session, dt, rng) {
   for (const side of ['attack', 'defend']) {
     c.grain[side] = Math.max(0, c.grain[side] - B.grainDrainPerSec * dt * 100);
     if (c.grain[side] < 12) c.morale[side] = Math.max(0, c.morale[side] - 0.35 * dt * 10);
-    c.morale[side] = Math.min(B.moraleMax, c.morale[side] + B.moraleRecoverPerSec * dt);
+    // 粮尽难以回气：恢复量按同一份断粮系数衰减，下限锁住不会负恢复。
+    const recoverK = Math.max(cfg.condition.hunger.moraleRecoverFloor,
+      hungerFactor(cfg, c.grain[side]));
+    c.morale[side] = Math.min(B.moraleMax,
+      c.morale[side] + B.moraleRecoverPerSec * dt * recoverK);
     c.alert[side] = Math.min(100, c.alert[side] + 0.02 * dt * 10);
     if (c.morale[side] < B.moraleRoutThreshold) {
       for (const u of all) if (u.side === side && u.state === 'fight') {
@@ -424,9 +436,15 @@ export function combatResult(session, attack = [], defend = []) {
   };
 }
 
-export function combatSummary(c) {
+export function combatSummary(c, cfg = null, units = []) {
   if (!c) return '未开战';
   if (c.outcome) return `${c.outcome.won ? '城破' : '退兵'} · ${c.outcome.reason}`;
-  const a = c.morale.attack.toFixed(0), d = c.morale.defend.toFixed(0);
-  return `交战中 · 士气 ${a}/${d} · 主帅${ { inOffice:'在任', exposed:'失护卫', captured:'被擒', dead:'阵亡' }[c.commander.state] }`;
+  // 主界面不再摊开精确士气：平时只报军情如常，严重时给一句大概的 debuff。
+  if (cfg) {
+    const a = conditionLine(cfg, c, 'attack', units);
+    const d = conditionLine(cfg, c, 'defend', units);
+    const alarm = a.show || d.show ? ` · ${a.show ? a.text : d.text}` : '';
+    return `交战中 · ${alarm ? alarm.slice(3) : '军情如常'}`;
+  }
+  return '交战中 · 军情如常';
 }

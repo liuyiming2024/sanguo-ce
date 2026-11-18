@@ -14,7 +14,7 @@ const problems = [];
 const ok = (cond, msg) => { if (!cond) problems.push(msg); };
 
 // 配置
-ok(cfg.meta.version === '0.9.1', 'meta.version 与生成物指纹不一致');
+ok(cfg.meta.version === '0.9.2', 'meta.version 与生成物指纹不一致');
 ok(cfg.terrain.tilePx === 24, '地形离屏分辨率不足，文字会糊');
 ok(cfg.orders.types.length === 12, '大地图指令不足 12 类');
 ok(cfg.cityView && cfg.cityView.cols === 24 && cfg.cityView.rows === 16, '缺少城池小地图配置');
@@ -81,8 +81,8 @@ for (const id of ['map', 'topBar', 'infoCard', 'closeInfoX', 'battleOverlay',
   'hudSystem', 'continueBtn', 'saveTip', 'marchCityBtn']) {
   ok(html.includes(`id="${id}"`), `index.html 缺少 #${id}`);
 }
-ok(html.includes('?v=0.9.1'), 'HTML 入口缺少版本指纹');
-ok(main.includes("?v=0.9.1"), 'ESM import 缺少版本指纹');
+ok(html.includes('?v=0.9.2'), 'HTML 入口缺少版本指纹');
+ok(main.includes("?v=0.9.2"), 'ESM import 缺少版本指纹');
 ok(html.match(/class="x"/g)?.length >= 3, '可进入的层缺少可见 × 退出');
 for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/pathfind.js',
   'src/campaign.js', 'src/battle-session.js', 'src/city-view.js', 'src/map-data.js',
@@ -98,6 +98,48 @@ for (const f of ['src/main.js', 'src/map-render.js', 'src/terrain.js', 'src/path
   'scripts/smoke.mjs', 'scripts/serve.mjs', '.nojekyll']) {
   ok(existsSync(join(root, f)), `缺少文件 ${f}`);
 }
+
+// ── v0.9.2：方向整圈覆盖 / 中轴线不漂 ────────────────────────────────
+const dirMod9 = readFileSync(join(root, 'src/direction.js'), 'utf8');
+const portMod9 = readFileSync(join(root, 'src/portrait.js'), 'utf8');
+const mani9 = JSON.parse(readFileSync(join(root, 'assets/units/trooper.json'), 'utf8'));
+ok(/export function normAngle|export function dirIndex|export function sectorCenters/.test(dirMod9),
+  '缺整圈朝向量化函数');
+ok(mani9.anchor === '脚底中心' && mani9.footY === 780 && mani9.frames.length === 8,
+  '八向帧没有共用统一的脚底中轴基线');
+ok(/ctx\.drawImage\(fr\.sheet, fr\.sx, 0, fr\.sw, fr\.sh, -w \/ 2, -dh, w, dh\)/.test(portMod9),
+  '换方向帧时改变了 drawImage 落点，中轴线会漂');
+ok(/export const GROUND_SHEAR = -0\.17;/.test(portMod9) &&
+   /const tilt = engine && o\.walk/.test(portMod9),
+  '斜轴必须是全帧共用常量；人形转身不能靠 rotate 整张图');
+
+// ── v0.9.2：粮草显示 / 严重时大概 debuff ─────────────────────────────
+const condMod = readFileSync(join(root, 'src/condition.js'), 'utf8');
+const condBody = condMod.split('\n').filter((l) => !l.trim().startsWith('//')).join('\n');
+ok(!/Date\.|performance\.|Math\.random|localStorage|setTimeout|setInterval/.test(condBody),
+  '军情档位模块不能引入墙钟或随机源');
+ok(/export function hungerFactor|export function marchFactor|export function conditionLine/.test(condMod),
+  '缺粮草/行军/文案派生函数');
+const condCfg = JSON.parse(readFileSync(join(root, 'config/campaign.json'), 'utf8')).condition;
+ok(condCfg && condCfg.grainTiers.length >= 4 && condCfg.debuffTiers.length >= 4,
+  '缺粮草/减益档位表');
+ok(condCfg.grainTiers.every((x) => !/[0-9.]/.test(x.label)) &&
+   condCfg.debuffTiers.every((x) => !/[0-9.]/.test(x.label + x.debuff)),
+  '大概档位文案里混进了精确数字');
+ok(condCfg.showFromTier >= 2, 'debuff 必须只在严重档才显示');
+const sc9 = readFileSync(join(root, 'src/siege-combat.js'), 'utf8');
+ok(/hungerFactor\(cfg, c\.grain\[u\.side\]\)/.test(sc9) &&
+   /marchFactor\(cfg, c\.grain\[u\.side\]\)/.test(sc9),
+  '界面档位与真实减益必须同源，不能另写一套公式');
+const cv9 = readFileSync(join(root, 'src/city-view.js'), 'utf8');
+ok(!/士气 攻 \$\{Math\.round\(c\.morale/.test(cv9),
+  '子界面底栏仍在摊开精确士气数值');
+ok(/conditionLine\(cfg, c, 'attack'/.test(cv9) && /conditionLine\(cfg, c, 'defend'/.test(cv9) &&
+   /粮草 · 攻/.test(cv9), '子界面缺常驻粮草档位');
+const main9 = readFileSync(join(root, 'src/main.js'), 'utf8');
+ok(/\['军心', cityCondition\(cfg, o\)\.text\]/.test(main9), '城池面板仍在摊开精确士气');
+ok(/\$\('bGrain'\)/.test(main9) && /bGrain/.test(readFileSync(join(root, 'index.html'), 'utf8')),
+  '精确粮草未收进军情细目');
 
 if (problems.length) {
   console.error('\n✗ 自检失败：');
@@ -404,8 +446,8 @@ ok(mani.frames.every((f) => {
     b.readUInt32BE(16) === mani.canvas[0] && b.readUInt32BE(20) === mani.canvas[1];
 }), '八张素材必须是同尺寸 RGBA PNG（统一脚底基线）');
 ok(/export function dirIndex/.test(dirMod) && /export const DIR8/.test(dirMod) &&
-   /Math\.floor\(a \/ SECTOR \+ 0\.5\) % 8/.test(dirMod),
-  '八向索引必须是确定性最近邻量化，不能靠 scale(-1,1) 镜像');
+   /Math\.floor\(snapped\) % 8/.test(dirMod) && /1e-9/.test(dirMod),
+  '八向索引必须是确定性最近邻量化 + 扇区边界吸附，不能靠 scale(-1,1) 镜像');
 ok(/headingFromDelta/.test(dirMod) && /normAngle/.test(dirMod),
   '缺「位移向量 → 朝向」与角度规整');
 ok(/createPortraits/.test(portMod) && /drawImage\(fr\.sheet, fr\.sx, 0, fr\.sw, fr\.sh/.test(portMod) &&
@@ -429,7 +471,7 @@ ok(/trooper-sheet|trooper\.json|assets\/units/.test(readFileSync(join(root, 'REA
   'README 缺八向素材说明');
 
 // ── v0.9.0：背面三帧验收锁 / 24 帧步态 / 自动列队 ──────────────────────
-ok(mani.version === '0.9.1' && mani.phases?.length === 3 &&
+ok(mani.version === '0.9.2' && mani.phases?.length === 3 &&
    mani.phases.join(',') === 'idle,stepL,stepR',
   'manifest 必须是 8 向 × 3 相位');
 ok(mani.sheets?.idle === 'trooper-sheet.png' &&

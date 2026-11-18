@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "三国策 · 官渡",
-    "version": "0.9.1",
+    "version": "0.9.2",
     "subtitle": "建安五年 · 官渡章回 · 工笔青绿设色"
   },
   "calendar": {
@@ -287,7 +287,7 @@
     "moraleGainPerStratagem": 9.0,
     "moraleRecoverPerSec": 0.14,
     "fatiguePerSec": 0.035,
-    "grainDrainPerSec": 0.01,
+    "grainDrainPerSec": 0.004,
     "captureChanceBase": 0.62,
     "captureLoyaltyDiv": 260,
     "commanderHp": 90,
@@ -440,5 +440,66 @@
     },
     "_note": "军师零伤害辅助；计策不改物理法则，也不新增法术/召唤/眩晕。"
   },
-  "version": "0.9.1"
+  "version": "0.9.2",
+  "condition": {
+    "grainTiers": [
+      {
+        "min": 70,
+        "label": "充足"
+      },
+      {
+        "min": 40,
+        "label": "尚足"
+      },
+      {
+        "min": 18,
+        "label": "偏紧"
+      },
+      {
+        "min": 6,
+        "label": "将尽"
+      },
+      {
+        "min": 0,
+        "label": "断粮"
+      }
+    ],
+    "debuffTiers": [
+      {
+        "minLoss": 0,
+        "tier": 0,
+        "label": "军情如常",
+        "debuff": ""
+      },
+      {
+        "minLoss": 0.06,
+        "tier": 1,
+        "label": "稍有疲态",
+        "debuff": ""
+      },
+      {
+        "minLoss": 0.12,
+        "tier": 2,
+        "label": "军心动摇",
+        "debuff": "战力约减一两成，行军稍缓"
+      },
+      {
+        "minLoss": 0.32,
+        "tier": 3,
+        "label": "军心大乱",
+        "debuff": "战力约减三成以上，行军迟滞"
+      }
+    ],
+    "showFromTier": 2,
+    "hunger": {
+      "startBelow": 30,
+      "floor": 0.62,
+      "marchFloor": 0.6,
+      "moraleRecoverFloor": 0.3,
+      "fullTurns": 30,
+      "minStart": 8,
+      "_note": "战斗层粮草 0–100 = 存粮可支撑旬数 / 30 旬，攻方用势力库存、守方用城存粮，都按实际兵数扣军粮。"
+    },
+    "_note": "粮草常驻显示大概档位；士气/疲劳/阵型等隐藏属性平时不摊开精确数值，只在严重时浮出模糊 debuff。档位与真实伤害/行军系数同源，文案不含阿拉伯数字。"
+  }
 }

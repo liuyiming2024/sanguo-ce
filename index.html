@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#0a0d0c">
 <link rel="icon" href="data:,">
 <title>三国策 · 官渡</title>
-<link rel="stylesheet" href="./styles/main.css?v=0.9.1">
+<link rel="stylesheet" href="./styles/main.css?v=0.9.2">
 </head>
 <body>
 
@@ -121,8 +121,9 @@
         <div class="cell">城内 / 大营<b id="bForces">0 / 0</b></div>
         <div class="cell">士气 / 城防<b id="bMorale">0</b></div>
         <div class="cell">邮箱待办<b id="bMail">0</b></div>
+        <div class="cell">粮草 / 矢<b id="bGrain">—</b></div>
       </div>
-      <div class="battleNote" id="battleNote">离营期间各城照常运转；再进城时按同一军历补齐，部署状态随行保留。</div>
+      <div class="battleNote" id="battleNote">离营期间各城照常运转；再进城时按同一军历补齐。主界面只报粮草大概与严重时的军情减益，精确数值在本细目内。</div>
     </details>
     <button class="closeBattle" id="leaveBattle" type="button">退 出 城 池 · 回 大 营</button>
   </div>
@@ -180,6 +181,6 @@
 </section>
 
 <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
-<script type="module" src="./src/main.js?v=0.9.1"></script>
+<script type="module" src="./src/main.js?v=0.9.2"></script>
 </body>
 </html>

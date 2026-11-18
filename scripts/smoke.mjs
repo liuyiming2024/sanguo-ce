@@ -65,7 +65,7 @@ try {
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
   check('主菜单标注 v0.9.0 与栅格规模',
     (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes('0.9.1'));
+    (await page.locator('#menuSub').innerText()).includes('0.9.2'));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&
@@ -715,7 +715,7 @@ try {
 
   // ── v0.9.0：器械为主体 / 满血无血条 / 器械转轮不摆腿（像素级） ────────
   const art = await sp.evaluate(async () => {
-    const mod = await import('./src/soldier.js?v=0.9.1');
+    const mod = await import('./src/soldier.js?v=0.9.2');
     const cfg = window.__sanguo.cfg;
     const mk = (type, opts = {}) => {
       const c = document.createElement('canvas'); c.width = 160; c.height = 160;
@@ -962,7 +962,7 @@ try {
   check('移动端无 JS 运行时报错', mErrs.length === 0, mErrs.slice(0, 2).join(' | '));
   await mctx.close();
 
-  // ── v0.9.1：攻城战闭环（真实浏览器，独立于主流程） ──────────────────
+  // ── v0.9.2：攻城战闭环（真实浏览器，独立于主流程） ──────────────────
   const bp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const bErrs = [];
   bp.on('pageerror', (e) => bErrs.push(String(e)));
@@ -1043,6 +1043,79 @@ try {
     after.sec >= after.target - 0.05 && after.sec < after.target + 1.0 &&
     after.hits >= before.hits && after.fast > 0,
     JSON.stringify({ before, after }));
+  // ── v0.9.2：粮草常驻 / 严重时大概 debuff ───────────────────────────
+  const condAt = async () => bp.evaluate(async () => {
+    const m = await import('./src/condition.js?v=0.9.2');
+    const w = window.__sanguo, cv = w.cityView;
+    const us = [...cv.forces().inside, ...cv.forces().camp];
+    return {
+      attack: m.conditionLine(w.cfg, w.session.combat, 'attack', us),
+      defend: m.conditionLine(w.cfg, w.session.combat, 'defend', us),
+      grain: { attack: w.session.combat.grain.attack, defend: w.session.combat.grain.defend },
+    };
+  });
+  const cfgShort = ['充足', '尚足', '偏紧', '将尽', '断粮'];
+  const c0 = await condAt();
+  check('粮草档位常驻显示，且是中文大概档位（无精确数值）',
+    cfgShort.includes(c0.attack.grain.label) && !/\d/.test(c0.attack.grain.label),
+    JSON.stringify(c0.attack.grain));
+  check('正常态不弹 debuff，文案不含数字',
+    !c0.attack.show && !c0.defend.show &&
+    !/[0-9.]/.test(`${c0.attack.label}${c0.attack.debuff}`),
+    JSON.stringify({ a: c0.attack.text, d: c0.defend.text }));
+  const calmPix = await bp.evaluate(() => {
+    const c = document.getElementById('cityCanvas');
+    const g = c.getContext('2d');
+    const d = g.getImageData(c.width - 220, c.height - 40, 220, 40).data;
+    let red = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 110 && d[i + 2] < 100) red++;
+    return red;
+  });
+  // 强制断粮 + 压士气，验证「严重时」真的浮出告急，且是同一套真实系数
+  await bp.evaluate(() => {
+    const w = window.__sanguo, c = w.session.combat;
+    c.grain.attack = 0; c.grain.defend = 0;
+    c.morale.attack = 24; c.morale.defend = 24;
+    for (const u of [...w.cityView.forces().inside, ...w.cityView.forces().camp]) {
+      u.morale = 24; u.fatigue = 60;
+    }
+  });
+  await bp.waitForTimeout(220);
+  const c1 = await condAt();
+  check('严重时浮出大概 debuff，且文案仍不含精确数值',
+    c1.attack.show && c1.attack.debuff.length > 0 &&
+    !/[0-9.]/.test(`${c1.attack.label}${c1.attack.debuff}`) &&
+    c1.attack.text !== c0.attack.text,
+    JSON.stringify({ from: c0.attack.text, to: c1.attack.text }));
+  const alarmPix = await bp.evaluate(() => {
+    const c = document.getElementById('cityCanvas');
+    const g = c.getContext('2d');
+    const d = g.getImageData(c.width - 220, c.height - 40, 220, 40).data;
+    let red = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 110 && d[i + 2] < 100) red++;
+    return red;
+  });
+  check('告急用朱砂小字真的画在底栏上（正常态没有）',
+    alarmPix > calmPix + 20, `正常 ${calmPix} → 告急 ${alarmPix}`);
+  check('精确粮草只收在折叠的军情细目里，主界面不给数字',
+    await bp.evaluate(() => {
+      const el = document.getElementById('bGrain');
+      return /攻 \d+ \/ 守 \d+/.test(el.textContent);
+    }));
+  check('斥候情报缺粮草字段时不会误报断粮告急', await bp.evaluate(async () => {
+    const m = await import('./src/condition.js?v=0.9.2');
+    const w = window.__sanguo;
+    const scout = { morale: 72, fatigue: 0, garrison: 2000, wall: 100 };
+    return m.cityCondition(w.cfg, scout, { grainKnown: false }).text === '如常' &&
+      m.cityCondition(w.cfg, scout, { grainKnown: false }).show === false;
+  }));
+  check('大地图城池面板不再摊开精确士气，改报「军心」大概',
+    await bp.evaluate(() => {
+      const w = window.__sanguo;
+      w.refreshUI();
+      return true;
+    }) && !await bp.evaluate(() => /士气<\/span>/.test(document.getElementById('cityBody').innerHTML)));
+
   check('攻城战无 JS 运行时报错', bErrs.length === 0, bErrs.slice(0, 2).join(' | '));
   await bp.close();
 

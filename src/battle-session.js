@@ -5,7 +5,7 @@
 // 用 **同一个 advanceBattleStep()** 以固定步长无渲染空跑到当前时刻 —— 
 // 不另写一套解析结算公式，因此「一直盯着打」与「离开再回来」结果必然一致。
 //
-// v0.9.1：接上真实战斗结算。实时与快进仍共用同一个 advanceBattleStep，
+// v0.9.2：接上真实战斗结算。实时与快进仍共用同一个 advanceBattleStep，
 // 战斗层用自己独立的确定性 RNG（与策略层隔离），终局只产 battleResult，
 // 归属/兵力/俘虏由 campaign.resolveBattle 回写，绝不回退到开战回合。
 import { createCombat, stepCombat, combatSummary } from './siege-combat.js';

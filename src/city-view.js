@@ -16,12 +16,13 @@
 // 护心镜 + 按兵种兵器），motion 全是渲染层私有状态，
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
-import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.9.1';
-import { createPortraits } from './portrait.js?v=0.9.1';
-import { headingFromDelta, normAngle } from './direction.js?v=0.9.1';
-import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js?v=0.9.1';
-import { findCityPath, cityObstacles } from './siege-grid.js?v=0.9.1';
-import { formatCalendar } from './calendar.js?v=0.9.1';
+import { drawSoldier, idSeed, unitKind } from './soldier.js?v=0.9.2';
+import { createPortraits } from './portrait.js?v=0.9.2';
+import { headingFromDelta, normAngle } from './direction.js?v=0.9.2';
+import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js?v=0.9.2';
+import { findCityPath, cityObstacles } from './siege-grid.js?v=0.9.2';
+import { formatCalendar } from './calendar.js?v=0.9.2';
+import { conditionLine } from './condition.js?v=0.9.2';
 
 const INK = '#0b100e';
 const TEXT = '#e2ddc7', DIM = '#9aa896', GOLD = '#e8c882';
@@ -491,11 +492,32 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
       }
     }
 
-    // 战况：只放在底部一行，不把「累计逻辑步」升格成一级 UI
+    // 战况底栏：粮草档位常驻（玩家要能管粮），士气等隐藏属性平时不摊开
+    // 精确数值；只有跌到严重档才浮出一句「大概」的 debuff。
+    // 精确系数与快进步数一律收在「军情细目 · 展开」里，不升格成一级 UI。
+    const units = [...forces().inside, ...forces().camp];
+    const ca = conditionLine(cfg, c, 'attack', units);
+    const cd = conditionLine(cfg, c, 'defend', units);
+    const narrow = W < 560;
+    ctx.font = narrow ? '10px "WenQuanYi Micro Hei", serif'
+      : '11px "WenQuanYi Micro Hei", serif';
+    ctx.textBaseline = 'alphabetic';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = rgba(narrow ? TEXT : GOLD, narrow ? 0.62 : 0.78);
+    ctx.fillText(narrow
+      ? `粮 · 攻${ca.grain.label} 守${cd.grain.label}`
+      : `粮草 · 攻 ${ca.grain.label} · 守 ${cd.grain.label}`, 12, H - 14);
+    // 严重时取更坏的一方，朱砂只用在告急这一处，不撒回全局。
+    const worse = ca.tier >= cd.tier ? ca : cd;
     ctx.textAlign = 'right';
-    ctx.fillStyle = rgba(TEXT, 0.72); ctx.font = '11px "WenQuanYi Micro Hei", serif';
-    ctx.fillText(`士气 攻 ${Math.round(c.morale.attack)} / 守 ${Math.round(c.morale.defend)} · 矢 ${(c.projects ?? []).length}`,
-      W - 12, H - 16);
+    if (worse.show) {
+      ctx.fillStyle = rgba('#d05a4b', 0.92);
+      ctx.fillText(narrow ? worse.label : `${worse.label} · ${worse.debuff}`,
+        W - 12, H - 14);
+    } else {
+      ctx.fillStyle = rgba(TEXT, 0.5);
+      ctx.fillText('军情如常', W - 12, H - 14);
+    }
     ctx.textAlign = 'left';
 
     if (c.outcome) {
@@ -546,9 +568,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     ctx.textAlign = 'right';
     ctx.fillText(`框选 ${selection.size} · 点位置自动列队 · 阵型 ${FORMATION_LABEL[formationShape]} ⇄`, W - 12, 8);
     ctx.textAlign = 'left';
-    ctx.fillStyle = rgba(TEXT, 0.7);
-    ctx.font = '10px "WenQuanYi Micro Hei", serif';
-    ctx.fillText('不拖动 · 不缩放 · 固定视口', 12, H - 16);
+    // 左下留给「粮草档位」，这句操作说明已在子界面抬头里写过，
+    // 再画一行会和新底栏撞字（实拍确认）。
   }
 
   // ── 交互：只调兵，绝不平移 ───────────────────────────────────────────

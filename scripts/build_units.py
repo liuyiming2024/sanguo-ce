@@ -252,7 +252,7 @@ def main():
     tiny_sheet.save(OUT / 'trooper-tiny-sheet.png', optimize=True)
 
     manifest = {
-        'version': '0.9.1',
+        'version': '0.9.2',
         'unit': 'trooper',
         'style': '写实淡彩 · 墨线勾勒 · 花青赭石 · 平光散光',
         'canvas': [CW, CH], 'footY': FOOT_Y, 'anchor': '脚底中心',

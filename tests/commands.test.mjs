@@ -20,8 +20,8 @@ const run = (s, turns, seed = 7) => {
 };
 const ready = () => { const s = mk(); s.cfg.factions.forEach((f) => { f.ai = false; }); collectResources(s); return s; };
 
-test('配置：0.9.1、24px/格、12 类大地图指令、城池小地图尺寸', () => {
-  assert.equal(cfg.meta.version, '0.9.1');
+test('配置：0.9.2、24px/格、12 类大地图指令、城池小地图尺寸', () => {
+  assert.equal(cfg.meta.version, '0.9.2');
   assert.equal(cfg.terrain.tilePx, 24);
   assert.equal(cfg.orders.types.length, 12);
   for (const t of ['claim', 'develop', 'buildFort', 'scout', 'march', 'transfer',
@@ -229,7 +229,7 @@ test('快照保留部署状态：退出 → 重新进入 → 城内/大营数量
   const s2 = restoreSession(cfg, s, snap);
   enterSession(s2, rng);
   assert.ok(s.forces.liyang.inside.length >= 1);
-  // v0.9.1：隔几旬再进入会用同一个推进函数真实快进战斗，格位会变；
+  // v0.9.2：隔几旬再进入会用同一个推进函数真实快进战斗，格位会变；
   // 快照契约是「单位按 id 合并不丢、不冲掉并行抵达的援军」，不是格位冻结。
   assert.ok(s2.forcesRef.inside.some((u) => u.id === deployedId), '快照恢复丢掉了已部署单位');
   assert.equal(s2.forcesRef.camp.length, snap.forces.camp.length, '大营兵力被快照冲掉');

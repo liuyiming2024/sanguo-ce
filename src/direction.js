@@ -33,7 +33,13 @@ export function normAngle(a) {
  */
 export function dirIndex(heading) {
   const a = normAngle(heading);
-  return Math.floor(a / SECTOR + 0.5) % 8;
+  const q = a / SECTOR + 0.5;
+  // atan2 求出的朝向在精确扇区边界上会带 1e-15 级误差：直接 floor 会让
+  // 同一个 202.5° 一会儿落第 4 帧、一会儿落第 5 帧，整圈转身时看着像跳帧。
+  // 把「几乎就是整数」的商吸附到整数，边界永远确定归入后一扇区。
+  const near = Math.round(q);
+  const snapped = Math.abs(q - near) < 1e-9 ? near : q;
+  return Math.floor(snapped) % 8;
 }
 
 /** 由位移向量求朝向；(0,0) 时回退到 fallback（默认正面）。 */

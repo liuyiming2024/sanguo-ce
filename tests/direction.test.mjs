@@ -96,3 +96,64 @@ test('渲染层是可选皮肤：不进状态、无墙钟、无随机、保留�
   assert.ok(/lastHeading/.test(cv) && /heading: rp\.heading/.test(cv),
     '朝向必须逐帧传给渲染层，不能只靠 dir 镜像');
 });
+
+
+test('v0.9.2：整圈 360° 无缝，负角 / 超圈 / 跨 0 边界都确定性落帧', () => {
+  const TAU = Math.PI * 2;
+  // 0 与 360° 必须同帧（回到正面），不能多出一帧或跳到背面
+  assert.equal(dirIndex(0), dirIndex(TAU));
+  assert.equal(dirIndex(-TAU), dirIndex(0));
+  assert.equal(normAngle(TAU * 2.5), Math.PI);
+  assert.equal(dirIndex(TAU * 2.5), dirIndex(Math.PI));
+  // 每 1° 扫一整圈：不抛错、不越界、每个扇区都命中、相邻角最多跳一帧
+  const seen = new Set();
+  let jumps = 0;
+  let prev = dirIndex(0);
+  for (let deg = 0; deg < 360; deg++) {
+    const d = dirIndex(deg * Math.PI / 180);
+    assert.ok(Number.isInteger(d) && d >= 0 && d < 8);
+    seen.add(d);
+    const delta = (d - prev + 8) % 8;
+    assert.ok(delta <= 1, `${deg}° 一次跳了 ${delta} 帧`);
+    if (delta) jumps++;
+    prev = d;
+  }
+  assert.equal(seen.size, 8, '八个扇区没有全部覆盖');
+  assert.equal(jumps, 8, '整圈应该恰好换 8 次帧（含首尾回绕）');
+  // 八个中心角各取不同帧；扇区边界归后一扇区，两侧确定性不重叠
+  const centers = sectorCenters().map(dirIndex);
+  assert.equal(new Set(centers).size, 8);
+  assert.deepEqual(centers, [0, 1, 2, 3, 4, 5, 6, 7]);
+  assert.ok(!Number.isNaN(normAngle(NaN)) && normAngle(Infinity) === 0);
+  // headingFromDelta 与 dirIndex 闭环：位移转一整圈仍落回同一帧
+  for (let i = 0; i < 16; i++) {
+    const a = i * TAU / 16;
+    assert.equal(dirIndex(headingFromDelta(Math.sin(a), Math.cos(a))),
+      dirIndex(a), `${i * 22.5}° 位移与角度不一致`);
+  }
+});
+
+test('v0.9.2：换方向时中轴线（脚底中心）不漂移 —— 所有帧同一锚点', () => {
+  const p = readFileSync(new URL('../src/portrait.js', import.meta.url), 'utf8');
+  const m = JSON.parse(readFileSync(new URL('../assets/units/trooper.json', import.meta.url), 'utf8'));
+  assert.equal(m.anchor, '脚底中心');
+  assert.equal(m.footY, 780, '脚底基线必须全帧统一');
+  assert.ok(m.frames.every((f) => f.index >= 0 && f.index < 8));
+  // 统一画布 + 统一基线：帧宽只由画布比例决定，不随 dirIndex 变
+  assert.ok(/const h = s \* 1\.62;/.test(p) &&
+    /const w = h \* \(fr\.sw \/ fr\.sh\)/.test(p),
+    '单位尺寸不能按方向帧分别计算，否则中轴会左右漂');
+  // drawImage 的落点恒为 -w/2, -dh；没有任何以 d / heading 为自变量的 x 偏移
+  assert.ok(/ctx\.drawImage\(fr\.sheet, fr\.sx, 0, fr\.sw, fr\.sh, -w \/ 2, -dh, w, dh\)/.test(p),
+    '帧落点必须是固定居中，不能按方向改 dx');
+  assert.ok(!/fr\.sx[^)]*heading|dirIndex\([^)]*\)\s*\*\s*(w|s|L\.cell)/.test(p),
+    '出现了随方向帧缩放/平移中轴的表达式');
+  // 地面投影画在斜轴变换之前，用的是不变的 o.x —— 换帧时脚底不挪
+  const shadow = p.slice(p.indexOf('地面投影始终在地面平面上'), p.indexOf('ctx.translate(x, y + bob)'));
+  assert.ok(/ctx\.ellipse\(x, y \+ 1\.4/.test(shadow) && !/heading|dirIndex|fr\.sx/.test(shadow));
+  // 斜轴变换是全体帧共用的常量，不按方向换
+  assert.ok(/export const GROUND_SHEAR = -0\.17;/.test(p) &&
+    /ctx\.transform\(1, 0, GROUND_SHEAR, 1, 0, 0\)/.test(p));
+  // 人形不吃 rotate（只有器械行军的极轻摆角），转身不靠把整张图旋一下
+  assert.ok(/const tilt = engine && o\.walk/.test(p));
+});

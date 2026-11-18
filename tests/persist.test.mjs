@@ -34,7 +34,7 @@ test('存档是纯 JSON，不含循环引用 / 函数 / DOM', () => {
   const text = JSON.stringify(raw);
   assert.ok(text.length > 100);
   assert.equal(JSON.parse(text).v, 1);
-  assert.equal(raw.version, '0.9.1');
+  assert.equal(raw.version, '0.9.2');
 });
 
 test('地形按 seed 重建，只存与初始地图不同的格子', () => {
