@@ -3,13 +3,15 @@
 // → 城郭（城墙垛口 + 角楼 + 城门 + 旗纛）→ 地名注记 → 领地边界与动态层。
 // 全部离屏预渲染一次，主画布只做视口 blit + 动态叠加；不使用 ctx.filter / Math.random。
 //
-// v0.7.0：默认改为「工笔青绿设色」（见 gongbi.js）。
-//   不再是遍历 tiles 画符号：格只管判定，画面由连续分染 / 白描勾线 / 点景构成。
-//   失败的「单条山脊一笔」实验已移除；?style=jiehua 保留整套旧画法作 A/B 复核。
+// v0.9.4：默认背景层换成对面的《建安五年全境舆图》渲染内核（见 atlas.js）。
+//   连续场 + 变宽短笔，笔法与色板原样接进来；只把图幅参数化到官渡战区，
+//   且只取 bg（背景层）：城郭/关津/领地/朱题由上层按局内状态动态画，不重复。
+//   gongbi / jiehua 两种旧画法保留作 A/B 复核（?style=gongbi|jiehua）。
 //   terrain.js / map-data.js / A* / 存档 / 策略层一行未动。
 import { CITIES, RIVERS_MINOR, RIDGES, LAKES, PASSES, geoToTile, project } from './map-data.js';
 import { T, TYPE_LABEL } from './terrain.js';
 import { paintGongbi, GONGBI } from './gongbi.js';
+import { createAtlas } from './atlas.js';
 
 const PAL = {
   plain: '#3f4c3c', farmland: '#5d6641', forest: '#2c4133', hill: '#4a4e3c',
@@ -39,7 +41,7 @@ const rgba = (hex, a) => {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 };
 
-export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gongbi' }) {
+export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atlas' }) {
   const TP = cfg.terrain.tilePx;
   const W = terrain.cols * TP, H = terrain.rows * TP;
   const off = document.createElement('canvas');
@@ -47,7 +49,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
   const g = off.getContext('2d');
 
   const camera = { x: 0, y: 0, scale: 1 };
-  let style = styleOpt === 'jiehua' ? 'jiehua' : 'gongbi';   // 默认工笔；?style=jiehua 复核旧画法
+  let style = styleOpt === 'jiehua' ? 'jiehua'
+    : styleOpt === 'gongbi' ? 'gongbi' : 'atlas';   // 默认全境笔法；另两种供 A/B 复核
   let selection = null, circle = null, reachable = [], orders = [], cityOwners = {};
   let dpr = 1, cssW = 1, cssH = 1;
 
@@ -270,6 +273,16 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
   function buildGongbiBase() {
     paintGongbi(g, { W, H, TP, terrain, cfg });
   }
+  function buildAtlasBase() {
+    // 官渡战区图幅，与 map-data.js / terrain.js 的投影范围一致。
+    const a = createAtlas({
+      LON0: 112.75, LON1: 116.15, LAT0: 32.65, LAT1: 36.65,
+      fg: false,                       // 地物留给上层动态绘制
+    });
+    // atlas 自带 1400×1100 绢底；等比铺满 3456×2592 离屏，笔宽随整体缩放，
+    // 主画布再按 camera.scale 缩回，视觉密度与 demos 定稿一致。
+    g.drawImage(a.bg, 0, 0, W, H);
+  }
   function buildBase() {
     // 每次重建前把离屏上下文恢复到同一基线：lineCap / alpha / dash 等状态
     // 会被两种画法互相留下，否则 gongbi→jiehua→gongbi 无法逐像素复原。
@@ -281,6 +294,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
     g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
     g.clearRect(0, 0, W, H);
     if (style === 'jiehua') { buildJiehuaBase(); return; }
+    if (style === 'atlas') { buildAtlasBase(); return; }
     buildGongbiBase();
   }
   buildBase();
@@ -356,7 +370,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
   }
   function drawBorders(ctx) {
     if (!borderPaths) rebuildBorders();
-    const gongbi = style === 'gongbi';
+    const gongbi = style !== 'jiehua';
     for (const b of borderPaths) {
       if (gongbi) {
         ctx.lineWidth = 9 / camera.scale;
@@ -389,7 +403,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
     for (const o of orders) {
       if (!o.path?.length) continue;
       const f = cfg.factions.find((v) => v.id === o.faction);
-      ctx.strokeStyle = rgba(f?.color ?? GOLD, style === 'gongbi' ? 0.62 : 0.8);
+      ctx.strokeStyle = rgba(f?.color ?? GOLD, style !== 'jiehua' ? 0.62 : 0.8);
       ctx.lineWidth = 2 / camera.scale;
       ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
       ctx.beginPath();
@@ -500,8 +514,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
     const th = theme(style);
     ctx.font = '8px sans-serif';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = rgba(th.text, style === 'gongbi' ? 0.30 : 0.8);
-    ctx.strokeStyle = rgba(th.stroke, style === 'gongbi' ? 0.5 : 0.8);
+    ctx.fillStyle = rgba(th.text, style !== 'jiehua' ? 0.30 : 0.8);
+    ctx.strokeStyle = rgba(th.stroke, style !== 'jiehua' ? 0.5 : 0.8);
     ctx.lineWidth = 2 / camera.scale;
     const k = 1 / camera.scale;
     for (const t of terrain.tiles) {
@@ -524,17 +538,17 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
     const mw = Math.min(190, cssW * 0.24), mh = mw * (H / W);
     // 让开右下工具列（约 62px），否则缩略图被压在按钮底下。
     const mx = cssW - mw - 14 - (cssW > 720 ? 62 : 56), my = cssH - mh - 58;
-    ctx.fillStyle = rgba(style === 'gongbi' ? '#e9e3d1' : '#0b100e', 0.97);
+    ctx.fillStyle = rgba(style !== 'jiehua' ? '#e9e3d1' : '#0b100e', 0.97);
     ctx.fillRect(mx - 5, my - 5, mw + 10, mh + 10);
     ctx.strokeStyle = rgba(th.frame, 0.62); ctx.lineWidth = 1.5;
     ctx.strokeRect(mx - 5, my - 5, mw + 10, mh + 10);
-    ctx.fillStyle = rgba(style === 'gongbi' ? '#e9e3d1' : '#0b100e', 0.97);
+    ctx.fillStyle = rgba(style !== 'jiehua' ? '#e9e3d1' : '#0b100e', 0.97);
     ctx.fillRect(mx - 5, my - 22, 76, 16);
     ctx.imageSmoothingEnabled = true;
     ctx.drawImage(off, mx, my, mw, mh);
     const vx = mx + (camera.x / W) * mw, vy = my + (camera.y / H) * mh;
     const vw = (cssW / camera.scale / W) * mw, vh = (cssH / camera.scale / H) * mh;
-    ctx.strokeStyle = rgba(style === 'gongbi' ? '#a6483a' : GOLD, 0.95); ctx.lineWidth = 1.5;
+    ctx.strokeStyle = rgba(style !== 'jiehua' ? '#a6483a' : GOLD, 0.95); ctx.lineWidth = 1.5;
     ctx.strokeRect(vx, vy, Math.max(3, vw), Math.max(3, vh));
     ctx.font = '9px "WenQuanYi Micro Hei", serif';
     ctx.fillStyle = rgba(th.text, 0.85);
@@ -559,7 +573,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
          canvas.width !== Math.round(cssW * dpr))) resize();
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = style === 'gongbi' ? GONGBI.paperLo : '#0e1411';
+    ctx.fillStyle = style !== 'jiehua' ? GONGBI.paperLo : '#0e1411';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * camera.scale, 0, 0, dpr * camera.scale,
       -camera.x * camera.scale * dpr, -camera.y * camera.scale * dpr);
@@ -581,7 +595,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
         ctx.rect(p.c * TP, p.r * TP, TP, TP);
       }
       // 只 fill 不 stroke：相邻 rect 连成一片淡染，一描边就又变回方格网。
-      ctx.fillStyle = rgba(th.reach, style === 'gongbi' ? 0.10 : 0.18);
+      ctx.fillStyle = rgba(th.reach, style !== 'jiehua' ? 0.10 : 0.18);
       ctx.fill();
     }
     drawOrders(ctx);
@@ -589,7 +603,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
     if (selection) {
       const th = theme(style);
       const cx = (selection.c + 0.5) * TP, cy = (selection.r + 0.5) * TP;
-      if (style === 'gongbi') {
+      if (style !== 'jiehua') {
         // 细线圈 + 淡晕，不再是方格框
         ctx.beginPath(); ctx.arc(cx, cy, TP * 0.82, 0, Math.PI * 2);
         ctx.fillStyle = rgba(th.reach, 0.07); ctx.fill();
@@ -603,11 +617,11 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
       }
     }
     if (circle) {
-      ctx.strokeStyle = rgba(style === 'gongbi' ? '#a6483a' : '#e8d9a8', 0.95); ctx.lineWidth = 1.8 / camera.scale;
+      ctx.strokeStyle = rgba(style !== 'jiehua' ? '#a6483a' : '#e8d9a8', 0.95); ctx.lineWidth = 1.8 / camera.scale;
       ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
       ctx.beginPath(); ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2); ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = rgba(style === 'gongbi' ? '#a6483a' : '#e8d9a8', 0.10); ctx.fill();
+      ctx.fillStyle = rgba(style !== 'jiehua' ? '#a6483a' : '#e8d9a8', 0.10); ctx.fill();
     }
     ctx.restore();
     drawScreenHud(ctx);
@@ -623,7 +637,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'gon
     setOrders(list) { orders = list; },
     setCityOwners(map) { cityOwners = map; borderPaths = null; },
     setStyle(next) {
-      const v = next === 'jiehua' ? 'jiehua' : 'gongbi';
+      const v = next === 'jiehua' ? 'jiehua' : next === 'gongbi' ? 'gongbi' : 'atlas';
       if (style !== v) { style = v; buildBase(); }
       return style;
     },

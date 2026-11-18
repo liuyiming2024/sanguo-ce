@@ -176,7 +176,7 @@ function loadGame() {
   if (cityView) { cityView.dispose(); cityView = null; }
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    style: new URLSearchParams(location.search).get('style') === 'jiehua' ? 'jiehua' : 'gongbi',
+    style: new URLSearchParams(location.search).get('style') ?? 'atlas',
   });
   if (r.ui?.camera) { Object.assign(renderer.camera, r.ui.camera); renderer.clampCamera(); }
   session = snapshot ? restoreSession(cfg, state, snapshot) : null;
@@ -928,7 +928,7 @@ function bindUI() {
     state = newCampaign(fid);
     renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    style: new URLSearchParams(location.search).get('style') === 'jiehua' ? 'jiehua' : 'gongbi',
+    style: new URLSearchParams(location.search).get('style') ?? 'atlas',
   });
     reports = []; state.reports = reports;
     session = null; snapshot = null; battleCityId = null;
@@ -1000,11 +1000,13 @@ function frame(now) {
 
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
-  [cfg, uiData, story, tutorialDef] = await Promise.all([
+  let historica;
+  [cfg, uiData, story, tutorialDef, historica] = await Promise.all([
     fetch('./config/campaign.json').then((r) => r.json()),
     fetch('./config/ui-data.json').then((r) => r.json()),
     fetch('./config/story.json').then((r) => r.json()),
     fetch('./config/tutorial.json').then((r) => r.json()),
+    fetch('./config/historica.json').then((r) => r.json()),
   ]);
   // 版本号只来自 src/version.js：装配时注入，存档 / 界面 / 军令帖都读它，
   // 配置文件里不再存任何版本字面量。
@@ -1014,9 +1016,9 @@ async function boot() {
   state = newCampaign('cao');
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    style: new URLSearchParams(location.search).get('style') === 'jiehua' ? 'jiehua' : 'gongbi',
+    style: new URLSearchParams(location.search).get('style') ?? 'atlas',
   });
-  shell = createShell({ cfg, uiData, story, actions, getState: () => state,
+  shell = createShell({ cfg, uiData, story, historica, actions, getState: () => state,
     getReports: () => reports, onRoute: (route) => tutNotify(`tab:${route}`) });
 
   const ch0 = story.chapters[0];
@@ -1052,7 +1054,7 @@ async function boot() {
     hashState, stateFingerprint, encodeTicket, decodeTicket,
     createLoopbackTransport, createBroadcastTransport,
     get renderer() { return renderer; },
-    get style() { return renderer?.style ?? 'gongbi'; },
+    get style() { return renderer?.style ?? 'atlas'; },
     get session() { return session; },
     get snapshot() { return snapshot; },
     get cityView() { return cityView; },

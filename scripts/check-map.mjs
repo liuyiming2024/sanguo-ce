@@ -333,10 +333,12 @@ ok(/densify\(/.test(gb) && /normals\(/.test(gb), '缺折线加密与法线，连
 ok(/createLinearGradient[\s\S]{0,280}malaHi[\s\S]{0,280}azur/.test(gb),
   '山体缺石绿→石青的阴阳分染');
 ok(/夹叶|双钩/.test(gb) && /重檐/.test(gb), '点景缺夹叶树丛 / 工笔楼阁');
-ok(/style: styleOpt = 'gongbi'/.test(mr7) &&
-   /get\('style'\) === 'jiehua' \? 'jiehua' : 'gongbi'/.test(main7),
-  '默认必须是工笔，且保留 ?style=jiehua 复核开关');
-ok(/setStyle\(/.test(mr7) && /get style\(\)/.test(mr7), '缺 A/B 切换接口');
+ok(/style: styleOpt = 'atlas'/.test(mr7) &&
+   /get\('style'\) \?\? 'atlas'/.test(main7),
+  '默认背景必须是对面的全境笔法，且 ?style= 可复核');
+ok(/setStyle\(/.test(mr7) && /get style\(\)/.test(mr7) &&
+   /next === 'gongbi' \? 'gongbi' : 'atlas'/.test(mr7),
+  '缺三态画风切换接口（atlas / gongbi / jiehua）');
 ok(!/import .*campaign|import .*persist|localStorage|Math\.random/.test(gb),
   '工笔层污染了策略层 / 存档 / 确定性');
 ok(/camera\.scale < 1\.6/.test(mr7), '等级角标必须默认不出现');
@@ -546,6 +548,56 @@ ok(!/document|canvas|Date\.|performance\.|Math\.random/.test(formMod.replace(/^\
   '编队层不能碰 DOM / 墙钟 / 随机源，否则重放会分叉');
 ok(/onFormationMove/.test(mainMod) && /deployUnit\(state, cityId, a\.id/.test(mainMod),
   '编队结果必须逐队写回部署，不能只画个圈');
+
+// ── v0.9.4：对面全境舆图接入 / 典籍总揽 / 文档总揽 ────────────────────
+const atlas = readFileSync(join(root, 'src/atlas.js'), 'utf8');
+const shellSrc = readFileSync(join(root, 'src/ui-shell.js'), 'utf8');
+const hist = JSON.parse(readFileSync(join(root, 'config/historica.json'), 'utf8'));
+const docSum = readFileSync(join(root, 'docs/建安五年官渡舆图史料汇总.md'), 'utf8');
+const demos = readdirSync(join(root, 'demos'));
+
+ok(/export function createAtlas/.test(atlas) &&
+   /opts\.LON0 \?\? 93/.test(atlas) && /opts\.seed \?\? 202005/.test(atlas),
+  '全境内核必须参数化图幅与 seed，不能写死在内部');
+ok(!/document\.getElementById|addEventListener|Math\.random|Date\.now|performance\.now|new Image/.test(atlas),
+  'atlas.js 不能带 DOM 交互 / 墙钟 / 随机源 / 位图，否则确定性与零位图破功');
+ok(/fg: false/.test(mr7) && /g\.drawImage\(a\.bg, 0, 0, W, H\)/.test(mr7) &&
+   !/g\.drawImage\(a\.fg/.test(mr7),
+  '战区大地图只能贴 bg 背景层；贴 fg 会与上层城郭/注记重影');
+ok(/LON0: 112\.75, LON1: 116\.15, LAT0: 32\.65, LAT1: 36\.65/.test(mr7),
+  '战区图幅必须与 map-data.js / terrain.js 的投影范围一致');
+ok(/createAtlas\(\{\}\)/.test(shellSrc) && /a\.bg/.test(shellSrc) && /a\.fg/.test(shellSrc),
+  '全境舆图浏览页必须用 bg + fg 全份（默认十三州图幅）');
+ok(demos.includes('建安五年全境舆图.html') && demos.includes('官渡舆图笔势重绘.html'),
+  '对面 demos 实验文件必须完整保留，不能覆盖');
+
+const catIds = hist.cats.map((c) => c.id);
+ok(JSON.stringify(catIds) === JSON.stringify(['benji','yudi','tufa','xingzhi','yiyi','shumu']),
+  '典籍六门必须齐全且有序');
+ok(hist.cats.every((c) => c.items.length >= 6 && c.items.every((i) =>
+     i.t && i.s && i.n && /^[ABC]$/.test(i.lv))),
+  '典籍每条必须有 题 / 文言 / 出处 / A·B·C 级');
+const rawHist = readFileSync(join(root, 'config/historica.json'), 'utf8');
+ok(!/https?:\/\/|亭是带围墙|1957|新野北安乐寨|南宋苏州|305 座/.test(rawHist),
+  '白话细目考据与链接只能留 docs/，不许漏进游戏内文言卷');
+ok(/archive: pageArchive, atlasView: pageAtlasView/.test(shellSrc) &&
+   /data-act="archive"/.test(shellSrc) && /mountAtlas\(\)/.test(shellSrc),
+  '典籍页 / 全境页 / 入口 / canvas 挂载缺一不可');
+ok(/'archive', 'atlasView'/.test(shellSrc), '典籍与全境页必须走纸页 data-tone="paper"');
+ok(/fetch\('\.\/config\/historica\.json'\)/.test(mainMod) && /historica, actions/.test(mainMod),
+  '装配层必须加载并传入典籍数据源');
+
+for (const sec of ['## 12. 史料总揽', '## 13. 细目考据存目', '## 14. 游戏内', '## 15. 重难']) {
+  ok(docSum.includes(sec), `史料主文档缺 ${sec}`);
+}
+ok(/实施总纲|疑难点|落地文件/.test(docSum) && /config\/historica\.json/.test(docSum),
+  '§12 必须是「出处→可信度→落地→入图→游戏内→疑难点」的实施总揽');
+ok(/不进游戏/.test(docSum) && /白话/.test(docSum),
+  '§13 必须明确标注「后台用 · 白话 · 不进游戏」');
+ok(existsSync(join(root, 'docs/十三州全境取数表.md')) &&
+   existsSync(join(root, 'docs/背景层落地清单.md')) &&
+   existsSync(join(root, 'demos/third-party/ATTRIBUTION.md')),
+  '对面 docs / 许可文件必须保留');
 
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));

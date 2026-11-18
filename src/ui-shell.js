@@ -3,6 +3,7 @@
 // 这里只负责「像那个游戏」—— 顶部资源条、底部主菜单 Tab、全屏子页面、
 // 每个页面都有 × 与返回、Esc 逐级退出。所有数值从 state 实时派生，不是写死的假界面。
 import { CITIES, cityById } from './map-data.js';
+import { createAtlas } from './atlas.js';
 import { dateLabel } from './campaign.js';
 import { formatCalendar } from './calendar.js';
 import {
@@ -67,6 +68,8 @@ const TITLE = {
   alliance: ['同盟', '合纵连横'],
   world: ['天下', '建安五年 · 天下大势'],
   system: ['系统', '设置与存档'],
+  archive: ['典籍总揽', '建安五年 · 官渡行台藏书'],
+  atlasView: ['十三州全境舆图', '西止玉门 · 东含乐浪 · 南含日南'],
   help: ['玩法', ''],
 };
 
@@ -79,9 +82,9 @@ export function facilityCost(f, lv) {
 // 文治页反纸：内政 / 政令 / 任务 / 邮件 / 同盟 / 天下 / 系统 / 玩法。
 // 武将、战法、部队、出征、战报仍走墨底，一深一浅才有翻页节奏。
 const PAPER_ROUTES = new Set(['interior', 'facility', 'story', 'tasks', 'mail', 'mailRead',
-  'alliance', 'world', 'system', 'help']);
+  'alliance', 'world', 'system', 'help', 'archive', 'atlasView']);
 
-export function createShell({ cfg, uiData, story, actions, getState, getReports, onRoute }) {
+export function createShell({ cfg, uiData, story, historica, actions, getState, getReports, onRoute }) {
   const screen = document.getElementById('screen');
   const tabsEl = document.getElementById('bottomBar');
   let stack = [];
@@ -434,7 +437,8 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
         <div><div class="t">${esc(c.title)}</div><div class="s">${esc(c.era)} · ${esc(c.historical.slice(0, 26))}…</div></div>
         <span class="arrow">›</span></div>`).join('');
 
-    return `
+    return `<div class="arcEntry"><button class="bigBtn ghost" type="button" data-act="archive">典 籍 总 揽 · 六门 →</button></div>
+
       ${sec('官渡章回', `${dateLabel(s, 'full')} · ${story.meta.role}`)}
       <div class="chapterHero">
         <div class="chNo">${esc(cur.no)}</div>
@@ -531,7 +535,8 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
     }
     const landByOwner = {};
     for (const t of s.terrain.tiles) if (t.owner) landByOwner[t.owner] = (landByOwner[t.owner] ?? 0) + 1;
-    return `${sec('天下大势', dateLabel(s, 'full'))}
+    return `<div class="arcEntry"><button class="bigBtn ghost" type="button" data-act="archive">典 籍 总 揽 · 六门 →</button></div>
+${sec('天下大势', dateLabel(s, 'full'))}
       <p class="hintLine">赛季目标：据官渡、断乌巢、擒河北主帅。城池归属与领地格数随每旬实时变化。</p>
       ${statGrid([
         ['全图格数', fmt(s.terrain.cols * s.terrain.rows), '格'],
@@ -559,7 +564,8 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
 
   function pageSystem() {
     const s = state();
-    return `${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
+    return `<div class="arcEntry"><button class="bigBtn ghost" type="button" data-act="archive">典 籍 总 揽 · 六门 →</button></div>
+${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       <div class="listRow" style="cursor:default"><span class="tag">节奏</span>
         <div style="flex:1"><div class="t">自动推进回合</div><div class="s">每 ${cfg.calendar.secPerTurn} 秒走 1 旬</div></div>
         <button class="bigBtn ghost" style="width:auto;min-height:36px;margin:0;padding:5px 14px" data-act="toggleAuto">${actions.getAuto() ? '关闭' : '开启'}</button></div>
@@ -596,6 +602,42 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
       <button class="bigBtn ghost" data-act="help">查看玩法说明</button>`;
   }
 
+  /** 典籍总揽：文言总纲 + 六门全文，一页可总览，不藏细目考据。 */
+  function pageArchive() {
+    const H = historica ?? { meta: {}, cats: [] };
+    const nav = H.cats.map((c) =>
+      `<button class="bigBtn ghost" type="button" data-act="arcCat" data-id="${esc(c.id)}">${esc(c.glyph)} · ${esc(c.name)}</button>`).join('');
+    const cats = H.cats.map((c) => `
+      <div class="secTitle" id="arc-${esc(c.id)}">${esc(c.name)}<small>${esc(c.intro)}</small></div>
+      <div class="cardList arcList">${c.items.map((it) => `
+        <div class="card arcItem"><span class="arcLv">${esc(it.lv)}</span>
+          <h3>${esc(it.t)}</h3>
+          <div class="desc">${esc(it.s)}</div>
+          <div class="meta">${esc(it.n)}</div>
+        </div>`).join('')}</div>`).join('');
+    return `<p class="readBody arcPre">${esc(H.meta.preface ?? '')}</p>
+      <div class="arcNav">${nav}
+        <button class="bigBtn" type="button" data-act="atlasView">十三州全境舆图 →</button>
+      </div>
+      ${cats}
+      <p class="readBody arcCol">${esc(H.meta.colophon ?? '')}</p>
+      <button class="bigBtn ghost" type="button" data-act="back">返回</button>`;
+  }
+
+  /** 全境舆图：对面 demos 的 bg + fg 原样贴入，可拖可缩，只读浏览。 */
+  function pageAtlasView() {
+    return `<div class="arcNav">
+        <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="in">放 大</button>
+        <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="out">缩 小</button>
+        <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="reset">复 位</button>
+      </div>
+      <canvas id="atlasCanvas" aria-label="建安五年十三州全境舆图"></canvas>
+      <p class="readBody">此图全幅十三州，与行台沙盘之豫兖战区非同一图幅。背景层为地表成因，
+        地物层为州郡、关津、烽燧、长城与主景题识；势力归属不预绘，由局内动态给出。
+        笔法、连续场、色板与史料锚点悉仍其旧，见 docs/十三州全境取数表.md。</p>
+      <button class="bigBtn ghost" type="button" data-act="back">返回典籍总揽</button>`;
+  }
+
   function pageHelp() {
     return `<p class="readBody">一、大地图可拖动、双指捏合缩放、滚轮缩放，右下「全图」看整幅，缩略图定位。\n\n二、1 回合 = 1 旬。点「结束下一旬」或开「自动推进」；日历不因进入城池而冻结，两端并行。\n\n三、底部主菜单：内政（设施升级）、武将、战法、部队（大营/中军/前锋编成）、战报、邮件、纪事（八回章回与日常陈情）、同盟、天下、系统。每一层都能用 × 或 Esc 逐级退出。\n\n四、点地块弹出信息卷轴：占领需连地，另有屯田、筑垒、侦察、调动、驻守、撤兵。点城池可进「城池布阵」；出征前有胜负预判与行军时间。\n\n五、城池布阵是固定视口的小地图，不拖动，只调兵：己方城部队在城内，敌方城部队在城外扎营；把大营的兵拖进城里＝派人进去打。圆框选后二次拖拽定方向，所有远程单位齐射。\n\n六、退出城池拍快照，隔几旬再进入用同一固定步长空跑补齐，不另写结算公式。切到后台会自动存档。</p>
     <button class="bigBtn ghost" data-act="back">返回</button>`;
@@ -608,6 +650,7 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
     mail: pageMail, mailRead: pageMailRead, story: pageStory,
     chapterRead: pageChapterRead, tasks: dailyTasks,
     alliance: pageAlliance, world: pageWorld, system: pageSystem, help: pageHelp,
+    archive: pageArchive, atlasView: pageAtlasView,
   };
 
   // ── 渲染 ──────────────────────────────────────────────────────────────
@@ -654,7 +697,61 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
       el.setAttribute('aria-label', (el.querySelector('h3,.t,.fn')?.textContent ?? el.textContent ?? '').trim().slice(0, 24) || '操作');
     }
     onRoute?.(cur.route);
+    if (cur.route === 'atlasView') mountAtlas();
     onChange();
+  }
+
+  // ── 十三州全境舆图：demos 的 bg+fg 原样贴入，只加拖/缩，不重画笔法 ────
+  let atlasInst = null;
+  function mountAtlas() {
+    const c = screen.querySelector('#atlasCanvas');
+    if (!c) return;
+    const a = createAtlas({});                 // 全境默认图幅 93–126E / 15–43N
+    const rect = c.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cw = Math.max(1, rect.width), ch = Math.max(1, rect.height);
+    c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr);
+    const ctx = c.getContext('2d');
+    const base = Math.min(cw / a.W, ch / a.H);
+    let zoom = 1, px = 0, py = 0;
+    function paint() {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = '#0e1310'; ctx.fillRect(0, 0, cw, ch);
+      ctx.save();
+      ctx.translate(cw / 2 + px, ch / 2 + py);
+      ctx.scale(zoom * base, zoom * base);
+      ctx.translate(-a.W / 2, -a.H / 2);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(a.bg, 0, 0);
+      if (a.fg) ctx.drawImage(a.fg, 0, 0);
+      ctx.restore();
+    }
+    let dragging = false, lx = 0, ly = 0;
+    c.addEventListener('pointerdown', (e) => {
+      dragging = true; lx = e.clientX; ly = e.clientY;
+      c.setPointerCapture(e.pointerId);
+    });
+    c.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      px += e.clientX - lx; py += e.clientY - ly;
+      lx = e.clientX; ly = e.clientY; paint();
+    });
+    c.addEventListener('pointerup', () => { dragging = false; });
+    c.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const n = Math.max(0.5, Math.min(6, zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      const r = c.getBoundingClientRect(), cx = e.clientX - r.left - cw / 2, cy = e.clientY - r.top - ch / 2;
+      px = cx - (cx - px) * (n / zoom); py = cy - (cy - py) * (n / zoom);
+      zoom = n; paint();
+    }, { passive: false });
+    paint();
+    atlasInst = {
+      zoom(what) {
+        if (what === 'reset') { zoom = 1; px = 0; py = 0; }
+        else zoom = Math.max(0.5, Math.min(6, zoom * (what === 'in' ? 1.28 : 1 / 1.28)));
+        paint();
+      },
+    };
   }
 
   // ── 事件委托：所有按钮一处处理 ────────────────────────────────────────
@@ -722,6 +819,15 @@ export function createShell({ cfg, uiData, story, actions, getState, getReports,
       case 'verifyReplay': actions.verifyReplay(); render(); break;
       case 'syncInfo': actions.syncInfo(); render(); break;
       case 'help': actions.openHelp(); break;
+      case 'archive': navigate('archive'); break;
+      case 'arcCat': {
+        const key = String(id ?? '').replace(/[^a-z0-9_-]/gi, '');
+        const el2 = key ? screen.querySelector(`#arc-${key}`) : null;
+        if (el2) el2.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        break;
+      }
+      case 'atlasView': navigate('atlasView'); break;
+      case 'atlasZoom': atlasInst?.zoom(el.dataset.d); break;
       default: break;
     }
   });

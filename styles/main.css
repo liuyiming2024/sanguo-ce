@@ -332,6 +332,32 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
 .listRow .t{font-size:13px;color:var(--paper)}
 .listRow .s{font-size:11px;color:var(--dim);margin-top:3px}
 .listRow .arrow{margin-left:auto;color:var(--gold2);font-size:16px}
+/* 典籍总揽：文言六门一页总览；全境舆图只读浏览。
+   不另立色板，全部继承纸页 .scrBody 的局部变量覆盖。 */
+.arcEntry{margin:0 0 14px}
+.arcEntry .bigBtn,.arcNav .bigBtn{width:auto;min-height:34px;padding:6px 15px;font-size:12px;letter-spacing:1px}
+.arcPre{font-size:14px;line-height:2.2;letter-spacing:.6px;border-left:3px solid var(--gold2);
+  padding-left:16px;margin-bottom:4px}
+.arcCol{font-size:12px;line-height:2;opacity:.86;border-top:1px solid var(--line2);margin-top:18px}
+.arcNav{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 22px}
+.arcList{grid-template-columns:repeat(auto-fill,minmax(258px,1fr));margin-bottom:26px}
+.arcItem{padding:14px 16px 16px;cursor:default}
+.arcItem:hover{transform:none}
+.arcItem h3{font-size:14px;letter-spacing:1.6px;padding-right:28px}
+.arcItem .desc{font-size:12px;line-height:2.05;letter-spacing:.3px;margin-top:9px}
+.arcItem .meta{font-size:10px;line-height:1.7;margin-top:10px;opacity:.9}
+.arcLv{position:absolute;top:11px;right:11px;width:20px;height:20px;display:flex;
+  align-items:center;justify-content:center;font-size:10px;letter-spacing:0;
+  border:1px solid var(--gold2);border-radius:2px;color:var(--gold);background:var(--goldTint)}
+#atlasCanvas{display:block;width:100%;height:min(62vh,560px);margin:0 0 14px;
+  border:1px solid var(--line2);border-radius:2px;background:#0e1310;
+  touch-action:none;cursor:grab}
+#atlasCanvas:active{cursor:grabbing}
+@media (max-width:720px){
+  .arcList{grid-template-columns:1fr}
+  .arcPre{font-size:13px;line-height:2.05}
+  #atlasCanvas{height:52vh}
+}
 .readBody{font-size:13px;line-height:1.95;color:var(--paper2);padding:14px 16px;
   border:1px solid var(--line2);background:var(--cardBg);border-radius:2px;white-space:pre-wrap}
 .progress{height:6px;background:var(--slotBg);border-radius:3px;overflow:hidden;margin-top:7px}

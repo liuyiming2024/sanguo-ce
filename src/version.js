@@ -3,4 +3,4 @@
 // 入口的缓存指纹由 index.html 的内联 module 读取本常量后动态注入；
 // 配置 / 资产清单 / 包描述里的 version 字段已移除，运行时由装配层注入。
 // CI 与静态自检只比对「一致性」，不再出现任何具体版本号。
-export const VERSION = '0.9.3';
+export const VERSION = '0.9.4';

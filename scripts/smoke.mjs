@@ -134,13 +134,13 @@ try {
     return window.__sanguo.tutUI.done && document.getElementById('tutorialLayer').hidden;
   }));
 
-  // ── v0.7.0：工笔青绿设色（默认） / ?style=jiehua 复核旧画法 ──────────
-  check('默认是工笔，不是界画', await page.evaluate(() =>
-    window.__sanguo.style === 'gongbi' && window.__sanguo.renderer.style === 'gongbi'));
+  // ── v0.9.4：默认接对面全境笔法；gongbi / jiehua 保留作 A/B 复核 ──────
+  check('默认背景是对面全境笔法（atlas），不是旧工笔/界画', await page.evaluate(() =>
+    window.__sanguo.style === 'atlas' && window.__sanguo.renderer.style === 'atlas'));
   const ab = await page.evaluate(() => {
     const r = window.__sanguo.renderer;
     const oc = r.offscreen.getContext('2d');
-    // 取城内与山脊各一块，做像素校验和；两种画法必须逐像素不同、切回一致
+    // 三态各取三块像素校验和：彼此不同，切回 atlas 必须逐像素复原
     const sum = (x, y) => {
       const d = oc.getImageData(x, y, 48, 48).data;
       let h = 0;
@@ -151,15 +151,18 @@ try {
     const a = snap();
     const s1 = r.setStyle('jiehua'); const b = snap();
     const s2 = r.setStyle('gongbi'); const c = snap();
-    return { eq: a.join() === c.join(), diff: a.join() !== b.join(), s1, s2, a, b, c };
+    const s3 = r.setStyle('atlas'); const d = snap();
+    return { eq: a.join() === d.join(), diff: a.join() !== b.join() && a.join() !== c.join(),
+      s1, s2, s3, a: a.join(), b: b.join(), c: c.join(), d: d.join() };
   });
-  check('工笔/界画逐像素不同，切回可完全复原',
-    ab.diff && ab.eq && ab.s1 === 'jiehua' && ab.s2 === 'gongbi', JSON.stringify(ab));
-  check('工笔只改表现层：地形格数 / 存档 / 命令日志一行未动', await page.evaluate(() => {
+  check('atlas / gongbi / jiehua 三态逐像素不同，切回 atlas 完全复原',
+    ab.diff && ab.eq && ab.s1 === 'jiehua' && ab.s2 === 'gongbi' && ab.s3 === 'atlas',
+    JSON.stringify(ab));
+  check('换背景只改表现层：地形格数 / 存档 / 命令日志一行未动', await page.evaluate(() => {
     const w = window.__sanguo;
     return w.state.terrain.tiles.length === 15552 &&
-      !('gongbi' in w.state) && !('style' in w.state) &&
-      !JSON.stringify(w.state.commandLog).includes('gongbi');
+      !('atlas' in w.state) && !('style' in w.state) &&
+      !JSON.stringify(w.state.commandLog).includes('atlas');
   }));
   check('浅绢底上默认视图没有等级角标 / 硬点阵', await page.evaluate(() => {
     const c = document.getElementById('map'), ctx = c.getContext('2d');
@@ -646,6 +649,73 @@ try {
   check('玩法面板可达', await page.isVisible('#helpPanel'));
   await page.click('#closeHelp');
   check('玩法面板可退出', !(await page.isVisible('#helpPanel')));
+
+  // ── v0.9.4：典籍总揽（文言六门）+ 十三州全境舆图（对面 demos 原样接入）──
+  await page.evaluate(() => {
+    document.querySelector('[data-tut="skip"]')?.click();
+    const l = document.getElementById('tutorialLayer');
+    if (l) { l.hidden = true; l.style.display = 'none'; }
+  });
+  await page.click('[data-tab="world"]');
+  await page.click('[data-act="archive"]');
+  const arc = await page.evaluate(() => {
+    const sc = document.getElementById('screen');
+    const titles = [...sc.querySelectorAll('.secTitle')].map((e) => e.textContent.trim().split(/\s+/)[0]);
+    const body = sc.querySelector('.scrBody');
+    return {
+      route: sc.dataset.route, tone: sc.dataset.tone,
+      titles, items: sc.querySelectorAll('.arcItem').length,
+      lv: [...sc.querySelectorAll('.arcLv')].map((e) => e.textContent.trim()),
+      txt: body?.innerText ?? '',
+      hasPre: !!sc.querySelector('.arcPre'),
+      hasAtlasBtn: !!sc.querySelector('[data-act="atlasView"]'),
+      count: window.__sanguo.shell.current().route,
+    };
+  });
+  check('典籍总揽可达，纸页六门齐全且逐条带 A/B/C 级',
+    arc.route === 'archive' && arc.tone === 'paper' && arc.hasPre &&
+    ['本纪','舆地','图法','形制','疑异','书目'].every((x) => arc.titles.includes(x)) &&
+    arc.items >= 40 && arc.lv.length === arc.items && arc.lv.every((x) => /^[ABC]$/.test(x)),
+    JSON.stringify({ route: arc.route, tone: arc.tone, titles: arc.titles, items: arc.items }));
+  check('游戏内只呈文言：不漏白话细目与链接',
+    !/亭是带围墙|1957|新野北安乐寨|https?:\/\/|305 座/.test(arc.txt) &&
+    /汉室既微|两说并存|不敢以意定之/.test(arc.txt), arc.txt.slice(0, 90));
+
+  await page.click('[data-act="atlasView"]');
+  await page.waitForTimeout(180);
+  const av = await page.evaluate(() => {
+    const sc = document.getElementById('screen'), c = document.getElementById('atlasCanvas');
+    const g = c.getContext('2d');
+    const px = (x, y) => [...g.getImageData(x, y, 1, 1).data].slice(0, 3).join(',');
+    const sum = () => {
+      const d = g.getImageData(0, 0, c.width, c.height).data;
+      let h = 0;
+      for (let i = 0; i < d.length; i += 997) h = (h * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) | 0;
+      return h;
+    };
+    return { route: sc.dataset.route, tone: sc.dataset.tone,
+      w: c.width, h: c.height, sum: sum(), corners: [px(2,2), px(c.width>>1, c.height>>1), px(c.width-3, c.height-3)] };
+  });
+  check('十三州全境舆图贴入 bg+fg：画布有尺寸且不是纯色底',
+    av.route === 'atlasView' && av.tone === 'paper' && av.w > 300 && av.h > 200 &&
+    new Set(av.corners).size >= 1 && av.sum !== 0,
+    JSON.stringify(av));
+  await page.click('[data-act="atlasZoom"][data-d="in"]');
+  const zoomed = await page.evaluate(() => {
+    const c = document.getElementById('atlasCanvas'), d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let h = 0; for (let i=0;i<d.length;i+=997) h=(h*31+d[i]+d[i+1]*3+d[i+2]*7)|0; return h;
+  });
+  await page.click('[data-act="atlasZoom"][data-d="reset"]');
+  const reset = await page.evaluate(() => {
+    const c = document.getElementById('atlasCanvas'), d = c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let h = 0; for (let i=0;i<d.length;i+=997) h=(h*31+d[i]+d[i+1]*3+d[i+2]*7)|0; return h;
+  });
+  check('全境舆图放大后画面变化，复位逐像素还原',
+    zoomed !== av.sum && reset === av.sum, JSON.stringify({ base: av.sum, zoomed, reset }));
+  await page.click('[data-act="back"]');
+  check('全境舆图可返回典籍总揽',
+    (await page.evaluate(() => document.getElementById('screen').dataset.route)) === 'archive');
+  await page.keyboard.press('Escape');
 
   // ── v0.9.0：士兵精细立绘 + 行军动画 ─────────────────────────────────
   const sp = await browser.newPage({ viewport: { width: 1440, height: 900 } });
