@@ -3,7 +3,7 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createTerrain, terrainStats } from '../src/terrain.js';
-import { CITIES, PASSES, ROADS, validateMap } from '../src/map-data.js';
+import { CITIES, PASSES, ROADS, validateMap, useMap, MAPS } from '../src/map-data.js';
 import { validateConnectivity, routeCities, tilesPerTurn, hasAdjacentTerritory } from '../src/pathfind.js';
 import { createCampaign, collectResources, issueOrder } from '../src/campaign.js';
 import { calendarParts, formatCalendar, cnYear } from '../src/calendar.js';
@@ -334,7 +334,7 @@ ok(/createLinearGradient[\s\S]{0,280}malaHi[\s\S]{0,280}azur/.test(gb),
   '山体缺石绿→石青的阴阳分染');
 ok(/夹叶|双钩/.test(gb) && /重檐/.test(gb), '点景缺夹叶树丛 / 工笔楼阁');
 ok(/style: styleOpt = 'atlas'/.test(mr7) &&
-   /get\('style'\) \?\? 'atlas'/.test(main7),
+   /get\('style'\)/.test(main7) && /mapStyle\(\)/.test(main7),
   '默认背景必须是对面的全境笔法，且 ?style= 可复核');
 ok(/setStyle\(/.test(mr7) && /get style\(\)/.test(mr7) &&
    /next === 'gongbi' \? 'gongbi' : 'atlas'/.test(mr7),
@@ -610,6 +610,22 @@ ok(existsSync(join(root, 'docs/十三州全境取数表.md')) &&
    existsSync(join(root, 'docs/背景层落地清单.md')) &&
    existsSync(join(root, 'demos/third-party/ATTRIBUTION.md')),
   '对面 docs / 许可文件必须保留');
+
+// ── 全境图幅：同一套玩法多铺一张图，数据自洽且可切换回来 ──────────────
+ok(existsSync(join(root, 'src/quanjing-data.js')), '全境州郡表缺失');
+ok(story.chapters.filter((c) => c.mapId === 'quanjing').length === 2, '全境两章缺料');
+ok(/id="hudMap"/.test(html4), '图幅切换钮未接进 HUD');
+ok(/mapStyle\(\)/.test(main4), '装配层没按图幅选渲染风格');
+useMap('quanjing');
+const qProblems = validateMap();
+ok(qProblems.length === 0, `全境图幅 validateMap 未过：${qProblems.join('；')}`);
+ok(CITIES.length >= 28, '全境州郡点不足 28');
+ok(MAPS.quanjing.bounds.LON_MAX - MAPS.quanjing.bounds.LON_MIN > 20, '全境图幅没有铺开');
+const qBoundsOk = [CITIES, PASSES].every((arr) => arr.every((p) =>
+  p.lon >= MAPS.quanjing.bounds.LON_MIN && p.lon <= MAPS.quanjing.bounds.LON_MAX &&
+  p.lat >= MAPS.quanjing.bounds.LAT_MIN && p.lat <= MAPS.quanjing.bounds.LAT_MAX));
+ok(qBoundsOk, '全境城池/关隘越出图幅');
+useMap('guandu');
 
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));

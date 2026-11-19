@@ -15,6 +15,7 @@ import { CITIES, RIVERS_MINOR, RIDGES, LAKES, PASSES, geoToTile, project } from 
 import { T, TYPE_LABEL } from './terrain.js';
 import { paintGongbi, GONGBI } from './gongbi.js';
 import { renderGuanduLayers } from './guandu.js';
+import { createAtlas } from './atlas.js';
 
 const PAL = {
   plain: '#3f4c3c', farmland: '#5d6641', forest: '#2c4133', hill: '#4a4e3c',
@@ -52,8 +53,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
   const g = off.getContext('2d');
 
   const camera = { x: 0, y: 0, scale: 1 };
-  let style = styleOpt === 'jiehua' ? 'jiehua'
-    : styleOpt === 'gongbi' ? 'gongbi' : 'atlas';   // 默认全境笔法；另两种供 A/B 复核
+  let style = styleOpt === 'quanjing' ? 'quanjing'
+    : styleOpt === 'jiehua' ? 'jiehua' : styleOpt === 'gongbi' ? 'gongbi' : 'atlas';
   let selection = null, circle = null, reachable = [], orders = [], cityOwners = {};
   let dpr = 1, cssW = 1, cssH = 1;
 
@@ -284,6 +285,13 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     g.drawImage(a.bg, sx, sy, sw, sh, 0, 0, W, H);
     g.drawImage(a.feat, sx, sy, sw, sh, 0, 0, W, H);
   }
+  /** 全境图：对面的十三州舆图 bg+fg 两份按同一线性投影铺满整幅。
+      atlas 的 93–126E / 15–43N 与全境 bounds 完全一致，project() 逐点对齐。 */
+  function buildQuanjingBase() {
+    const a = createAtlas({});
+    g.drawImage(a.bg, 0, 0, W, H);
+    if (a.fg) g.drawImage(a.fg, 0, 0, W, H);
+  }
   function buildBase() {
     // 每次重建前把离屏上下文恢复到同一基线：lineCap / alpha / dash 等状态
     // 会被两种画法互相留下，否则 gongbi→jiehua→gongbi 无法逐像素复原。
@@ -296,6 +304,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     g.clearRect(0, 0, W, H);
     if (style === 'jiehua') { buildJiehuaBase(); return; }
     if (style === 'atlas') { buildAtlasBase(); return; }
+    if (style === 'quanjing') { buildQuanjingBase(); return; }
     buildGongbiBase();
   }
   buildBase();
@@ -640,7 +649,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     setOrders(list) { orders = list; },
     setCityOwners(map) { cityOwners = map; borderPaths = null; },
     setStyle(next) {
-      const v = next === 'jiehua' ? 'jiehua' : next === 'gongbi' ? 'gongbi' : 'atlas';
+      const v = next === 'quanjing' ? 'quanjing' : next === 'jiehua' ? 'jiehua' : next === 'gongbi' ? 'gongbi' : 'atlas';
       if (style !== v) { style = v; buildBase(); }
       return style;
     },

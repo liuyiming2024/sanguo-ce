@@ -165,7 +165,33 @@ export function createTerrain(cfg) {
   for (const city of CITIES) {
     const p = geoToTile(city.lon, city.lat, cols, rows);
     const cc = Math.round(p.c), cr = Math.round(p.r);
-    const rad = city.rank === 1 ? 2 : city.rank === 2 ? 2 : 1;
+    // 全境粗格：州郡缩成一格的点城（含城门），不铺 5×5 外墙，
+    // 否则经纬度相近的州治会互相把对方城门盖成墙，A* 全线断掉。
+    const compact = TCFG.cityWalls === false;
+    const rad = compact ? 0 : (city.rank === 1 ? 2 : city.rank === 2 ? 2 : 1);
+    if (compact) {
+      const t = at(cc, cr);
+      t.base = T.FARMLAND;
+      t.type = T.GATE;
+      t.cityId = city.id; t.owner = city.owner;
+      t.feature = city.name;
+      t.level = city.rank === 1 ? 9 : city.rank === 2 ? 7 : 5;
+      t.gate = { cityId: city.id, side: 'C', c: cc, r: cr };
+      // 点城也要有出口：粗格下山/河可能正好压在城门四周，
+      // 不挖一格外道 A* 会从起点就判死。
+      for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const c = cc + dc, r = cr + dr;
+        if (!inBounds(c, r)) continue;
+        const q = at(c, r);
+        if (q.cityId) continue;
+        if (q.type === T.RIVER || q.type === T.LAKE) { q.type = T.FORD; q.ford = true; }
+        else if (q.type === T.MOUNTAIN) { q.type = T.PASS; q.pass = true; }
+        else if (q.cost >= 90 || q.type === T.WALL) q.type = T.ROAD;
+        q.road = true; q._linked = true; q.feature = `${city.name}外道`;
+      }
+      cityTiles[city.id] = { c: cc, r: cr, rad: 0, gate: [cc, cr], cells: [{ c: cc, r: cr, gate: true }] };
+      continue;
+    }
     const cells = [];
     // 朝第一个邻居的方向开一门（若没有则用东）
     const nb = ROADS.find((x) => x.a === city.id || x.b === city.id);
@@ -272,6 +298,28 @@ export function createTerrain(cfg) {
       else t.type = T.ROAD;
       t.road = true; t._linked = true;
       t.feature = `${city.name}外道`;
+    }
+  }
+
+  // 6.6) 全境粗格：道路图的每一条边都在格网上刻一条可通行带。
+  // 粗格下折线刷格会在山/泽/河处留断层，直线通路能兜住连通性，
+  // 且只在 cityWalls:false 的点城图上跑，官渡本图一行不受影响。
+  if (TCFG.cityWalls === false) {
+    for (const rd of ROADS) {
+      const a = cityTiles[rd.a], b = cityTiles[rd.b];
+      if (!a || !b) continue;
+      const steps = Math.max(1, Math.abs(b.c - a.c), Math.abs(b.r - a.r)) * 2;
+      for (let k = 0; k <= steps; k++) {
+        const c = Math.round(a.c + (b.c - a.c) * k / steps);
+        const r = Math.round(a.r + (b.r - a.r) * k / steps);
+        if (!inBounds(c, r)) continue;
+        const t = at(c, r);
+        if (t.cityId) continue;
+        if (t.type === T.RIVER || t.type === T.LAKE) { t.type = T.FORD; t.ford = true; }
+        else if (t.type === T.MOUNTAIN) { t.type = T.PASS; t.pass = true; }
+        else if ([T.RIVER, T.LAKE, T.MOUNTAIN, T.WALL].includes(t.type)) t.type = T.ROAD;
+        t.road = true; t._linked = true; t.feature = rd.name;
+      }
     }
   }
 

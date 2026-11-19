@@ -14,7 +14,7 @@ import { createCityView } from './city-view.js';
 import {
   createSession, enterSession, leaveSession, tickSession, restoreSession,
 } from './battle-session.js';
-import { CITIES, cityById } from './map-data.js';
+import { CITIES, cityById, LON_MIN, LON_MAX, LAT_MIN, LAT_MAX, useMap, MAPS, MAP_ID } from './map-data.js';
 import { formatCalendar, calendarParts } from './calendar.js';
 import { cityCondition } from './condition.js';
 import {
@@ -40,7 +40,8 @@ const $ = (id) => document.getElementById(id);
 const canvas = $('map');
 const ctx = canvas.getContext('2d');
 const cityCanvas = $('cityCanvas');
-const LON_MIN = 112.75, LON_MAX = 116.15, LAT_MIN = 32.65, LAT_MAX = 36.65;
+const mapStyle = () => new URLSearchParams(location.search).get('style')
+  ?? (MAP_ID === 'quanjing' ? 'quanjing' : 'atlas');
 
 let cfg, uiData, story, tutorialDef, state, rng, renderer, cityView = null, shell = null, tutUI = null;
 let openingChoice = 'farm', chapterGateWasReady = false;
@@ -118,6 +119,7 @@ function newCampaign(factionId = story.meta.faction) {
     rngBefore: 0, rngAfter: 0,
   });
   s.chapter = story.chapters[0].id;
+  s.mapId = MAP_ID;
   return s;
 }
 
@@ -176,7 +178,7 @@ function loadGame() {
   if (cityView) { cityView.dispose(); cityView = null; }
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    style: new URLSearchParams(location.search).get('style') ?? 'atlas',
+    style: mapStyle(),
   });
   if (r.ui?.camera) { Object.assign(renderer.camera, r.ui.camera); renderer.clampCamera(); }
   session = snapshot ? restoreSession(cfg, state, snapshot) : null;
@@ -917,6 +919,10 @@ function bindUI() {
     if (e.key === 'b' || e.key === 'B') $('battleOverlay').hidden ? openBattle() : closeBattle();
   });
 
+  $('hudMap').addEventListener('click', () => {
+    saveGame();
+    location.href = MAP_ID === 'quanjing' ? './?map=guandu' : './?map=quanjing';
+  });
   $('proChoice').addEventListener('click', (e) => {
     const b = e.target.closest('[data-open]');
     if (!b) return;
@@ -928,7 +934,7 @@ function bindUI() {
     state = newCampaign(fid);
     renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    style: new URLSearchParams(location.search).get('style') ?? 'atlas',
+    style: mapStyle(),
   });
     reports = []; state.reports = reports;
     session = null; snapshot = null; battleCityId = null;
@@ -1001,13 +1007,34 @@ function frame(now) {
 // ── 启动 ────────────────────────────────────────────────────────────────
 async function boot() {
   let historica;
-  [cfg, uiData, story, tutorialDef, historica] = await Promise.all([
+  const [cfg0, uiData0, story0, tutorialDef0, historica0] = await Promise.all([
     fetch('./config/campaign.json').then((r) => r.json()),
     fetch('./config/ui-data.json').then((r) => r.json()),
     fetch('./config/story.json').then((r) => r.json()),
     fetch('./config/tutorial.json').then((r) => r.json()),
     fetch('./config/historica.json').then((r) => r.json()),
   ]);
+  cfg = cfg0; uiData = uiData0; story = story0; tutorialDef = tutorialDef0; historica = historica0;
+
+  // 图幅只按 URL 参数或存档里的 mapId 选；换图即另开一局，玩法一行不改。
+  const raw = readFromStorage();
+  const want = new URLSearchParams(location.search).get('map');
+  const mapId = (want === 'quanjing' || want === 'guandu') ? want
+    : (raw?.mapId === 'quanjing' ? 'quanjing' : 'guandu');
+  useMap(mapId);
+  if (mapId === 'quanjing') {
+    const q = MAPS.quanjing;
+    cfg = { ...cfg,
+      terrain: { ...cfg.terrain, seed: q.seed, riverWidthTiles: 1, cityRadiusTiles: 1, cityWalls: false },
+      meta: { ...cfg.meta, subtitle: q.subtitle } };
+    const two = story.chapters.filter((c) => c.mapId === 'quanjing');
+    story = { ...story, meta: { ...story.meta, prologue: q.prologue },
+      chapters: two.map((c, i) => ({ ...c, minTurn: i * 6 })) };
+  } else {
+    story = { ...story, chapters: story.chapters.filter((c) => c.mapId !== 'quanjing') };
+  }
+  $('hudMap').textContent = mapId === 'quanjing' ? '渡' : '境';
+  $('hudMap').title = mapId === 'quanjing' ? '回官渡本图' : '另开十三州全境一局';
   // 版本号只来自 src/version.js：装配时注入，存档 / 界面 / 军令帖都读它，
   // 配置文件里不再存任何版本字面量。
   cfg.meta.version = VERSION; cfg.version = VERSION;
@@ -1016,7 +1043,7 @@ async function boot() {
   state = newCampaign('cao');
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
-    style: new URLSearchParams(location.search).get('style') ?? 'atlas',
+    style: mapStyle(),
   });
   shell = createShell({ cfg, uiData, story, historica, actions, getState: () => state,
     getReports: () => reports, onRoute: (route) => tutNotify(`tab:${route}`) });
@@ -1029,11 +1056,11 @@ async function boot() {
   // 开场只叙世界内时序，不写版本 / 栅格 / 画风；刊行记另立 release.html。
   $('menuSub').textContent = `${formatCalendar(0, cfg.calendar, 'short')} · 司空府行台`;
 
-  const raw = readFromStorage();
-  if (raw && raw.v === 1) {
-    const d = new Date(raw.savedAt ?? Date.now());
+  const save = (raw && raw.v === 1 && (raw.mapId ?? 'guandu') === mapId) ? raw : null;
+  if (save) {
+    const d = new Date(save.savedAt ?? Date.now());
     $('saveTip').hidden = false;
-    $('saveTip').textContent = `本机存档：${formatCalendar(raw.turn, cfg.calendar, 'short')} · ${raw.chapter ? story.chapters.find((c) => c.id === raw.chapter)?.title ?? '' : ''} · ${d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
+    $('saveTip').textContent = `本机存档：${formatCalendar(save.turn, cfg.calendar, 'short')} · ${save.chapter ? story.chapters.find((c) => c.id === save.chapter)?.title ?? '' : ''} · ${d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`;
     $('continueBtn').hidden = false;
   }
 
@@ -1045,6 +1072,8 @@ async function boot() {
   requestAnimationFrame(frame);
 
   window.__sanguo = {
+    get mapId() { return MAP_ID; },
+    useMap,
     get state() { return state; },
     get cfg() { return cfg; },
     get uiData() { return uiData; },

@@ -28,6 +28,7 @@ export function serializeGame({ cfg, state, rng, snapshot, ui }) {
   }
   return {
     v: 1, version: cfg.meta.version,
+    mapId: state.mapId ?? 'guandu',
     savedAt: Date.now(),
     seed: state.rngSeed,
     playerFaction: state.playerFaction,
@@ -91,7 +92,7 @@ export function deserializeGame(cfg, raw) {
     'forces', 'intel', 'forts', 'battles', 'stats',
     'facilities', 'armies', 'copper', 'settings', 'reports', 'claimedTasks',
     'chapter', 'storyBaseline', 'storyFlags', 'storyChoices', 'chapterHistory', 'storyMails',
-    'actors', 'commandLog', 'rngCalls'];
+    'actors', 'commandLog', 'rngCalls', 'mapId'];
   for (const k of keys) if (raw[k] != null) state[k] = raw[k];
   if (Array.isArray(raw.nextIds)) {
     [state.nextOrderId, state.nextForceId, state.nextUnitId, state.nextBattleId] = raw.nextIds;

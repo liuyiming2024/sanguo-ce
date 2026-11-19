@@ -64,9 +64,10 @@ try {
     (await page.locator('#proBeat').innerText()).includes('董承') &&
     (await page.locator('#proRole').innerText()).includes('司空府参军事') &&
     !(await page.locator('#mainMenu').innerHTML()).includes('factionPick'));
-  check('主菜单标注当前版本与栅格规模',
-    (await page.locator('#menuSub').innerText()).includes('144×108') &&
-    (await page.locator('#menuSub').innerText()).includes(VERSION));
+  check('开场只叙世界内时序，不报版本与栅格',
+    (await page.locator('#menuSub').innerText()).includes('建安五年') &&
+    !(await page.locator('#menuSub').innerText()).includes('栅格') &&
+    !(await page.locator('#menuSub').innerText()).includes(VERSION));
   check('开局是建安五年庚辰正月初一',
     (await page.locator('#proDate').innerText()).includes('建安五年') &&
     (await page.locator('#proDate').innerText()).includes('庚辰') &&

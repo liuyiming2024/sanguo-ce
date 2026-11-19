@@ -565,6 +565,11 @@ ${sec('天下大势', dateLabel(s, 'full'))}
   function pageSystem() {
     const s = state();
     return `<div class="arcEntry"><button class="bigBtn ghost" type="button" data-act="archive">典 籍 总 揽 · 六门 →</button></div>
+${sec('图幅', '同一套玩法，多铺一张图')}
+      <div class="cmdGroup" style="max-width:420px">
+        <a class="bigBtn ghost" style="display:block;text-align:center;text-decoration:none" href="./?map=guandu">官渡本图 · 八回章回</a>
+        <a class="bigBtn ghost" style="display:block;text-align:center;text-decoration:none" href="./?map=quanjing">十三州全境 · 两章</a>
+      </div>
 ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       <div class="listRow" style="cursor:default"><span class="tag">节奏</span>
         <div style="flex:1"><div class="t">自动推进回合</div><div class="s">每 ${cfg.calendar.secPerTurn} 秒走 1 旬</div></div>
@@ -608,7 +613,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     const nav = H.cats.map((c) =>
       `<button class="bigBtn ghost" type="button" data-act="arcCat" data-id="${esc(c.id)}">${esc(c.glyph)} · ${esc(c.name)}</button>`).join('');
     const cats = H.cats.map((c) => `
-      <div class="secTitle" id="arc-${esc(c.id)}">${esc(c.name)}<small>${esc(c.intro)}</small></div>
+      <div class="secTitle" id="arc-${esc(c.id)}">${esc(c.name)} <small>${esc(c.intro)}</small></div>
       <div class="cardList arcList">${c.items.map((it) => `
         <div class="card arcItem"><span class="arcLv">${esc(it.lv)}</span>
           <h3>${esc(it.t)}</h3>

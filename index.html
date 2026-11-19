@@ -29,6 +29,7 @@
     <div class="faction" id="factionTag">曹操</div>
     <div class="clock" id="clock">第一回 · 许都受檄</div>
     <button class="hudBtn" id="hudSystem" type="button" title="系统" aria-label="系统">⚙</button>
+    <button class="hudBtn" id="hudMap" type="button" title="切换图幅" aria-label="切换图幅">境</button>
   </div>
 </header>
 
@@ -152,9 +153,8 @@
 </section>
 
 <section id="mainMenu" aria-label="序章 · 许都受檄">
-  <div class="menuCard proCard">
+  <div class="menuCard proCard coverCard">
     <div class="mseal">汉</div>
-    <h1>三国策 <span>· 官渡</span></h1>
     <p class="menuSub" id="menuSub">建安五年 庚辰 · 正月</p>
 
     <div class="prologue">
@@ -167,11 +167,11 @@
 
     <div class="saveTip" id="saveTip" hidden></div>
 
-    <div class="proChoice" id="proChoice">
-      <div class="pcLabel">府中议事 · 开局侧重（非势力选择）</div>
+    <details class="proChoice" id="proChoice">
+      <summary>府中议事 · 开局侧重</summary>
       <button class="pcBtn selected" type="button" data-open="farm">先屯田积谷<small>粮草 +2500 · 城主府 +1</small></button>
       <button class="pcBtn" type="button" data-open="scout">先遣斥候北探<small>白马 / 黎阳 / 延津情报</small></button>
-    </div>
+    </details>
 
     <button class="startBtn" id="continueBtn" type="button" hidden>继 续 上 一 局</button>
     <button class="startBtn ghost" id="startBtn" type="button">入 局 · 受 檄</button>

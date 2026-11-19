@@ -1,16 +1,17 @@
+import { QUANJING } from './quanjing-data.js';
 // 建安五年（200）官渡战线局部地理锚点。
 // 城池、水系、山脊、泽薮、关隘都用史实名 + 近似经纬度；这是「近似投影」而非考古复原，
 // 目的是给 144×108 栅格提供真实地理骨架，让地形不是随机噪声拼贴。
 // 逻辑层、渲染层、寻路层都只读这一份表。
 
-export const LON_MIN = 112.75, LON_MAX = 116.15;
-export const LAT_MIN = 32.65, LAT_MAX = 36.65;
+export let LON_MIN = 112.75, LON_MAX = 116.15;
+export let LAT_MIN = 32.65, LAT_MAX = 36.65;
 
 const C = (id, name, lon, lat, owner, pop, wall, rank, note) =>
   ({ id, name, lon, lat, owner, pop, wall, rank, note });
 
 // rank: 1=都城/州治 2=郡治 3=县/渡口重镇 4=营垒
-export const CITIES = [
+const GUANDU_CITIES = [
   C('xudu',    '许都', 113.85, 34.03, 'cao',  92000, 100, 1, '建安元年迁都，天子所在'),
   C('ye',      '邺',   114.40, 36.30, 'yuan', 88000, 100, 1, '袁绍本据，冀州治'),
   C('runan',   '汝南', 114.36, 33.01, 'liu',  36000,  80, 2, '刘备扰许南'),
@@ -27,7 +28,7 @@ export const CITIES = [
 
 // 汉末黄河故道（荥阳北 → 延津 → 白马 → 黎阳 → 东北入冀），近似折线。
 // 与今日黄河走向不同，按《水经注》所载东汉河道方向拟合。
-export const RIVER_HUANGHE = [
+const GUANDU_RIVER_HUANGHE = [
   [112.78, 34.98], [113.05, 35.02], [113.35, 35.10], [113.62, 35.16],
   [113.88, 35.12], [114.20, 35.15], [114.42, 35.48], [114.55, 35.68],
   [114.86, 35.74], [115.18, 35.78], [115.48, 36.02], [115.78, 36.25],
@@ -35,7 +36,7 @@ export const RIVER_HUANGHE = [
 ];
 
 // 支流：颍水、汝水、鸿沟/汴水、淇水、荡水。线宽比黄河窄。
-export const RIVERS_MINOR = [
+const GUANDU_RIVERS_MINOR = [
   { name: '颍水', width: 1, pts: [[113.10, 33.20], [113.30, 33.55], [113.48, 33.90], [113.62, 34.12], [113.85, 34.28], [114.10, 34.40]] },
   { name: '汝水', width: 1, pts: [[113.90, 32.70], [114.10, 32.95], [114.36, 33.15], [114.62, 33.40], [114.82, 33.72], [115.05, 33.95]] },
   { name: '鸿沟', width: 1, pts: [[113.55, 34.30], [113.78, 34.42], [114.00, 34.55], [114.22, 34.62], [114.53, 34.66]] },
@@ -44,7 +45,7 @@ export const RIVERS_MINOR = [
 ];
 
 // 古泽薮：圃田泽（中牟西北）、大野泽（东北隅）、荥泽（荥阳北）。
-export const LAKES = [
+const GUANDU_LAKES = [
   { name: '圃田泽', lon: 113.90, lat: 34.80, rx: 0.20, ry: 0.10 },
   { name: '荥泽',   lon: 113.30, lat: 35.02, rx: 0.14, ry: 0.08 },
   { name: '大野泽', lon: 115.62, lat: 35.42, rx: 0.30, ry: 0.16 },
@@ -52,7 +53,7 @@ export const LAKES = [
 
 // 山脊骨架：嵩山—箕山（西）、太行南段（北）、泰山余脉（东北）。
 // 每条折线带一个影响宽度（经度/纬度单位），用于抬高高程。
-export const RIDGES = [
+const GUANDU_RIDGES = [
   { name: '嵩山', width: 0.16, height: 0.92, pts: [[112.82, 33.55], [113.02, 33.90], [113.12, 34.28], [113.05, 34.62], [113.22, 34.92]] },
   { name: '箕山', width: 0.12, height: 0.74, pts: [[113.28, 33.35], [113.52, 33.62], [113.66, 33.95], [113.55, 34.20]] },
   { name: '太行', width: 0.20, height: 0.96, pts: [[114.05, 36.62], [114.35, 36.40], [114.62, 36.18], [114.86, 35.95], [115.10, 35.80]] },
@@ -64,7 +65,7 @@ export const RIDGES = [
 // 官渡地望（中牟说 / 原阳说）、酸枣故城、大野泽今地、历山今地诸异说并录不断，
 // 逻辑层坐标一律保持原值——这是存档与寻路的边界，不是考据欠账；
 // 实验层舆图已按取数表校正/删去，见 docs/东汉郡国今地核查权威口径.md。
-export const PASSES = [
+const GUANDU_PASSES = [
   { name: '虎牢关', lon: 113.18, lat: 34.82, kind: 'pass', note: '成皋之险，洛阳东门户' },
   { name: '轘辕关', lon: 113.08, lat: 34.42, kind: 'pass', note: '嵩山轘辕道' },
   { name: '延津渡', lon: 114.20, lat: 35.15, kind: 'ford' },
@@ -77,7 +78,7 @@ export const PASSES = [
 // 汉末主要道路。via 是沿途真实地名/地形拐点，道路会沿这条折线铺格，
 // 不是两点直线；遇河自动由 ford 打通，遇山由 pass 打通。
 const R = (a, b, kind, name, via = []) => ({ a, b, kind, name, via });
-export const ROADS = [
+const GUANDU_ROADS = [
   R('xudu', 'chenliu', 'road', '许陈道', [[113.95, 34.20], [114.20, 34.42], [114.45, 34.58]]),
   R('xudu', 'zhongmu', 'road', '许北道', [[113.88, 34.22], [113.95, 34.48]]),
   R('xudu', 'yangdi',  'road', '颍川道', [[113.72, 34.08], [113.60, 34.10]]),
@@ -95,6 +96,37 @@ export const ROADS = [
   R('qiaoxian','runan',   'road', '谯汝道', [[115.35, 33.50], [114.90, 33.28]]),
   R('yangdi',  'runan',   'road', '颍汝道', [[113.70, 33.70], [114.02, 33.40]]),
 ];
+
+// ── 图幅切换：同一套玩法，多铺一张图。所有下游模块读的是活绑定 ──────────
+const GUANDU = {
+  bounds: { LON_MIN: 112.75, LON_MAX: 116.15, LAT_MIN: 32.65, LAT_MAX: 36.65 },
+  cities: GUANDU_CITIES, river: GUANDU_RIVER_HUANGHE, riversMinor: GUANDU_RIVERS_MINOR,
+  lakes: GUANDU_LAKES, ridges: GUANDU_RIDGES, passes: GUANDU_PASSES, roads: GUANDU_ROADS,
+};
+export const MAPS = { guandu: GUANDU, quanjing: QUANJING };
+export let CITIES = GUANDU_CITIES;
+export let RIVER_HUANGHE = GUANDU_RIVER_HUANGHE;
+export let RIVERS_MINOR = GUANDU_RIVERS_MINOR;
+export let LAKES = GUANDU_LAKES;
+export let RIDGES = GUANDU_RIDGES;
+export let PASSES = GUANDU_PASSES;
+export let ROADS = GUANDU_ROADS;
+export let MAP_ID = 'guandu';
+
+/** 换图幅：装配层在建局面之前调用；存档按 mapId 还原到同一张图。 */
+export function useMap(id) {
+  const m = MAPS[id] ?? GUANDU;
+  MAP_ID = MAPS[id] ? id : 'guandu';
+  ({ LON_MIN, LON_MAX, LAT_MIN, LAT_MAX } = m.bounds);
+  CITIES = m.cities;
+  RIVER_HUANGHE = m.river;
+  RIVERS_MINOR = m.riversMinor;
+  LAKES = m.lakes;
+  RIDGES = m.ridges;
+  PASSES = m.passes;
+  ROADS = m.roads;
+  return MAP_ID;
+}
 
 /** 经纬度 → 栅格坐标（不取整，供刷线插值用）。 */
 export function geoToTile(lon, lat, cols, rows) {
