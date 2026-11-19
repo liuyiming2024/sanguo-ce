@@ -631,11 +631,14 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
         <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="out">缩 小</button>
         <button class="bigBtn ghost" type="button" data-act="atlasZoom" data-d="reset">复 位</button>
         <button class="bigBtn ghost" type="button" data-act="atlasDetail" aria-pressed="false">中原详图</button>
+        <button class="bigBtn ghost" type="button" data-act="atlasFocus" data-f="hebei" aria-pressed="false">河北详图</button>
+        <button class="bigBtn ghost" type="button" data-act="atlasFocus" data-f="jingyang" aria-pressed="false">荆扬详图</button>
       </div>
       <canvas id="atlasCanvas" aria-label="建安五年十三州全境舆图"></canvas>
       <p class="readBody">此图全幅十三州，与行台沙盘之豫兖战区非同一图幅。背景层为地表成因，
         地物层为州郡、关津、烽燧、长城与主景题识；势力归属不预绘，由局内动态给出。
-        笔法、连续场、色板与史料锚点悉仍其旧，见 docs/十三州全境取数表.md。</p>
+        笔法、连续场、色板与史料锚点悉仍其旧，见 docs/十三州全境取数表.md。
+        中原、河北、荆扬三幅分图各有独立注记分级；缩小后注记会逐层收回，势力归属仍由局内动态给出。</p>
       <button class="bigBtn ghost" type="button" data-act="back">返回典籍总揽</button>`;
   }
 
@@ -714,7 +717,15 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr);
     const ctx = c.getContext('2d');
     const base = Math.min(cw / a.W, ch / a.H);
-    let zoom = 1, px = 0, py = 0, detail = false;
+    let zoom = 1, px = 0, py = 0, detail = false, focus = 'all';
+    /* 四档视角与 demos 同表；lon/lat → 1400×1100 图幅像素 → CSS px（乘 base）。
+       缩小到阈值以下注记逐层收起，不锁死。 */
+    const VIEWS = {
+      all:      {zoom:1.00, lon:109.50, lat:29.00},
+      zhongyuan:{zoom:2.70, lon:114.15, lat:34.55},
+      hebei:    {zoom:3.10, lon:115.20, lat:37.20},
+      jingyang: {zoom:2.80, lon:115.80, lat:29.00},
+    };
     function paint() {
       // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹
       if (a.setTier) a.setTier(a.tierOf(zoom));
@@ -738,7 +749,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       ctx.save();
       ctx.translate(cw / 2 - a.W / 2 * base, ch / 2 - a.H / 2 * base);
       ctx.scale(base, base);
-      const view = { zoom, panX: px / base, panY: py / base, detail,
+      const view = { zoom, panX: px / base, panY: py / base, detail, focus,
                      showFeatures: !!a.fg, showInk: true };
       if (a.drawInkDetail) a.drawInkDetail(ctx, view);
       a.drawLabels(ctx, view);
@@ -763,19 +774,41 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       zoom = n; paint();
     }, { passive: false });
     paint();
+    function syncFocusButtons() {
+      const map = [['atlasDetail', 'zhongyuan'], ['atlasFocus', 'hebei'], ['atlasFocus', 'jingyang']];
+      for (const [act, f] of map) {
+        const b = screen.querySelector(`[data-act="${act}"]${f === 'zhongyuan' ? '' : `[data-f="${f}"]`}`);
+        if (b) b.setAttribute('aria-pressed', String(focus === f));
+      }
+      const dbtn = screen.querySelector('[data-act="atlasDetail"]');
+      if (dbtn) dbtn.textContent = focus === 'zhongyuan' ? '返回全境' : '中原详图';
+    }
+    function setFocus(f) {
+      focus = a.FOCUS?.[f] ? f : 'all';
+      detail = focus === 'zhongyuan';
+      // 切档才重建地物层（分图专属地物随档出现），滚轮/拖动仍只做合成
+      if (a.setFocus) a.setFocus(focus);
+      const V = VIEWS[focus];
+      zoom = V.zoom;
+      const mx = a.lon2x(V.lon), my = a.lat2y(V.lat);
+      px = -(mx - a.W / 2) * zoom * base;
+      py = -(my - a.H / 2) * zoom * base;
+      syncFocusButtons();
+      paint();
+    }
     atlasInst = {
       zoom(what) {
-        if (what === 'reset') { zoom = 1; px = 0; py = 0; }
-        else zoom = Math.max(0.5, Math.min(6, zoom * (what === 'in' ? 1.28 : 1 / 1.28)));
+        // 「复位」与 demos 一致：回全境档（含注记与朱题），不只是把倍率拨回 1
+        if (what === 'reset') { setFocus('all'); return; }
+        zoom = Math.max(0.5, Math.min(6, zoom * (what === 'in' ? 1.28 : 1 / 1.28)));
         paint();
       },
       toggleDetail(btn) {
-        detail = !detail;
-        btn?.setAttribute('aria-pressed', String(detail));
-        if (btn) btn.textContent = detail ? '返回全境' : '中原详图';
-        if (detail) zoom = Math.max(zoom, 1.3);
-        paint();
+        setFocus(detail ? 'all' : 'zhongyuan');
+        if (btn) btn.setAttribute('aria-pressed', String(detail));
       },
+      setFocus,
+      get focus() { return focus; },
     };
   }
 
@@ -854,6 +887,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       case 'atlasView': navigate('atlasView'); break;
       case 'atlasZoom': atlasInst?.zoom(el.dataset.d); break;
       case 'atlasDetail': atlasInst?.toggleDetail(el); break;
+      case 'atlasFocus': atlasInst?.setFocus?.(el.dataset.f); break;
       default: break;
     }
   });

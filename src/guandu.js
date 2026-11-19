@@ -912,6 +912,21 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
   /* ── 作战区主景补绘 ────────────────────────────────────────────────
      全部用一次性笔路（stroke 路径 / brush 变宽短笔），不用 rect / ellipse，
      也不复制同一图章。用 h1() 取确定性变化，不推进 seed —— 既有绘制序列不动。 */
+  /* 主景竖注：带纸白描边，密林背景上读得出；字级比城名略大，但不抢城郭。
+     只给 sceneDetails 用，不改动既有 vertical() 的任何调用。 */
+  function sceneLabel(text,x,y,size,col,alpha){
+    const step=size*1.12;
+    ctx.save();
+    ctx.font=`${size}px "WenQuanYi Micro Hei","Noto Serif CJK SC",serif`;
+    ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.lineWidth=2.4; ctx.lineJoin='round'; ctx.strokeStyle='#ece4ce';
+    for(let i=0;i<text.length;i++){
+      const yy=y+i*step;
+      ctx.globalAlpha=alpha*.80; ctx.strokeText(text[i],x,yy);
+      ctx.globalAlpha=alpha;     ctx.fillStyle=col; ctx.fillText(text[i],x,yy);
+    }
+    ctx.restore();
+  }
   function sceneDetails(){
     // ① 雒阳灵台：不规则夯土高台，边线抖动不闭合；环柏绕台
     {
@@ -936,7 +951,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
               .9+h1(k*9.7)*.6,.12);
         ctx.fill();
       }
-      vertical('灵台',x+16,y-8,9,'#f0e9d5',.84);
+      sceneLabel('灵台',x+17,y-14,10.5,'#f0e9d5',.90);
     }
     // ② 邙山东汉圆丘封土与冢柏：断续折线近似圆丘，不闭合成椭圆
     {
@@ -959,7 +974,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
               1+h1(k*6.1)*.7,.14);
         ctx.fill();
       }
-      vertical('邙陵',x+15,y-9,9,'#f0e9d5',.82);
+      sceneLabel('邙陵',x+16,y+8,10.5,'#f0e9d5',.88);
     }
     // ③ 阳城汉三阙：一对石垛，中留阙道；不是门楼宅院
     {
@@ -980,7 +995,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
         ctx.beginPath(); ctx.moveTo(x-4,y+2+k*1.6); ctx.lineTo(x+4,y+2+k*1.6); ctx.stroke();
       }
       ctx.restore();
-      vertical('汉阙',x+13,y-8,9,'#f0e9d5',.82);
+      sceneLabel('汉阙',x+14,y-16,10.5,'#f0e9d5',.88);
     }
     // ④ 轘辕关十二曲：一条折返十二次的一次性笔路（史料「十二曲」）
     {
@@ -993,7 +1008,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
         ctx.lineTo(xx,yy);
       }
       ctx.stroke(); ctx.restore();
-      vertical('轘辕',x+13,y-10,9,'#f0e9d5',.82);
+      sceneLabel('轘辕',x+15,y+6,10.5,'#f0e9d5',.88);
     }
     // ⑤ 官渡战具：土山高橹 / 霹雳车发石 / 地道—长堑
     //    与沙堆微地形分开：沙堆是地表，战具是九月双方的工程。
@@ -1026,7 +1041,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
         ctx.stroke();
       }
       ctx.restore();
-      vertical('战具',x+18,y-12,9,'#f0e9d5',.84);
+      sceneLabel('战具',x+20,y-16,10.5,'#f0e9d5',.90);
     }
   }
 

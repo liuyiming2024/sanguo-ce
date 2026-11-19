@@ -989,27 +989,44 @@ function drawInkDetail(){
       const ang=r.wind+(n-.5)*1.5, ca=Math.cos(ang), sa=Math.sin(ang);
       const jx=sx+(q-.5)*step*.9, jy=sy+(rnd(q*97+lon)-.5)*step*.9;
       const rot=(dx,dy)=>[jx+dx*ca-dy*sa, jy+dx*sa+dy*ca];
-      const L=3+rnd(lon*13+lat*7)*4.4;
-      const kind=Math.floor(rnd(lon*71+lat*43)*4);
+      /* 树种连续场：密 + 湿 + 南 → 针叶 / 阔叶，稀 + 燥 + 沙 → 灌丛。
+         不是随机四选一：权重由场值连续给出，过渡带里三套笔交错。
+         放大后「一簇簇可辨小团」的根因就是团只换色和尺寸、不换笔型。 */
+      const canopy = clamp(0.16 + 0.60*r.density + 0.26*r.south + 0.14*r.wet
+                           - 0.34*r.desert - 0.22*r.lingnan - 0.18*r.coast
+                           - 0.16*r.sand - 0.12*r.karst + (n-.5)*.26, 0, 1);
+      const needle = clamp((canopy-.46)/.40, 0, 1);
+      const shrub  = clamp((.50-canopy)/.36, 0, 1);
+      const broad  = clamp(1-needle-shrub, 0, 1);
+      const pick = rnd(lon*71+lat*43);
+      const wNeedle = needle*.74, wShrub = shrub*.66;
+      const L = (3+rnd(lon*13+lat*7)*4.4) * (0.82 + needle*.42 - shrub*.24);
+      const W0 = 0.80 + broad*.55 + shrub*.42 - needle*.22;
       // 双勾只在簇心、且只占约两成；其余写意，避免每笔都带框
       const hook = cluster>.66 && rnd(lon*29+lat*17)<.26;
-      const col = r.desert>.55 ? 'rgba(138,112,78,.44)'
-                : r.south>.52  ? 'rgba(42,82,62,.50)'
-                : r.lingnan>.45? 'rgba(72,100,74,.42)'
-                : n>.55        ? 'rgba(46,70,54,.52)' : 'rgba(114,92,62,.46)';
-      if(kind===0){        // 横向燥笔
-        brush(ctx,[rot(-L,1),rot(-L*.2,-.6),rot(L,.4)],1.2,.32,col,1,hook);
-      } else if(kind===1){ // 斜撇，起粗收尖
-        brush(ctx,[rot(-L*.7,3),rot(0,0),rot(L*.55,-3.4)],1.35,.24,col,1,hook);
-        if(cluster>.70) brush(ctx,[rot(-L*.3,5),rot(L*.4,2.6)],.7,.22,col,1,false);
-      } else if(kind===2){ // 双勾叶形（唯一大量用双勾的一型）
-        brush(ctx,[rot(-L,0),rot(0,-2.2),rot(L,0)],1.5,.42,col,1,cluster>.68);
-        brush(ctx,[rot(-L*.5,2.4),rot(0,1.4),rot(L*.5,2.6)],.62,.2,col,1,false);
-      } else {             // 散点短簇，三笔各自不同长
+      // 色阶也连续：锚点间线性插值 + 小幅噪声，没有 if 切出来的色片台阶
+      let cc = mix([114,92,62],[46,70,54], clamp(r.south*.70+r.wet*.50,0,1));
+      cc = mix(cc,[138,112,78], clamp(r.desert*.80+r.sand*.40,0,1));
+      cc = mix(cc,[72,100,74],  clamp(r.lingnan*.50+r.karst*.30,0,1));
+      const cd=(n-.5)*16;
+      const col=`rgba(${Math.round(clamp(cc[0]+cd,0,255))},${Math.round(clamp(cc[1]+cd,0,255))},${Math.round(clamp(cc[2]+cd*.8,0,255))},${(0.42+0.10*broad).toFixed(2)})`;
+      if(pick < wNeedle){
+        // 针叶：两三根细长收尖的笔从一点向外，夹角小、笔更窄
+        const fan=.18+rnd(lon*37+lat*11)*.22;
         for(let t=0;t<3;t++){
-          const d=t*2.3-2, l=L*(.38+rnd(lon*t*19+lat*7)*.5);
-          brush(ctx,[rot(-l,d),rot(0,d-.8),rot(l*.8,d+.4)],.8,.22,col,1,false);
+          const d=(t-1)*fan;
+          brush(ctx,[rot(-L*.18,d*.4),rot(0,d-1.2),rot(L,d*.7-.6)],W0*.62,.12,col,1,t===1&&hook);
         }
+      } else if(pick < wNeedle+wShrub){
+        // 灌丛：横走扁平、短而宽，三四笔错开，不排成阵列
+        for(let t=0;t<3;t++){
+          const d=t*2.1-2.1, l=L*(.55+rnd(lon*t*17+lat*5)*.35);
+          brush(ctx,[rot(-l,d),rot(0,d-.7),rot(l*.9,d+.3)],W0*.82,.16,col,1,false);
+        }
+      } else {
+        // 阔叶：短粗成簇，一主一副，双勾只在簇心
+        brush(ctx,[rot(-L*.8,1.2),rot(-L*.12,-1.4),rot(L*.7,.6)],W0,W0*.30,col,1,hook);
+        if(cluster>.68) brush(ctx,[rot(-L*.32,3.4),rot(L*.45,2.2)],W0*.48,.18,col,1,false);
       }
       cnt++;
     }
