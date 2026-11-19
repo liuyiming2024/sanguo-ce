@@ -599,11 +599,16 @@ ok(/'archive', 'atlasView'/.test(shellSrc), '典籍与全境页必须走纸页 d
 ok(/fetch\('\.\/config\/historica\.json'\)/.test(mainMod) && /historica, actions/.test(mainMod),
   '装配层必须加载并传入典籍数据源');
 
-for (const sec of ['## 12. 史料总揽', '## 13. 细目考据存目', '## 14. 游戏内', '## 15. 重难']) {
+for (const sec of ['## 12. 史料总揽', '## 13. 细目考据存目', '## 14. 游戏内', '## 15. 重难', '## 16. 资料总揽']) {
   ok(docSum.includes(sec), `史料主文档缺 ${sec}`);
 }
 ok(/实施总纲|疑难点|落地文件/.test(docSum) && /config\/historica\.json/.test(docSum),
   '§12 必须是「出处→可信度→落地→入图→游戏内→疑难点」的实施总揽');
+ok(/16\.2 资料总目/.test(docSum) && /16\.6 未闭环/.test(docSum) &&
+   /docs\/全境州郡取数表\.md/.test(docSum) && /不进游戏/.test(docSum),
+  '§16 后台总目必须续写在既有主文档里：总目、未闭环、全境底本、文白分工缺一不可');
+ok(!/全境那一套只用于/.test(docSum),
+  '「全境内核只用于典籍页」是过时口径，已另开 ?map=quanjing 可玩图幅，不得回潮');
 ok(/不进游戏/.test(docSum) && /白话/.test(docSum),
   '§13 必须明确标注「后台用 · 白话 · 不进游戏」');
 ok(existsSync(join(root, 'docs/十三州全境取数表.md')) &&
