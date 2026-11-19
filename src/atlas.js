@@ -11,6 +11,15 @@
      - 州治白圆片改不闭合界画城廓；乌巢圆囷、营垒闭合圈改断续弧笔；黄河纸白芯压暗
      - 修掉未传 createCanvas 时默认 mk() 的无限递归
  */
+/* 四档视角：全境 + 三幅分图。每档有独立的注记 LOD 阈值与题签，
+   分图缩放继续生效——缩小到阈值以下，注记照样逐层收回去，不锁死。 */
+const FOCUS = {
+  all:      {l2:1.15,l3:2.00,title:'十三州全境',sub:'纵横不拘实距 · 州界不作考据边界'},
+  zhongyuan:{l2:0.85,l3:1.30,title:'中原详图 · 官渡至许都',sub:'汉末县邑与战具按比例尺逐层显字 · 朱题在此'},
+  hebei:    {l2:0.95,l3:1.45,title:'河北详图 · 邺至黎阳',sub:'坞堡、烽燧、河防按比例尺逐层显字'},
+  jingyang: {l2:1.00,l3:1.50,title:'荆扬详图 · 江陵至建业',sub:'水田、陂塘、泽薮按比例尺逐层显字'},
+};
+
 export function createAtlas(opts = {}) {
 
 /* 建安五年全境舆图。全部由连续场 + 一次性路径生成，无格网平铺、无位图。
@@ -24,6 +33,7 @@ const x2lon = x => LON0 + x/W*(LON1-LON0);
 const y2lat = y => LAT1 - y/H*(LAT1-LAT0);
 
   let seed = opts.seed ?? 202005;
+  let focus = FOCUS[opts.focus] ? opts.focus : 'all';
   const mk = opts.createCanvas ?? (() => {
     if (typeof document !== 'undefined' && typeof document.createElement === 'function')
       return document.createElement('canvas');
@@ -48,7 +58,8 @@ function mix(c1,c2,t){ return [lerp(c1[0],c2[0],t),lerp(c1[1],c2[1],t),lerp(c1[2
 
 /* ---------- 区域权重：南北之别是连续场，不是分区填色 ---------- */
 const C_NORTH=[186,168,126], C_SOUTH=[118,148,120], C_DESERT=[214,197,160],
-      C_LINGNAN=[152,170,134], C_WET=[92,126,130];
+      C_LINGNAN=[152,170,134], C_WET=[92,126,130],
+      C_SAND=[206,186,142], C_COAST=[166,178,164], C_KARST=[142,158,140];
 function region(lon,lat){
   // 秦岭—淮河线随经度起伏，过渡带宽 8 度，避免硬切
   const qin = 33.2 + 0.9*Math.sin((lon-104)*0.42) + (lon<112?0.5:0)
@@ -57,13 +68,24 @@ function region(lon,lat){
   const desert = clamp((lat-37)/7,0,1)*clamp((108-lon)/14,0,1);
   const lingnan = clamp((25-lat)/10,0,1);
   const wet = clamp(1-Math.abs(lat-30.6)/2.8,0,1)*clamp((lon-104)/9,0,1)*0.42;
-  // 密度：中原与江南高，河西/塞北/岭南低；由连续场给出，不按区硬切
+  /* 三类补充地貌：全是连续场，边界随噪声起伏，不画区划框、不按格硬切。
+     ① 黄河下游沙碛：建安初河道南摆后的故道沙地，官渡「依沙堆为营」一带；
+     ② 海积平原：青徐扬东缘沿海滩涂与盐田，岸线随纬度与噪声摆动；
+     ③ 喀斯特：零陵桂阳一线（南岭南麓）孤峰点簇，只在小片高值区出现。 */
+  const sand = clamp(1-Math.abs(lat-35.35)/1.85,0,1) * clamp((lon-113.0)/2.2,0,1)
+             * clamp((119.4-lon)/2.6,0,1) * (0.55+0.45*fbm(lon*2.2,lat*2.1,seed*.009));
+  const coastEdge = 119.0 + 1.5*Math.sin((lat-24)*0.42) + 0.7*(fbm(lon*1.1,lat*1.3,seed*.013)-.5);
+  const coast = clamp((lon-coastEdge)/2.6,0,1) * clamp((lat-22)/4,0,1) * clamp((41-lat)/3,0,1);
+  const karst = Math.exp(-Math.pow((lon-111.8)/1.9,2)) * Math.exp(-Math.pow((lat-25.6)/1.55,2))
+              * clamp((27.8-lat)/2.2,0,1);
+  // 密度：中原与江南高，河西/塞北/岭南低；沙碛与滩涂更稀，孤峰区略密
   const core = Math.exp(-Math.pow((lat-33.5)/9,2)) * clamp((lon-100)/10,0,1);
   const density = clamp(0.20 + 0.72*core + 0.30*wet - 0.42*desert - 0.30*lingnan
+                  - 0.20*sand - 0.16*coast + 0.10*karst
                   + (fbm(lon*.42,lat*.48,seed*.006)-.5)*0.5, 0.06, 1);
   // 风势：连续场决定笔向，相邻区域渐变而非全图同向
   const wind = (fbm(lon*.32,lat*.36,seed*.008)-.5)*2.4 + (south-.5)*0.5;
-  return {south,desert:clamp(desert,0,1),lingnan,wet,qin,density,wind};
+  return {south,desert:clamp(desert,0,1),lingnan,wet,qin,density,wind,sand,coast,karst};
 }
 function fieldColor(lon,lat){
   const r=region(lon,lat), n=fbm(lon*0.55, lat*0.62, seed*0.001);
@@ -71,6 +93,9 @@ function fieldColor(lon,lat){
   c=mix(c,C_DESERT,r.desert*0.86);
   c=mix(c,C_LINGNAN,r.lingnan*0.42);
   c=mix(c,C_WET,r.wet*0.48);
+  c=mix(c,C_SAND,r.sand*0.68);
+  c=mix(c,C_COAST,r.coast*0.55);
+  c=mix(c,C_KARST,r.karst*0.42);
   const d=(n-0.5)*38;
   return [clamp(c[0]+d,0,255),clamp(c[1]+d,0,255),clamp(c[2]+d*0.8,0,255), r];
 }
@@ -149,9 +174,11 @@ function vlabel(g,txt,x,y,size,color,halo,step){
   g.textBaseline='alphabetic';
 }
 /* 一级朱题：朱点随图走，文字与纸衬交给屏幕注记层（缩放时不被拉大） */
-function sealLabel(g,txt,x,y){
-  irregular(g,x,y-2,2.3,2.3,x*.1+y*.07+1,'rgba(166,49,41,.78)',null,0);
-  labels.push({mx:x,my:y,txt,level:1,kind:'seal'});
+let sealOn = true;   // 只在全境 / 中原分图落朱，河北荆扬不串朱色
+function sealLabel(g,txt,x,y,area){
+  if(sealOn) irregular(g,x,y-2,2.3,2.3,x*.1+y*.07+1,'rgba(166,49,41,.78)',null,0);
+  // 朱题位置被引笔抬高，按注记坐标反算经纬度会误判区域；这里直接给区域
+  labels.push({mx:x,my:y,txt,level:1,kind:'seal',area:area||'zhongyuan'});
 }
 /* 二级墨注：有个性但不抢，随比例尺第二档出现 */
 function inkNote(g,txt,x,y){
@@ -160,8 +187,9 @@ function inkNote(g,txt,x,y){
 /* 注记分级绘制：屏幕固定字号，只按档微调字级；位置随图变换 */
 function drawLabels(g, view){
   const k=clamp(0.90+0.10*view.zoom,0.90,1.18);
-  const L2=view.zoom>=1.15 || (view.detail && view.zoom>=0.85);
-  const L3=view.zoom>=2.00 || (view.detail && view.zoom>=1.30);
+  const F = FOCUS[view.focus] ? view.focus : (view.detail ? 'zhongyuan' : focus);
+  const V = FOCUS[F];
+  const L2=view.zoom>=V.l2, L3=view.zoom>=V.l3;
   const sc=(mx,my)=>[W/2+view.panX+(mx-W/2)*view.zoom, H/2+view.panY+(my-H/2)*view.zoom];
   const prio={seal:0,capital:1,state:2,cmd:3,ink:3,county:4};
   const placed=[];
@@ -169,6 +197,8 @@ function drawLabels(g, view){
   for(const L of [...labels].sort((a,b)=>(prio[a.kind]??9)-(prio[b.kind]??9))){
     if(L.level>=2 && !L2) continue;
     if(L.level>=3 && !L3) continue;
+    // 朱题只在全境与中原出现：河北/荆扬分图不串朱色
+    if(F!=='all' && L.kind==='seal' && !(F==='zhongyuan' && L.area==='zhongyuan')) continue;
     const [sx,sy]=sc(L.mx,L.my);
     if(sx<-90||sx>W+90||sy<-90||sy>H+90) continue;
     const fs = L.kind==='seal'?15*k : L.kind==='capital'?12*k : L.kind==='state'?11*k
@@ -205,16 +235,15 @@ function drawLabels(g, view){
       g.fillStyle='rgba(64,52,38,.86)'; g.fillText(L.txt,sx,sy);
     }
   }
-  if(view.detail){
+  if(F!=='all'){
     g.font='bold 16px serif'; g.textAlign='left'; g.lineWidth=3.2;
-    g.strokeStyle='rgba(236,228,206,.92)'; g.strokeText('中原详图 · 官渡至许都',22,32);
-    g.fillStyle='rgba(40,34,26,.92)'; g.fillText('中原详图 · 官渡至许都',22,32);
+    g.strokeStyle='rgba(236,228,206,.92)'; g.strokeText(V.title,22,32);
+    g.fillStyle='rgba(40,34,26,.92)'; g.fillText(V.title,22,32);
     g.font='11px serif'; g.lineWidth=2.4; g.strokeStyle='rgba(236,228,206,.88)';
-    g.strokeText('汉末县邑与战具按比例尺逐层显字 · 势力归属由上层逻辑给出',22,50);
-    g.fillStyle='rgba(64,52,38,.88)';
-    g.fillText('汉末县邑与战具按比例尺逐层显字 · 势力归属由上层逻辑给出',22,50);
+    g.strokeText(V.sub,22,50);
+    g.fillStyle='rgba(64,52,38,.88)'; g.fillText(V.sub,22,50);
   }
-  return L3?'注记 L3 县邑':L2?'注记 L2 郡治':'注记 L1 州治';
+  return (F==='all'?'':V.title.split(' · ')[0]+' ') + (L3?'注记 L3 县邑':L2?'注记 L2 郡治':'注记 L1 州治');
 }
 /* 注记引笔：极淡，只在远处主景用，不喧宾夺主 */
 function lead(g,from,tx,ty){
@@ -511,7 +540,31 @@ function makeBg(zb){
       // 笔型按场权重概率混合：过渡带里两套笔交错，不出现硬切线
       const pick=rnd(x*.053+y*.021+n*3.1);
       const wDesert=r.desert*0.86, wLing=r.lingnan*0.60, wSouth=r.south*0.92;
-      if(pick < wDesert || (lat>40.5 && n>.55)){
+      /* 三类补充地貌各用独立概率，不挤占原有南北笔法的权重：
+         全境默认只在它们各自的连续高值区换笔，其余区域笔法一字不变。 */
+      const terrainKind = r.sand>0.22 && rnd(x*.091+y*.043)<r.sand*0.86 ? 'sand'
+                        : r.coast>0.22 && rnd(x*.077+y*.061)<r.coast*0.82 ? 'coast'
+                        : r.karst>0.22 && rnd(x*.113+y*.037)<r.karst*0.84 ? 'karst' : null;
+      if(terrainKind==='sand'){
+        // 黄河故道沙碛：极稀的平顶短弧，露出干赭土，不连成沙带
+        if(n>.36) brush(g,[rot(-8,0),rot(-2,-1.2),rot(5,-1.4),rot(9,.5)],
+                        .85*k,.13*k,'rgba(168,138,92,.46)',.44);
+        if(n>.78) brush(g,[rot(-4,3),rot(2,2.4)],.6*k,.1*k,'rgba(196,170,124,.40)',.38);
+      } else if(terrainKind==='coast'){
+        // 海积平原：平缓偏青灰的盐田短笔，时有缺笔，不闭合成格
+        if(n>.30) brush(g,[rot(-7,1),rot(-1,-.4),rot(6,1.2)],
+                        .7*k,.12*k,'rgba(96,132,128,.44)',.42);
+        if(n>.72) brush(g,[rot(-3,4),rot(4,3.4)],.6*k,.1*k,'rgba(186,196,182,.42)',.36);
+      } else if(terrainKind==='karst'){
+        // 喀斯特：孤峰点簇，两三笔一组、彼此不成片（不是三角阵列）
+        if(n>.28){
+          const L=3+rnd(x*.37)*3;
+          brush(g,[rot(-L,2),rot(-L*.35,-3.4),rot(L*.4,2)],
+                .95*k,.18*k,'rgba(70,96,80,.52)',.50);
+          if(n>.62) brush(g,[rot(L*.5+1,2),rot(L*.5+2,-2.2),rot(L*.5+3,1.6)],
+                          .7*k,.12*k,'rgba(84,108,88,.44)',.42);
+        }
+      } else if(pick < wDesert || (lat>40.5 && n>.55)){
         // 沙碛 / 塞北：极稀的横向短弧，笔数最少
         if(n>.34) brush(g,[rot(-9,0),rot(0,-2),rot(10,1)],.9*k,.12*k,'rgba(150,126,88,.40)',.42);
       } else if(pick < wDesert+wLing){
@@ -550,10 +603,11 @@ function makeBg(zb){
 }
 
 /* ---------- 地物层 ---------- */
-function makeFg(){
+function makeFg(f){
   const c=mk(); c.width=W; c.height=H;
   const g=c.getContext('2d');
   labels.length=0;
+  sealOn = (f==='all' || f==='zhongyuan');
 
   // 势力层不画：归属随玩家局内动态变化，由上层逻辑负责，背景只给地与物。
 
@@ -640,7 +694,7 @@ function makeFg(){
   // 地道—长堑：两道平行浅笔
   brush(g,[[gx-34,gy+1],[gx-10,gy+2],[gx+12,gy+1]],1.1,.2,'rgb(92,76,56)',.55);
   brush(g,[[gx-32,gy+6],[gx-9,gy+7],[gx+14,gy+6]],.9,.15,'rgb(46,78,62)',.5);
-  sealLabel(g,'官渡',gx-2,gy-56);
+  sealLabel(g,'官渡',gx-2,gy-56,'zhongyuan');
 
   // ② 雒阳城南灵台 / 明堂 / 辟雍：夯土高台，太史令候望之所
   const lt=P(LANDMARKS.lingtai);
@@ -650,7 +704,7 @@ function makeFg(){
     const a=q/9*Math.PI*2, x=lt[0]+Math.cos(a)*11, y=lt[1]+Math.sin(a)*8;
     brush(g,[[x,y+2],[x,y-2],[x+.6,y-5]],1,.15,'rgb(52,76,58)',.62);
   }
-  lead(g,lt,lt[0]-36,lt[1]-38); sealLabel(g,'灵台',lt[0]-36,lt[1]-38);
+  lead(g,lt,lt[0]-36,lt[1]-38); sealLabel(g,'灵台',lt[0]-36,lt[1]-38,'zhongyuan');
 
   // ③ 邙山东汉圆丘封土：由覆斗改圆丘，高不足二十米、径七十至百三十米，环植柏
   const ms=P(LANDMARKS.mangshan);
@@ -743,7 +797,7 @@ function makeFg(){
     irregular(g,jy[0]+(rnd(q*3.7)-.5)*9,jy[1]+(rnd(q*7.1)-.5)*5,
       3+rnd(q*5)*2,2+q*.4,460+q,'rgba(138,116,82,.72)','rgb(84,68,48)',.9);
   brush(g,[[jy[0]+9,jy[1]-3],[jy[0]+10,jy[1]-9],[jy[0]+9,jy[1]-14]],1.4,.3,'rgb(166,49,41)',.8);
-  sealLabel(g,'积薪',jy[0]-22,jy[1]-20);
+  sealLabel(g,'积薪',jy[0]-22,jy[1]-20,'other');
 
   // ⑫ 蜀郡临邛火井：汉代已见记载的天然气井，井口 + 井架 + 一点幽火
   const hj=P(LANDMARKS.huojing);
@@ -811,6 +865,51 @@ function makeFg(){
   sealBox(g,18,null,'rgba(243,231,210,.55)');
   g.fillStyle='#f3e7d2'; g.font='bold 19px serif'; g.textAlign='center';
   g.fillText('建安',0,-2); g.fillText('五年',0,17); g.restore();
+
+  /* 分图专属地物：只在对应分图重建地物层时出现，全境默认不画。
+     仍是各自单独的一次性笔路，不是图章循环。势力一概不画。 */
+  if(f==='hebei'){
+    // 邺、黎阳、白马一线的东汉坞堡：不闭合方墙 + 四角望楼，尺寸朝向各异
+    [[114.62,36.32],[114.55,35.68],[114.42,35.55],[115.03,35.75]].forEach((q,i)=>{
+      const [hx,hy]=P(q), R=6+rnd(i*13.7)*4;
+      const wall=(x1,y1,x2,y2)=>brush(g,[[hx+x1,hy+y1],[(hx*2+x1+x2)/2,hy+(y1+y2)/2-.5],[hx+x2,hy+y2]],.8,.45,'rgb(62,52,38)',.80);
+      wall(-R,-R*.8,-R*.1,-R*.8); wall(R*.2,-R*.8,R,-R*.8);
+      wall(R,-R*.8,R,R*.8); wall(R,R*.8,-R*.2,R*.8);
+      if(rnd(i*5.3)>.24) wall(-R,R*.8,-R,-R*.8);
+      for(const [ox,oy] of [[-R,-R*.8],[R,-R*.8],[-R,R*.8],[R,R*.8]]){
+        irregular(g,hx+ox,hy+oy,1.5,1.5,900+i*4+ox,'rgba(226,210,172,.80)','rgb(78,62,42)',.7);
+      }
+      labels.push({mx:hx,my:hy-R-8,txt:'坞',level:2,kind:'ink',area:'hebei'});
+    });
+  }
+  if(f==='jingyang'){
+    // 鉴湖、云梦、彭蠡一带水田：成簇平行田埂短笔，倾斜缺笔，不闭合方框
+    [[120.58,29.98],[112.60,30.10],[116.20,29.60],[115.86,28.68]].forEach((q,i)=>{
+      const [cx,cy]=P(q);
+      for(let k=0;k<11;k++){
+        if(rnd(i*31+k*7.3)>.34) continue;
+        const a=rnd(i*17+k*3.1)*2.4, dx=(rnd(i*23+k*5.7)-.5)*34,
+              dy=(rnd(i*29+k*9.1)-.5)*22, L=4+rnd(i*37+k*2.2)*4;
+        const ca=Math.cos(a), sa=Math.sin(a);
+        for(let t=0;t<3;t++){
+          const off=t*2.1;
+          brush(g,[[cx+dx-L*ca+off*sa,cy+dy-L*sa-off*ca],
+                   [cx+dx+off*sa,cy+dy-off*ca],
+                   [cx+dx+L*.8*ca+off*sa,cy+dy+L*.8*sa-off*ca]],
+                .7,.12,'rgba(56,104,84,.50)',.48);
+        }
+      }
+      labels.push({mx:cx+18,my:cy-10,txt:'陂田',level:2,kind:'ink',area:'jingyang'});
+    });
+  }
+  // 注记区域标记：由锚点反算，仅用于「朱题不串场」，其余仍交给视口裁剪
+  for(const L of labels){
+    if(L.area) continue;
+    const lo=x2lon(L.mx), la=y2lat(L.my);
+    L.area = la>=35.6 && lo>=112 && lo<=121 ? 'hebei'
+           : lo>=112 && lo<=117.4 && la>=32.0 ? 'zhongyuan'
+           : lo>=109.5 && lo<=121.5 && la>=24.0 && la<=32.0 ? 'jingyang' : 'other';
+  }
   return c;
 }
 function beacon(g,x,y,idx,k){
@@ -897,9 +996,10 @@ function drawInkDetail(g, view){
   const tierOf = z => clamp(Math.round(z),1,3);
   let tier = clamp(Math.round(opts.tier ?? 1),1,3);
   let bg = makeBg(tier);
-  const fg = opts.fg === false ? null : makeFg();
+  let fg = opts.fg === false ? null : makeFg(focus);
   const api = {
-    bg, fg, labels, drawLabels, drawInkDetail, W, H,
+    bg, fg, labels, drawLabels, drawInkDetail, W, H, FOCUS,
+    get focus(){ return focus; },
     lon2x, lat2y, x2lon, y2lat,
     tierOf,
     get tier(){ return tier; },
@@ -907,6 +1007,12 @@ function drawInkDetail(g, view){
       const nt = clamp(Math.round(t),1,3);
       if(nt !== tier){ tier = nt; bg = makeBg(tier); api.bg = bg; }
       return bg;
+    },
+    // 切分图：重建地物层（分图专属地物随档出现），注记层自动跟着更新
+    setFocus(f){
+      const nf = FOCUS[f] ? f : 'all';
+      if(nf !== focus){ focus = nf; fg = opts.fg === false ? null : makeFg(focus); api.fg = fg; }
+      return fg;
     },
   };
   return api;

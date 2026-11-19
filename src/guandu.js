@@ -62,6 +62,18 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
   ];
   // 乌巢不单列为城：仅挂一处粮囤地物（「绍辎重囤集乌巢」）
   const GRANARIES = [[114.28,34.93,'乌巢']];
+  /* 全境台账 13 处主景里，落在本作战区图幅内、此前未画的一组。
+     坐标沿用本层近似投影，不与全境版混用；每处单独写一次性笔路。
+     势力、点景亭台、楼阁牌坊一概不画。 */
+  const SCENES = [
+    // 前两处按示意投影略向东收，使游戏裁切窗口（112.75~116.15）内也能看到；
+    // 雒阳本体在窗口外，礼制区与邙山只作方位示意，不作定点考据。
+    ['灵台',112.86,34.62],  // 雒阳城南灵台 / 明堂 / 辟雍，太史令候望之所
+    ['邙陵',113.00,34.90],  // 东汉圆丘封土、墓侧植柏
+    ['汉阙',113.22,34.30],  // 阳城太室 / 少室 / 启母三阙，中留阙道
+    ['轘辕',113.08,34.42],  // 轘辕山道十二折
+    ['战具',114.00,34.55],  // 官渡：土山高橹 / 霹雳车发石 / 地道—长堑
+  ];
 
   const HUANGHE = [
     // 西段补到荥阳北：「荥泽下分大河为阴沟」、王景自荥阳东筑堤千里
@@ -897,6 +909,127 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     }
   }
 
+  /* ── 作战区主景补绘 ────────────────────────────────────────────────
+     全部用一次性笔路（stroke 路径 / brush 变宽短笔），不用 rect / ellipse，
+     也不复制同一图章。用 h1() 取确定性变化，不推进 seed —— 既有绘制序列不动。 */
+  function sceneDetails(){
+    // ① 雒阳灵台：不规则夯土高台，边线抖动不闭合；环柏绕台
+    {
+      const [x,y]=proj(SCENES[0][1],SCENES[0][2]);
+      ctx.save();
+      ctx.strokeStyle='rgba(84,70,48,.82)'; ctx.lineWidth=1.1;
+      ctx.beginPath();
+      for(let k=0;k<=6;k++){
+        const px=x-11+k*3.7, py=y+5+Math.sin(k*1.7)*1.2;
+        k?ctx.lineTo(px,py):ctx.moveTo(px,py);
+      }
+      ctx.moveTo(x-11,y+5); ctx.lineTo(x-8,y-6);
+      ctx.moveTo(x+11,y+5); ctx.lineTo(x+8,y-6);
+      ctx.moveTo(x-8,y-6); ctx.lineTo(x-2,y-8);
+      ctx.lineTo(x+4,y-7); ctx.lineTo(x+8,y-6);
+      ctx.stroke(); ctx.restore();
+      for(let k=0;k<9;k++){
+        const a=k/9*Math.PI*2+h1(k*7.1)*.3, R=13+h1(k*3.7)*4;
+        const px=x+Math.cos(a)*R, py=y+Math.sin(a)*R*.7;
+        ctx.fillStyle='rgba(52,78,58,.62)'; ctx.beginPath();
+        brush(ctx,px,py+2,px+(h1(k*11.3)-.5)*2,py-3-h1(k*5.1)*3,
+              .9+h1(k*9.7)*.6,.12);
+        ctx.fill();
+      }
+      vertical('灵台',x+16,y-8,9,'#f0e9d5',.84);
+    }
+    // ② 邙山东汉圆丘封土与冢柏：断续折线近似圆丘，不闭合成椭圆
+    {
+      const [x,y]=proj(SCENES[1][1],SCENES[1][2]);
+      ctx.save();
+      ctx.strokeStyle='rgba(126,104,72,.80)'; ctx.lineWidth=1.1;
+      ctx.beginPath();
+      for(let k=0;k<=14;k++){
+        const a=Math.PI+k/14*Math.PI;
+        const px=x+Math.cos(a)*10, py=y+2-Math.sin(a)*6;
+        if(h1(k*3.1)>.22) ctx.lineTo(px,py); else ctx.moveTo(px,py);
+      }
+      ctx.stroke(); ctx.restore();
+      for(let k=0;k<12;k++){
+        const a=k/12*Math.PI*2, R=12+h1(k*4.3)*5;
+        const px=x+Math.cos(a)*R, py=y+Math.sin(a)*R*.55;
+        ctx.fillStyle=k%3===0?'rgba(42,66,50,.70)':'rgba(60,86,62,.58)';
+        ctx.beginPath();
+        brush(ctx,px,py+2,px+(h1(k*8.9)-.5)*1.6,py-2.5-h1(k*2.7)*3,
+              1+h1(k*6.1)*.7,.14);
+        ctx.fill();
+      }
+      vertical('邙陵',x+15,y-9,9,'#f0e9d5',.82);
+    }
+    // ③ 阳城汉三阙：一对石垛，中留阙道；不是门楼宅院
+    {
+      const [x,y]=proj(SCENES[2][1],SCENES[2][2]);
+      ctx.save();
+      ctx.strokeStyle='rgba(92,84,66,.84)'; ctx.lineWidth=1.2;
+      for(const side of [-1,1]){
+        const sx=x+side*7;
+        ctx.beginPath();
+        ctx.moveTo(sx-2.5,y+6); ctx.lineTo(sx-2,y-5);
+        ctx.lineTo(sx+1.5,y-7); ctx.lineTo(sx+2.5,y+6);
+        ctx.moveTo(sx-2,y-5); ctx.lineTo(sx+2.5,y-5);
+        ctx.stroke();
+      }
+      // 阙道：几笔浅色短横，点出中间可通
+      for(let k=0;k<3;k++){
+        ctx.strokeStyle='rgba(226,214,176,.60)'; ctx.lineWidth=.8;
+        ctx.beginPath(); ctx.moveTo(x-4,y+2+k*1.6); ctx.lineTo(x+4,y+2+k*1.6); ctx.stroke();
+      }
+      ctx.restore();
+      vertical('汉阙',x+13,y-8,9,'#f0e9d5',.82);
+    }
+    // ④ 轘辕关十二曲：一条折返十二次的一次性笔路（史料「十二曲」）
+    {
+      const [x,y]=proj(SCENES[3][1],SCENES[3][2]);
+      ctx.save();
+      ctx.strokeStyle='rgba(96,80,56,.80)'; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(x-16,y+10);
+      for(let k=0;k<12;k++){
+        const yy=y+10-k*1.7, xx=x+(k%2?7:-7)+Math.sin(k*1.3)*2+h1(k*5.3)*1.4;
+        ctx.lineTo(xx,yy);
+      }
+      ctx.stroke(); ctx.restore();
+      vertical('轘辕',x+13,y-10,9,'#f0e9d5',.82);
+    }
+    // ⑤ 官渡战具：土山高橹 / 霹雳车发石 / 地道—长堑
+    //    与沙堆微地形分开：沙堆是地表，战具是九月双方的工程。
+    {
+      const [x,y]=proj(SCENES[4][1],SCENES[4][2]);
+      ctx.save();
+      // 土山：顶端一小簇更密的笔，外加一根高橹竖笔
+      ctx.strokeStyle='rgba(122,96,62,.84)'; ctx.lineWidth=1;
+      ctx.beginPath();
+      ctx.moveTo(x-15,y-4); ctx.lineTo(x-8,y-11);
+      ctx.lineTo(x-2,y-7); ctx.lineTo(x+3,y-12); ctx.lineTo(x+10,y-4);
+      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x-3,y-11); ctx.lineTo(x-3,y-19);
+      ctx.moveTo(x-6,y-17); ctx.lineTo(x,y-17); ctx.stroke();
+      // 霹雳车：曹营侧离散石堆，大小位置各异，不排成阵列
+      for(let k=0;k<7;k++){
+        const px=x-24+h1(k*7.7)*20, py=y+6+h1(k*3.9)*7;
+        ctx.fillStyle='rgba(88,80,62,.72)'; ctx.beginPath();
+        brush(ctx,px,py,px+1.5+h1(k*11.1)*2,py-.8,1.1,.35);
+        ctx.fill();
+      }
+      // 长堑：两道平行断续浅壕，笔断意连
+      ctx.strokeStyle='rgba(56,78,66,.72)'; ctx.lineWidth=1.3;
+      for(const dy of [12,17]){
+        ctx.beginPath();
+        for(let k=0;k<=8;k++){
+          const px=x-30+k*7.5, py=y+dy+Math.sin(k*.9)*1.1;
+          if(h1(k*2.3+dy)>.24) ctx.lineTo(px,py); else ctx.moveTo(px,py);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+      vertical('战具',x+18,y-12,9,'#f0e9d5',.84);
+    }
+  }
+
   // 东汉坞堡：平面近方、四周高墙、前后门设门楼、四隅角楼；
   // 武威雷台陶楼院角楼间还连飞桥。俯视天生就是「方围墙 + 四角小方块」。
   // 尺寸/朝向/飞桥有无由 h1(x,y) 连续决定，不是同一张图章复制。
@@ -1205,6 +1338,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     landmarks();                         // 扩大后补入的四处有出处地标
     for (const c of CITIES) city(c);
     passesFords();
+    sceneDetails();                      // 台账主景补入作战区（只画地与物，不画势力）
 
   }
 
