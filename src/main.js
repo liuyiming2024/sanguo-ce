@@ -1026,7 +1026,8 @@ async function boot() {
   $('proTitle').textContent = `${ch0.no} · ${ch0.title}`;
   $('proBeat').textContent = story.meta.prologue;
   $('proSource').textContent = `${ch0.historical} — ${ch0.source}`;
-  $('menuSub').textContent = `${cfg.meta.subtitle} · ${cfg.terrain.cols}×${cfg.terrain.rows} 栅格 · v${cfg.meta.version}`;
+  // 开场只叙世界内时序，不写版本 / 栅格 / 画风；刊行记另立 release.html。
+  $('menuSub').textContent = `${formatCalendar(0, cfg.calendar, 'short')} · 司空府行台`;
 
   const raw = readFromStorage();
   if (raw && raw.v === 1) {
