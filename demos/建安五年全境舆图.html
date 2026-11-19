@@ -196,9 +196,11 @@ function irregular(g,cx,cy,rx,ry,key,fill,stroke,lw){
   const N=26, pts=[];
   for(let k=0;k<N;k++){
     const a=k/N*Math.PI*2;
-    const wob=1 + (fbm(Math.cos(a)*1.7+key*3.1, Math.sin(a)*1.7+key*2.3, seed*.005)-.5)*.52
-                 + (rnd(key*13+k*2.7)-.5)*.16;
-    pts.push([cx+Math.cos(a)*rx*wob, cy+Math.sin(a)*ry*wob]);
+    // 形变幅度给足：放大后读成一团不规则墨迹，不是标准椭圆。
+    const wob=1 + (fbm(Math.cos(a)*1.7+key*3.1, Math.sin(a)*1.7+key*2.3, seed*.005)-.5)*.86
+                 + (rnd(key*13+k*2.7)-.5)*.34;
+    const sq=1+(fbm(Math.cos(a)*2.9+key*5.3, Math.sin(a)*2.9+key*4.1, seed*.009)-.5)*.30;
+    pts.push([cx+Math.cos(a)*rx*wob*sq, cy+Math.sin(a)*ry*wob/sq]);
   }
   g.beginPath(); g.moveTo(pts[0][0],pts[0][1]);
   for(let k=1;k<N;k++) g.lineTo(pts[k][0],pts[k][1]);
@@ -573,9 +575,14 @@ function makeBg(zb){
       const step=(lerp(26,8,dens)+rnd(x*.13+y*.07)*8)*k;
       // 边地留白：密度越低越常跳笔，白从笔缝里连续漏出
       if(rnd(x*.031+y*.017) > 0.30+0.68*dens){ x+=step*.7; continue; }
-      const ang=r.wind+(n-.5)*1.35+(rnd(x*.019+y*.023)-.5)*.6,
+      // 方向不只跟随低频风场：叠两项高频扰动，避免整片区域同向排成斜纹布。
+      const ang=r.wind+(n-.5)*1.05+(rnd(x*.019+y*.023)-.5)*1.5
+               +(rnd(x*.41+y*.37)-.5)*1.25,
             ca=Math.cos(ang), sa=Math.sin(ang);
       const rot=(dx,dy)=>[x+dx*ca*k-dy*sa*k, y+dx*sa*k+dy*ca*k];
+      // 针叶 / 灌丛各有自己的方向策略，不共用同一个风向角
+      const rotA=(dx,dy,a)=>{const c=Math.cos(a),s=Math.sin(a);
+        return [x+dx*c*k-dy*s*k, y+dx*s*k+dy*c*k];};
       // 笔型按场权重概率混合：过渡带里两套笔交错，不出现硬切线
       const pick=rnd(x*.053+y*.021+n*3.1);
       const wDesert=r.desert*0.86, wLing=r.lingnan*0.60, wSouth=r.south*0.92;
@@ -627,12 +634,35 @@ function makeBg(zb){
           brush(g,[rot(-3,3),rot(0,-3),rot(4,2)],1.2*k,.14*k,'rgba(46,88,68,.52)',.48);
         }
       } else {
-        // 北方：横向燥笔束（战后荒田，短、断、稀）
-        const c = n>.55 ? 'rgba(56,76,62,.58)' : 'rgba(126,100,64,.50)';
+        // 北方：笔型由冠层连续场给，不再全是一模一样的横向燥笔束。
+        // 笔型单一时 ×4 放大只会读成一层同向短弧纹样 —— 那是平铺换了张皮。
+        const canopy = clamp(0.18 + 0.58*r.density + 0.22*r.south + 0.16*r.wet
+                             - 0.30*r.desert - 0.18*r.sand - 0.14*r.coast
+                             + (n-.5)*.24, 0, 1);
+        const wNeedle = clamp((canopy-.48)/.42,0,1)*.70;
+        const wShrub  = clamp((.48-canopy)/.34,0,1)*.62;
         const L=5+rnd(x*.19)*6;
-        const dy=Math.sin(ang)*2;
-        brush(g,[rot(-L,dy),rot(0,dy-1),rot(L,dy+.5)],1.6*k,.12*k,c,.52);
-        if(n>.72) brush(g,[rot(-2,3),rot(0,0),rot(3,-3)],1.0*k,.1*k,'rgba(50,70,56,.5)',.44);
+        const c = n>.55 ? 'rgba(56,76,62,.58)' : 'rgba(126,100,64,.50)';
+        const p = rnd(x*.041+y*.029+n*5.7);
+        if(p < wNeedle){
+          // 针叶：放射状，每根自取一角，不沿统一风向
+          for(let t=0;t<3;t++){
+            const aa=ang+(t-1)*(.42+rnd(x*.31+t)*.34)+(rnd(x*.57+t*9)-.5)*.9;
+            brush(g,[rotA(-L*.15,0,aa),rotA(0,-1,aa),rotA(L*.85,-.5,aa)],1.05*k,.10*k,c,.50);
+          }
+        } else if(p < wNeedle+wShrub){
+          // 灌丛：横走偏角，三四笔错开，方向各自偏一点
+          const ba=ang+1.15+(rnd(x*.29+y*.13)-.5)*1.1;
+          for(let t=0;t<3;t++){
+            const d=t*2.1-2.1, l=L*(.55+rnd(x*.23+t*5)*.35);
+            brush(g,[rotA(-l,d,ba),rotA(0,d-.6,ba),rotA(l*.9,d+.3,ba)],1.25*k,.12*k,c,.50);
+          }
+        } else {
+          // 阔叶 / 荒田：短粗一主一副，仍保持战后稀疏断续
+          const dy=Math.sin(ang)*2;
+          brush(g,[rot(-L,dy),rot(0,dy-1.4),rot(L*.82,dy+.5)],1.6*k,.12*k,c,.52);
+          if(n>.72) brush(g,[rot(-2,3),rot(0,0),rot(3,-3)],1.0*k,.1*k,'rgba(50,70,56,.5)',.44);
+        }
       }
       x+=step;
     }
@@ -860,14 +890,22 @@ function makeFg(f){
   CAPITALS.forEach((p,idx)=>{
     const x=lon2x(p.l), y=lat2y(p.t);
     if(p.k==='capital'){
-      // 界画小城：四段断续墨笔围出不闭合的方廓，加一门缺；不是白圆片
-      const R=5.4, w=.95;
-      const seg=(x1,y1,x2,y2)=>brush(g,[[x+x1,y+y1],[x+(x1+x2)/2,y+(y1+y2)/2-.4],[x+x2,y+y2]],w,.55,'rgb(64,52,36)',.82);
-      if(rnd(idx*7.1)>.16) seg(-R,-R*.8,-R*.2,-R*.8);
-      seg(R*.2,-R*.8,R,-R*.8);
-      seg(R,-R*.8,R,R*.8);
-      seg(R,R*.8,-R*.2,R*.8);
-      if(rnd(idx*3.3)>.2) seg(-R,R*.8,-R,-R*.8);
+      // 界画小城：四角确定性抖偏、边中点侧摆，×4 下不读成标准方廓。
+      // 仍不闭合、仍留门缺，只是角活了。
+      const R=4.6+rnd(idx*2.7)*1.8, w=.95;
+      const jit=(s)=>(rnd(idx*13.7+s*3.13)-.5)*2.8;
+      const C=[[x-R+jit(1),  y-R*.82+jit(2)],
+               [x+R+jit(3),  y-R*.78+jit(4)],
+               [x+R*.92+jit(5), y+R*.84+jit(6)],
+               [x-R*.94+jit(7), y+R*.8+jit(8)]];
+      const seg=(i,s)=>{
+        const A=C[i], B=C[(i+1)%4];
+        brush(g,[A,[(A[0]+B[0])/2+jit(s)*1.4,(A[1]+B[1])/2+jit(s+9)*1.4],B],
+               w,.55,'rgb(64,52,36)',.82);
+      };
+      if(rnd(idx*7.1)>.16) seg(0,1);   // 上边留门缺
+      seg(1,2); seg(2,3);
+      if(rnd(idx*3.3)>.2) seg(3,4);
       brush(g,[[x-1,y-R*.8],[x,y-R*.8-2],[x+1,y-R*.8]],.7,.4,'rgb(166,49,41)',.7); // 门
       labels.push({mx:x,my:y-16,txt:p.n,level:1,kind:'capital'});
     } else {

@@ -111,12 +111,40 @@ test('士气崩 → 溃散 → 主帅失护卫 → 被擒/阵亡 → 终局结�
   f.camp.push({ id: 'atk1', type: 'daodun', faction: 'cao', zone: 'camp',
     hp: 100, maxHp: 100, col: 1, row: 3, troops: 120 });
   deployUnit(s, 'liyang', 'atk1', 'inside', 4, 8);
+  // 主将现在是真兵：杂兵尽没但主将仍在，就不该自动判城破
+  assert.equal(c.commander.state, 'fight', '主将初始应在阵中交锋，不是坐镇框');
+  assert.ok((c.commander.hp ?? 0) > 0, '主将应有真实血量');
+  for (let i = 0; i < 2; i++) advanceBattleStep(sess, cfg.battle.fixedStepSec);
+  assert.ok(!c.outcome, '主将未倒，不能因杂兵尽没就自动城破');
+  // 把主将也打掉，才是「实打实拿下来」
+  c.commander.hp = 0; c.commander.state = 'dead'; c.morale.defend = 0;
   for (let i = 0; i < 6 && !c.outcome; i++) advanceBattleStep(sess, cfg.battle.fixedStepSec);
-  assert.ok(c.outcome, '守军尽没后应立刻判终局');
+  assert.ok(c.outcome, '主将倒下后应立刻判终局');
   assert.ok(c.result && c.result.won);
   assert.ok(c.result.reason.length > 0);
   assert.ok(c.result.endTurn >= 0);
   assert.ok(typeof c.result.commanderCaptured === 'boolean');
+});
+
+test('将领是真兵：有技能、四种攻击样式轮换、会挨打会掉血', () => {
+  const s = mk();
+  const f = getForces(s, 'liyang');
+  const rng = createRng(9);
+  const sess = createSession(cfg, s, 'liyang', { rngSnapshot: rng.snapshot() });
+  enterSession(sess, rng);
+  const c = sess.combat, g = c.commander;
+  assert.ok(g.skill && typeof g.skill === 'string', '将领应有派生技能');
+  assert.ok(g.maxHp > 0 && g.hp === g.maxHp, '将领应有血条');
+  f.camp.push({ id: 'atkA', type: 'daodun', faction: 'cao', zone: 'camp',
+    hp: 100, maxHp: 100, col: 1, row: 3, troops: 120 });
+  deployUnit(s, 'liyang', 'atkA', 'inside', 8, 8);
+  const hp0 = g.hp;
+  for (let i = 0; i < 900; i++) advanceBattleStep(sess, cfg.battle.fixedStepSec);
+  const anims = c.events.filter((e) => e.kind === 'generalAnim').map((e) => e.style);
+  const skills = c.events.filter((e) => e.kind === 'generalSkill').map((e) => e.skill);
+  assert.ok(new Set(anims).size >= 2, `攻击样式不该只有一种：${[...new Set(anims)].join(',')}`);
+  assert.ok(skills.length > 0, '主动技能应至少释放一次');
+  assert.ok(g.hp < hp0 || g.state !== 'fight', '将领必须真的会挨打/倒下');
 });
 
 test('双时钟：一直盯着打 与 退出隔几旬再回来 逐字段一致', () => {

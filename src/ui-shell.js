@@ -754,8 +754,10 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       ctx.save();
       ctx.translate(cw / 2 - a.W / 2 * base, ch / 2 - a.H / 2 * base);
       ctx.scale(base, base);
+      // 典籍页画布比 1400×1100 逻辑图幅小，屏幕空间那一层会被 base 压小；
+            // 传补偿系数让注记字号回到设计值，demos 不传则保持原样。
       const view = { zoom, panX: px / base, panY: py / base, detail, focus,
-                     showFeatures: !!a.fg, showInk: true };
+                     fontScale: 1 / base, showFeatures: !!a.fg, showInk: true };
       if (a.drawInkDetail) a.drawInkDetail(ctx, view);
       a.drawLabels(ctx, view);
       ctx.restore();

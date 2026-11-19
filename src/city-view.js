@@ -17,6 +17,8 @@
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
 import { drawSoldier, idSeed, unitKind } from './soldier.js';
+import { generalLook, drawGeneralPortrait } from './general-portrait.js';
+import { GENERAL_SKILL_LABEL, GENERAL_SKILL_COLOR } from './siege-combat.js';
 import { createPortraits } from './portrait.js';
 import { headingFromDelta, normAngle } from './direction.js';
 import { assignFormation, FORMATIONS, FORMATION_LABEL } from './formation.js';
@@ -474,20 +476,128 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
       ctx.fillText(`${b.label} ${Math.round(b.v * 100)}%`, b.x, b.y + 6);
     }
 
-    // 主帅：旗纛 + 状态印。被擒 / 阵亡才染朱砂，平时只用金。
+    /* ── 主将：真兵、有立绘、有血条、有技能、有四种攻击笔势 ──
+       不再是「一个框写着谁坐镇中央」。立绘按姓名 + 五维确定性生成，
+       动画只读 combat.anim，不写状态、不进快照。 */
     const cmd = c.commander;
-    if (cmd && cmd.state !== 'captured') {
+    if (cmd && cmd.state !== 'captured' && cmd.state !== 'dead') {
       const x = gx(cmd.col), y = gy(cmd.row);
-      const lost = cmd.state === 'dead';
-      ctx.strokeStyle = rgba(GOLD, lost ? 0.3 : 0.8); ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(x, y + L.cell * 0.5); ctx.lineTo(x, y - L.cell * 1.1); ctx.stroke();
-      ctx.fillStyle = lost ? 'rgba(80,70,62,.6)' : rgba('#a63129', 0.78);
-      ctx.beginPath();
-      ctx.moveTo(x, y - L.cell * 1.1); ctx.lineTo(x + L.cell * 0.9, y - L.cell * 0.85);
-      ctx.lineTo(x, y - L.cell * 0.6); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = rgba(TEXT, 0.82);
-      ctx.fillText(`${cmd.name} · ${ { inOffice:'在任', exposed:'失护卫', dead:'阵亡', captured:'被擒' }[cmd.state] }`,
-        x - L.cell * 0.5, y + L.cell * 0.62);
+      const look = generalLook(c.general);
+      const anim = cmd.anim;
+      const prog = anim ? Math.max(0, Math.min(1, (sec - anim.t0) / (anim.dur || .42))) : 1;
+      const live = prog < 1;
+      const flash = live ? (1 - prog) * .85 : 0;
+      const skillCol = anim?.skill ? GENERAL_SKILL_COLOR[anim.skill] : null;
+
+      // 攻击笔势：每种样式一条不同的运笔，不是同一个动画循环播放
+      if (live && anim.style) {
+        const R = L.cell * (0.6 + prog * 0.75);
+        ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.strokeStyle = skillCol || rgba(GOLD, .9 - prog * .55);
+        ctx.lineWidth = 1.2 + (1 - prog) * 1.6;
+        const A = (a, r) => [x + Math.cos(a) * r, y - L.cell * .4 + Math.sin(a) * r];
+        if (anim.style === 'zhipi') {                 // 直劈：一道竖直短笔
+          ctx.beginPath(); ctx.moveTo(...A(-1.9, R * .35));
+          ctx.quadraticCurveTo(x, y - L.cell * .4, ...A(-1.25, R)); ctx.stroke();
+        } else if (anim.style === 'hengsao') {       // 横扫：一段大弧
+          ctx.beginPath(); ctx.moveTo(...A(2.9, R));
+          ctx.quadraticCurveTo(...A(1.6, R * 1.25), ...A(-.15, R)); ctx.stroke();
+        } else if (anim.style === 'tujin') {         // 突进：拖影两笔
+          for (let i = 0; i < 2; i++) {
+            ctx.globalAlpha = (1 - prog) * (i ? .45 : 1);
+            ctx.beginPath(); ctx.moveTo(x - R * (.8 + i * .35), y - L.cell * .4);
+            ctx.lineTo(x + R * .55, y - L.cell * .4 - i * 2); ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        } else if (anim.style === 'xuli') {          // 蓄势：收拢的断续环
+          for (let i = 0; i < 7; i++) {
+            const a = i / 7 * Math.PI * 2 + prog * .8;
+            ctx.beginPath(); ctx.moveTo(...A(a, R * (1.3 - prog * .55)));
+            ctx.lineTo(...A(a + .22, R * (1.3 - prog * .55))); ctx.stroke();
+          }
+          if (prog > .62) {
+            ctx.beginPath(); ctx.moveTo(...A(-1.9, R * .3));
+            ctx.lineTo(...A(-1.35, R * 1.3)); ctx.stroke();
+          }
+        } else if (anim.style === 'fengshi') {       // 锋矢：长拖影 + 放射短笔
+          ctx.beginPath(); ctx.moveTo(x - R * 1.8, y - L.cell * .4);
+          ctx.lineTo(x + R * 1.2, y - L.cell * .4); ctx.stroke();
+          for (let i = -2; i <= 2; i++) {
+            ctx.beginPath(); ctx.moveTo(x + R * .9, y - L.cell * .4);
+            ctx.lineTo(x + R * 1.45, y - L.cell * .4 + i * 3.2); ctx.stroke();
+          }
+        } else if (anim.style === 'luanwu') {        // 乱舞：四道错开短笔
+          for (let i = 0; i < 4; i++) {
+            const a = -.9 + i * .55 + prog * .6;
+            ctx.beginPath(); ctx.moveTo(...A(a, R * .35));
+            ctx.lineTo(...A(a + .18, R * (1 + i * .1))); ctx.stroke();
+          }
+        } else if (anim.style === 'yibing') {        // 疑兵：散点墨花
+          for (let i = 0; i < 8; i++) {
+            const a = i / 8 * Math.PI * 2 + prog;
+            ctx.beginPath(); ctx.moveTo(...A(a, R * .7));
+            ctx.lineTo(...A(a, R * (.9 + (i % 3) * .18))); ctx.stroke();
+          }
+        } else if (anim.style === 'duzhan') {        // 督战：三层断续涟漪（不用整圆）
+          for (let i = 0; i < 3; i++) {
+            const rr = R * (.55 + i * .32 + prog * .25);
+            ctx.globalAlpha = (1 - prog) * (.8 - i * .2);
+            ctx.beginPath(); ctx.moveTo(x - rr, y - L.cell * .4);
+            ctx.quadraticCurveTo(x, y - L.cell * .4 - rr * 1.1, x + rr, y - L.cell * .4);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        } else if (anim.style === 'gushou') {        // 固守：护罩弧
+          ctx.beginPath(); ctx.moveTo(x - R * .9, y - L.cell * .15);
+          ctx.quadraticCurveTo(x, y - L.cell * 1.55, x + R * .9, y - L.cell * .15); ctx.stroke();
+        } else if (anim.style === 'xiuzheng') {     // 车悬：后撤收势，两笔错开
+          for (let i = 0; i < 2; i++) {
+            ctx.globalAlpha = (1 - prog) * (i ? .4 : .9);
+            ctx.beginPath(); ctx.moveTo(x + (i ? 2 : 0), y - L.cell * .9);
+            ctx.lineTo(x - R * .7 - i * 3, y - L.cell * .35); ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+        }
+        ctx.restore();
+      }
+
+      // 霸体：锋矢突阵期间一圈断续短弧，读得出「免控」
+      if (cmd.guardUntil > sec) {
+        ctx.save(); ctx.strokeStyle = 'rgba(200,168,106,.72)'; ctx.lineWidth = 1.1;
+        for (let i = 0; i < 6; i++) {
+          const a = i / 6 * Math.PI * 2 + sec * .6;
+          const cx = x + Math.cos(a) * L.cell * .8, cy = y - L.cell * .4 + Math.sin(a) * L.cell * .8;
+          ctx.beginPath(); ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + Math.cos(a + .3) * 4, cy + Math.sin(a + .3) * 4); ctx.stroke();
+        }
+        ctx.restore();
+      }
+      drawGeneralPortrait(ctx, look, x, y + L.cell * .46, L.cell * 1.75,
+        { hpK: Math.max(0, Math.min(1, (cmd.hp ?? 90) / (cmd.maxHp ?? 90))),
+          flash, skill: skillCol });
+      // 题名移到立绘上方：淡墨衬是一笔不规则短弧，不是矩形面板，不压府衙
+      const ty = y - L.cell * 1.72, tx = x - L.cell * 1.05;
+      ctx.save();
+      ctx.strokeStyle = 'rgba(24,30,24,.58)'; ctx.lineWidth = L.cell * .82;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(tx - 2, ty + 8);
+      ctx.quadraticCurveTo(tx + L.cell * 1.1, ty + 6, tx + L.cell * 2.15, ty + 9);
+      ctx.stroke();
+      ctx.font = '10px "WenQuanYi Micro Hei", serif';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = rgba(TEXT, .92);
+      const st = { fight: cmd.exposed ? '失护卫' : '交锋', inOffice: '在任', exposed: '失护卫' }[cmd.state] ?? '交锋';
+      ctx.fillText(`${cmd.name} · ${st}`, tx, ty);
+      ctx.fillStyle = skillCol || rgba('#c8a86a', .90);
+      ctx.fillText(`${GENERAL_SKILL_LABEL[cmd.skill] ?? ''}${cmd.skillCd > 0 ? ` ${cmd.skillCd.toFixed(1)}s` : ' · 可发'}`,
+        tx, ty + 12);
+      ctx.restore();
+    } else if (cmd && (cmd.state === 'dead' || cmd.state === 'captured')) {
+      const x = gx(cmd.col), y = gy(cmd.row);
+      ctx.font = '9px "WenQuanYi Micro Hei", serif';
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillStyle = rgba('#a63129', .9);
+      ctx.fillText(`${cmd.name} · ${cmd.state === 'dead' ? '阵亡' : '被擒'}`, x + 4, y - 6);
     }
 
     // 投射物：箭/弩矢是短直线，石弹是带弧高的圆点；全部按格坐标飞

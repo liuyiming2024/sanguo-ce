@@ -122,6 +122,18 @@
         "火攻"
       ],
       "_note": "辅助，不直接伤害；计策只改士气/城防/警觉等隐藏属性，不改物理法则。"
+    },
+    "jiangjun": {
+      "name": "主将",
+      "kind": "hero",
+      "support": false,
+      "projectile": null,
+      "hp": 90,
+      "dmg": 20,
+      "range": 26,
+      "speed": 30,
+      "cost": 0,
+      "_note": "将领是特殊的兵：有格位、会走、会打、会挨打、会阵亡或被擒，倒下直接崩己方士气。"
     }
   },
   "hidden": {
@@ -253,7 +265,7 @@
       "col": 19,
       "row": 8
     },
-    "_note": "攻城战斗固定步长；格坐标，range 按 pxPerTile 折算。隐藏属性全部只通过溃散/被擒/战损间接生效。 战斗只在玩家把兵派进城里后开打；城外大营由玩家投入，援军按抵达时刻进大营不打断战斗。",
+    "_note": "攻城战斗固定步长；格坐标，range 按 pxPerTile 折算。隐藏属性全部只通过溃散/被擒/战损间接生效。 战斗只在玩家把兵派进城里后开打；城外大营由玩家投入，援军按抵达时刻进大营不打断战斗。 主将为真实战斗单位，不再是坐镇府衙的框。",
     "pxPerTile": 20,
     "maxBattleSec": 180,
     "commanderGuardMin": 2,
@@ -290,7 +302,64 @@
     "captureChanceBase": 0.62,
     "captureLoyaltyDiv": 260,
     "commanderHp": 90,
-    "commanderExposeRadius": 2.2
+    "commanderExposeRadius": 2.2,
+    "generalSkill": {
+      "_note": "将领技能按五维派生，对照墨战四类卡牌：速攻/干扰/发育/防御。冷却与倍率走配置，不写死在逻辑里。 对照墨战阵法：锋矢阵给前端将领临时霸体、车悬阵每攻击五次后撤休整、连锁流先破防后输出。",
+      "cd": {
+        "fengshi": 10.5,
+        "yibing": 12.0,
+        "duzhan": 11.0,
+        "gushou": 9.5,
+        "luanwu": 10.0
+      },
+      "moraleGain": 12,
+      "guardSec": 4.2,
+      "confuseSec": 1.7,
+      "guardDmgK": 0.45,
+      "lungeTiles": 1.15,
+      "sweepRadius": 1.6,
+      "luanwuHits": 4,
+      "restEvery": 5,
+      "restSec": 0.62,
+      "empoweredDmgK": 1.28,
+      "fengshiGuardSec": 2.2,
+      "empoweredHits": 2
+    },
+    "generalAttack": {
+      "_note": "四种攻击样式轮换，避免将领一直重复同一个动画；序号确定性推进，不引入随机源。",
+      "styles": [
+        {
+          "id": "zhipi",
+          "label": "直劈",
+          "dmg": 1.0,
+          "cd": 1.35,
+          "targets": 1
+        },
+        {
+          "id": "hengsao",
+          "label": "横扫",
+          "dmg": 0.74,
+          "cd": 1.75,
+          "targets": 3
+        },
+        {
+          "id": "tujin",
+          "label": "突进",
+          "dmg": 1.28,
+          "cd": 2.05,
+          "targets": 1,
+          "lunge": 0.62
+        },
+        {
+          "id": "xuli",
+          "label": "蓄势",
+          "dmg": 1.9,
+          "cd": 2.55,
+          "targets": 1,
+          "windup": 0.34
+        }
+      ]
+    }
   },
   "presentation": {
     "parchment": "#cdc4a7",
