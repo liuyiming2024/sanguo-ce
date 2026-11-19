@@ -7,6 +7,7 @@
 > 没有把旧横版代码挂进来。
 
 [在线试玩](https://liuyiming2024.github.io/sanguo-ce/)
+[刊行记 · 发布页](https://liuyiming2024.github.io/sanguo-ce/release.html)
 
 ## v0.9.4：接入对面两版舆图 / 典籍总揽
 

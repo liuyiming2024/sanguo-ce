@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0d0c">
+<link rel="icon" href="data:,">
+<title>三国策 · 官渡 ｜ 刊行记</title>
+<link rel="stylesheet" href="./styles/main.css">
+<style>
+/* 刊行记独立成页：色板仍取 main.css 的 :root，只覆盖长页所需布局 */
+html,body{height:auto;min-height:100%;overflow:auto;overflow-x:hidden}
+body::before{position:fixed}
+.relWrap{position:relative;z-index:5;max-width:760px;margin:0 auto;padding:52px 22px 88px}
+.relHead{text-align:center;padding:0 0 30px;border-bottom:1px solid var(--line)}
+.relHead .mseal{margin:0 auto 16px}
+.relHead h1{margin:0;font-size:33px;letter-spacing:11px;color:var(--paper);font-weight:600}
+.relHead h1 span{font-size:15px;letter-spacing:3px;color:var(--gold2)}
+.relKicker{margin:14px 0 0;font-size:12px;letter-spacing:6px;color:var(--dim)}
+.relVer{margin:18px 0 0;font-size:11px;color:var(--dimDeep);font-variant-numeric:tabular-nums}
+.relVer b{color:var(--gold);font-weight:600}
+.relEnter{display:inline-block;margin:22px auto 0;padding:11px 34px;min-height:46px;
+  background:var(--ink);border:1px solid var(--gold);color:var(--gold);
+  font-size:14px;letter-spacing:5px;text-decoration:none;border-radius:2px;
+  box-shadow:inset 0 0 0 1px rgba(200,168,106,.22)}
+.relEnter:hover,.relEnter:focus-visible{background:rgba(200,168,106,.14);color:var(--paper)}
+.relSec{margin:0;padding:30px 0 26px;border-bottom:1px solid var(--line2)}
+.relSec:last-of-type{border-bottom:0}
+.relSec h2{margin:0 0 16px;font-size:16px;letter-spacing:4px;color:var(--gold);font-weight:600}
+.relSec h2::before{content:"";display:inline-block;width:3px;height:14px;margin:0 10px 0 0;
+  vertical-align:-2px;background:var(--gold2);opacity:.7}
+.relSec p,.relSec li{font-size:13px;line-height:1.95;color:var(--txt)}
+.relSec p{margin:0 0 12px}
+.relList{list-style:none;margin:0;padding:0}
+.relList li{padding:9px 0 9px 0;border-bottom:1px dashed var(--line2)}
+.relList li:last-child{border-bottom:0}
+.relList b{display:inline-block;min-width:88px;color:var(--paper2);font-weight:600;letter-spacing:1px}
+.relTable{width:100%;border-collapse:collapse;font-size:12.5px}
+.relTable th,.relTable td{padding:9px 10px;text-align:left;border-bottom:1px solid var(--line2);vertical-align:top}
+.relTable th{color:var(--paper2);font-weight:600;letter-spacing:1px;white-space:nowrap}
+.relTable td{color:var(--dim)}
+.relSix{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 14px}
+.relSix div{padding:12px 8px;text-align:center;border:1px solid var(--line2);border-radius:2px;
+  background:var(--cardBg);color:var(--gold);font-size:14px;letter-spacing:3px}
+.relSix div small{display:block;margin-top:6px;color:var(--dimDeep);font-size:10px;letter-spacing:0}
+.relNote{margin:12px 0 0;font-size:11px;color:var(--dimDeep);line-height:1.8}
+.relLinks a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--line)}
+.relLinks a:hover{color:var(--paper);border-bottom-color:var(--gold)}
+.relFoot{margin:34px 0 0;text-align:center;font-size:10px;color:var(--dimDeep);letter-spacing:1px}
+@media (max-width:600px){
+  .relWrap{padding:34px 16px 64px}
+  .relHead h1{font-size:25px;letter-spacing:7px}
+  .relSix{grid-template-columns:repeat(2,1fr)}
+  .relList b{min-width:0;display:block;margin-bottom:3px}
+  .relTable th{white-space:normal}
+}
+</style>
+</head>
+<body>
+<main class="relWrap">
+
+  <header class="relHead">
+    <div class="seal mseal" style="width:46px;height:46px;font-size:17px">汉</div>
+    <h1>三国策 <span>· 官渡</span></h1>
+    <p class="relKicker">刊 行 记</p>
+    <p class="relVer">今刊本 <b data-version>—</b>　·　大版本号守 0　·　版本唯一源 <code>src/version.js</code></p>
+    <a class="relEnter" href="./">入 局</a>
+  </header>
+
+  <section class="relSec">
+    <h2>一、刊行记</h2>
+    <ul class="relList">
+      <li><b>舆图既定</b>战区尽易官渡舆图，林冠、变宽笔与史实地物两层贴入，与栅格精确对齐；典籍接十三州全境图，注记按倍率分级。</li>
+      <li><b>典籍总揽</b>立文言六门与游戏内纸页，白话细目、出处与疑难点归后台文档，不入界面。</li>
+      <li><b>攻城闭环</b>纯逻辑战斗层、城内网格寻路、五维与设施接数值、器械八向，双时钟实时与快照快进同解。</li>
+      <li><b>方阵行军</b>框选一队、点一处即收方阵；跨步与速度同源，八向转身、背面三帧重画并逐张自检。</li>
+      <li><b>粮草军心</b>常驻短档，严重时只报「约减三成」一类约数，精确数收进折叠细目。</li>
+      <li><b>重甲持重</b>收红、留白、纸墨二分；主操作以墨底反金补回重量，不再与常按钮同亮。</li>
+      <li><b>零位图逻辑层</b>命令日志、状态指纹、军令帖；无服务器亦可异步对演，逻辑层不进位图与墙钟。</li>
+    </ul>
+    <p class="relNote">逐版细目、单测与烟测数目、提交级证据见仓库 README 与 <code>docs/</code>；此页只存刊行大要，不铺陈工程流水。</p>
+  </section>
+
+  <section class="relSec">
+    <h2>二、体制总揽</h2>
+    <table class="relTable">
+      <tr><th>章回</th><td>建安五年八回，依《三国志·武帝纪》《资治通鉴》时序推进，不到史月不回跳。</td></tr>
+      <tr><th>舆地</th><td>栅格沙盘与经纬度锚点两套尺度共用投影，格管通行、图管观瞻。</td></tr>
+      <tr><th>典籍</th><td>文言六门为经，白话考据为纬；游戏内只读总揽，后台存全本。</td></tr>
+      <tr><th>军政</th><td>旬历、资源、设施、武将五维、编队与自动列队，皆入确定性重放。</td></tr>
+      <tr><th>攻城</th><td>扎营不等于开打；把兵拖入城中才启战，离营期间各城照常运转。</td></tr>
+      <tr><th>联机</th><td>军令帖可脱离服务器传递一局；Transport 可插拔，逻辑三层不迁。</td></tr>
+    </table>
+  </section>
+
+  <section class="relSec">
+    <h2>三、资料总揽</h2>
+    <div class="relSix">
+      <div>本纪<small>时序</small></div><div>舆地<small>郡国</small></div><div>图法<small>笔势</small></div>
+      <div>形制<small>器械</small></div><div>疑异<small>重难</small></div><div>书目<small>出处</small></div>
+    </div>
+    <p>此六门为游戏内典籍纸页之目，取文言，存深厚感。凡太白话、太琐碎者——亭子、沟洫细目、逐条今地核查、可信度与落地状态——皆归后台文档，不入此页，亦不入游戏。</p>
+    <p class="relLinks"><a href="./docs/建安五年官渡舆图史料汇总.md">史料汇总</a>　·　<a href="./docs/扩大范围历史地理取数表.md">全境取数表</a>　·　<a href="./docs/创作决策日志.md">创作决策日志</a></p>
+    <p class="relNote">「实施总纲」「重难疑点总揽」二节在史料汇总 §12 / §15，为后台营造用；入局后由「纪事 / 天下 / 系统」三处可进游戏内典籍总揽。</p>
+  </section>
+
+  <section class="relSec">
+    <h2>四、凡例</h2>
+    <p>十二条玩法凡例不在此铺陈。入局后点右下「?」，或由系统页「查看玩法说明」读全本；初入行台另有授简十二简，可随时跳过。</p>
+    <p class="relNote">章回依汉末时序；身份由剧情给定，不作势力三选一。</p>
+  </section>
+
+  <section class="relSec">
+    <h2>五、刊本源流</h2>
+    <table class="relTable">
+      <tr><th>在线试玩</th><td class="relLinks"><a href="./">进入游戏</a></td></tr>
+      <tr><th>本页</th><td>刊行记 · 与游戏开场分开，独立成页，不加载游戏逻辑。</td></tr>
+      <tr><th>仓库</th><td class="relLinks"><a href="https://github.com/liuyiming2024/sanguo-ce">liuyiming2024/sanguo-ce</a></td></tr>
+      <tr><th>后台文档</th><td class="relLinks"><a href="./docs/">docs/</a>　·　<a href="./demos/">demos/</a></td></tr>
+      <tr><th>版本</th><td><code>src/version.js</code> 为唯一数字源，此页动态读入，不写死字面量。</td></tr>
+    </table>
+  </section>
+
+  <p class="relFoot">建安五年 庚辰 · 刊行记　｜　玄黑为权谋，绛红为战火，蚕白为礼政</p>
+</main>
+<script type="module">
+  // 版本仍只有一处权威源；刊行记不写死任何版本数字。
+  import { VERSION } from './src/version.js';
+  document.querySelectorAll('[data-version]').forEach(n => { n.textContent = VERSION; });
+</script>
+</body>
+</html>

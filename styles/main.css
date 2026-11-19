@@ -668,3 +668,8 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
   .tutCard{animation:none}
   .tutFocus,.tutVeil,.tutBar i{transition:none}
 }
+
+/* ── 刊行记入口：开场只留一枚极淡角标，产品发布功能独立在 release.html ── */
+.proRelease{display:inline-block;margin-left:10px;font-size:10px;letter-spacing:2px;
+  color:var(--gold2);text-decoration:none;border-bottom:1px solid var(--line)}
+.proRelease:hover,.proRelease:focus-visible{color:var(--gold);border-bottom-color:var(--gold)}
