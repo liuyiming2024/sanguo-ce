@@ -1,8 +1,11 @@
-# 传帖台建表：在 GitHub 侧网络执行，凭据由仓库 Agent Secret 注入。
+# 传帖台建表：在 GitHub 侧网络执行，凭据由**仓库 Actions Secret** 注入。
 #
-# 用户已在 Settings → Secrets → Agents 里把项目口令存为 `sup`。
+# 【口径修正 2026-11-20】`Settings → Secrets → Agents` 里的 `sup` 是 **agent 命名空间**，
+# 与 Actions 的 `${{ secrets.sup }}` **不互通**：本仓库 /actions/secrets 当前为 0 个。
+# 要让这条 workflow 跑起来，须在 `Settings → Secrets and variables → Actions`
+# 另建同名 secret（或把 workflow 改成读 agent runtime 注入的环境变量）。
 # 本 workflow **不读、不打印、不写入**该值，只在 psql 进程环境里以 PGPASSWORD 传入。
-# 沙盒会话读不到 GitHub secret 的明文（API 也只返回名字不返回值）；
+# 沙盒会话读不到任何 GitHub secret 的明文（API 也只返回名字不返回值）；
 # 值在对话里出现过，按「不进仓库」口径处理。
 #
 # 还需要在 Settings → Variables 里填（都不是秘密，按控制台实际值）：
@@ -40,6 +43,6 @@ jobs:
           : "${PGPORT:?请在仓库 Variables 里填 SUPA_DB_PORT}"
           : "${PGUSER:?请在仓库 Variables 里填 SUPA_DB_USER}"
           : "${PGDATABASE:?请在仓库 Variables 里填 SUPA_DB_NAME}"
-          : "${PGPASSWORD:?Agent Secret sup 未注入}"
+          : "${PGPASSWORD:?Actions Secret sup 未注入（Agent 命名空间的 sup 不会被 workflow 读到）}"
           psql -v ON_ERROR_STOP=1 -f supabase/schema.sql
           echo "建表完成；未输出任何凭据。"

@@ -57,6 +57,24 @@ test('Agent Secret 建表骨架只引用 secrets.sup，不落明文', () => {
   for (const bad of FORBIDDEN) assert.ok(!wf.includes(bad));
 });
 
+test('Edge Function 骨架可部署、零明文、连接串只从环境读', () => {
+  const fnPath = join(root, 'supabase/functions/relay/index.ts');
+  assert.ok(existsSync(fnPath), '缺 relay 函数骨架');
+  const fn = readFileSync(fnPath, 'utf8');
+  assert.match(fn, /Deno\.serve/);
+  assert.match(fn, /Deno\.env\.get\('SUPABASE_DB_URL'\)/);
+  assert.match(fn, /on conflict \(id\) do nothing/);
+  assert.match(fn, /\$1/);                       // 参数化 SQL
+  assert.match(fn, /OPTIONS/);                   // CORS 预检
+  assert.doesNotMatch(fn, /apikey|Authorization:\s*Bearer/);
+  for (const bad of FORBIDDEN) assert.ok(!fn.includes(bad), '函数骨架出现明文凭据');
+});
+
+test('workflow 注释写明 Agent secret 与 Actions secret 不互通', () => {
+  assert.match(wf, /Agent 命名空间|不互通/);
+  assert.match(wf, /Actions Secret sup 未注入/);
+});
+
 test('后台说明写清边界：只自动化建表，部署函数仍缺 access token', () => {
   assert.match(doc, /SUPABASE_ACCESS_TOKEN/);
   assert.match(doc, /Agent Secret/);
