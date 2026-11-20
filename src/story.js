@@ -101,6 +101,22 @@ export function applyOpening(state, story, optionId) {
   return opt;
 }
 
+/** 开篇章的入场纪事。
+ *  advanceChapter 只处理「推进到下一回」，开篇这一回是装配层直接赋 chapters[0].id，
+ *  从不经过推进，所以 onEnter 里的 report / mail / flags 一直不会生效（官渡第一回亦然）。
+ *  这里只返回数据、不改 state；city / intel 仍归推进时应用，避免改开局城池数值。
+ */
+export function openingDispatches(story) {
+  const ch = story.chapters[0];
+  const on = ch?.onEnter ?? {};
+  return {
+    chapterId: ch?.id ?? null,
+    flags: { ...(on.flags ?? {}) },
+    report: on.report ? { ...on.report, turn: 0 } : null,
+    mail: on.mail ? { ...on.mail, turn: 0, id: `story-${ch.id}` } : null,
+  };
+}
+
 /** 推进到下一回：校验 → 领奖 → 应用上一回抉择 → 入场史实事件。 */
 export function advanceChapter(state, story, { autoChoose = true } = {}) {
   const gate = canAdvance(story, state);

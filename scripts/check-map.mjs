@@ -630,6 +630,45 @@ const qBoundsOk = [CITIES, PASSES].every((arr) => arr.every((p) =>
   p.lon >= MAPS.quanjing.bounds.LON_MIN && p.lon <= MAPS.quanjing.bounds.LON_MAX &&
   p.lat >= MAPS.quanjing.bounds.LAT_MIN && p.lat <= MAPS.quanjing.bounds.LAT_MAX));
 ok(qBoundsOk, '全境城池/关隘越出图幅');
+
+// ── 全境两章：章回文案 / 州郡事件 / 纪事（2026-11-19） ────────────────
+const q9 = story.chapters.find((c) => c.id === 'ch9');
+const q10 = story.chapters.find((c) => c.id === 'ch10');
+const MECH_WORDS = ['命令日志', '隔旬快进', '实时同解', '累计逻辑步', '快照',
+  'state', '点地、下令', 'canvas', '栅格', '调试面板'];
+ok(!!q9 && !!q10, '全境两章 ch9 / ch10 缺一');
+ok(q9 && ['雒阳', '长安', '邺', '蓟', '临淄', '襄阳', '江陵', '成都', '番禺']
+  .every((n) => q9.beat.includes(n)), '第九回章回文案没落到具体州郡');
+ok(q10 && ['谯', '邺', '新野', '襄阳', '南郑']
+  .every((n) => q10.beat.includes(n)), '第十回章回文案没落到具体州郡');
+ok(q10 && q10.historical.includes('夏五月薨'), '第十回史注须写明薨在五月，不提前到正月');
+for (const c of [q9, q10]) {
+  ok(c && MECH_WORDS.every((w) => !c.beat.includes(w)), `「${c?.id}」叙事漏出工程 / 调试语`);
+  ok(c && !!c.onEnter?.report?.body && !!c.onEnter?.mail?.body, `「${c?.id}」缺入场纪事或私信`);
+  ok(c && MECH_WORDS.every((w) => !(c.onEnter.report.body + c.onEnter.mail.body).includes(w)),
+    `「${c?.id}」纪事漏出工程语`);
+}
+ok(q9 && !q9.onEnter.city && !q9.onEnter.intel,
+  '第九回是开篇章，配 city / intel 会成为永远读不到的死字段');
+ok(q10 && q10.onEnter.city?.length >= 4 && q10.onEnter.intel?.length >= 4,
+  '第十回州郡事件 / 斥候情报不足');
+const qIds = new Set(CITIES.map((c) => c.id));   // 此处 useMap('quanjing') 已生效
+ok(q10 && q10.onEnter.city.every((e) => qIds.has(e.id) && e.owner === undefined &&
+     ['garrison', 'wall', 'morale'].some((k) => Number.isFinite(e[k]))),
+  '州郡事件 id 越界、改了归属或没有实效');
+ok(q10 && q10.onEnter.intel.every((id) => qIds.has(id)), '斥候情报 id 越界');
+ok(hist.cats.find((c) => c.id === 'benji')?.items.some((i) => i.t === '全境两章'),
+  '典籍本纪门缺「全境两章」文言一条');
+const mainSrc = readFileSync(join(root, 'src/main.js'), 'utf8');
+const storySrc = readFileSync(join(root, 'src/story.js'), 'utf8');
+ok(/export function openingDispatches/.test(storySrc) && /openingDispatches\(story\)/.test(mainSrc),
+  '开篇章 onEnter 注入函数缺失');
+ok((mainSrc.match(/reports = \(state\.reports \?\? \[\]\)\.slice\(\)/g) ?? []).length >= 2,
+  'boot 与「新开一局」都要同步全局 reports，否则开篇章纪事看不到');
+ok(!/reports = \[\]; state\.reports = reports/.test(mainSrc), '「新开一局」又把开篇章纪事清空了');
+const qDoc = readFileSync(join(root, 'docs/全境两章纪事底本.md'), 'utf8');
+ok(/后台开发用 · 白话 · 不进游戏/.test(qDoc) && /州郡事件台账/.test(qDoc) && /文白分工/.test(qDoc),
+  '全境两章白话底本缺总目 / 台账 / 分工');
 useMap('guandu');
 
 if (problems.length) {

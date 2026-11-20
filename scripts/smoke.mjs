@@ -173,9 +173,13 @@ try {
 
   // ── v0.7.0：卷末留白 / 武备题头 ──────────────────────────────────────
   await nav('reports');
-  check('墨底页有卷末题记，空场不再是一整块纯黑', await page.evaluate(() => {
+  check('墨底页有卷末题记，空场/实报都不再是一整块纯黑', await page.evaluate(() => {
     const e = document.querySelector('#screen .scrBody .scrollEnd');
-    return !!e && e.textContent.includes('尚 无 战 报');
+    return !!e && /尚 无 战 报|逐条而书/.test(e.textContent);
+  }));
+  check('开篇章入场纪事可见（onEnter 不再只在推进到下一回时生效）', await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('#screen .listRow')];
+    return rows.some((r) => r.textContent.includes('檄至许都') || r.textContent.includes('别展全境'));
   }));
   check('武备页章节题头用语义朱，不把红撒回全局', await page.evaluate(() => {
     const sc = document.getElementById('screen');
@@ -383,7 +387,7 @@ try {
 
   // 列表页：战报 / 邮件 / 任务 / 同盟 / 天下
   await nav('reports');
-  check('战报列表可达（含空态）', (await page.locator('#screen').innerText()).includes('战报'));
+  check('战报列表可达（开篇章纪事已在列）', (await page.locator('#screen').innerText()).includes('战报'));
   await nav('mail');
   check('邮件列表有条目', (await page.locator('#screen .listRow').count()) >= 3);
   await nav('mailRead', { id: 'm1' });

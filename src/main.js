@@ -20,7 +20,7 @@ import { cityCondition } from './condition.js';
 import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
-  claimChapterReward as claimStoryReward, allMails,
+  claimChapterReward as claimStoryReward, allMails, openingDispatches,
 } from './story.js';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
@@ -110,7 +110,11 @@ function newCampaign(factionId = story.meta.faction) {
   s.copper = 1200;
   s.settings = { idleStop: true, snap: true };
   s.claimedTasks = [];
-  s.reports = [];
+  // 开篇章的入场纪事：advanceChapter 只处理推进到下一回，开篇这一回在此注入一次。
+  const opening = openingDispatches(story);
+  for (const [k, v] of Object.entries(opening.flags)) (s.storyFlags ??= {})[k] = v;
+  s.storyMails = opening.mail ? [opening.mail] : [];
+  s.reports = opening.report ? [{ turn: s.turn, red: false, ...opening.report }] : [];
   collectResources(s, { apply: false });   // 只算流量，开局库存保持 0
   applyOpening(s, story, openingChoice);
   appendCommand(s.commandLog, {
@@ -936,7 +940,8 @@ function bindUI() {
     terrain: state.terrain, cfg,
     style: mapStyle(),
   });
-    reports = []; state.reports = reports;
+    reports = (state.reports ?? []).slice();
+    state.reports = reports;
     session = null; snapshot = null; battleCityId = null;
     $('centerBtn').click();
     $('mainMenu').hidden = true;
@@ -1041,6 +1046,8 @@ async function boot() {
   tutUI = createTutorialUI({ def: tutorialDef });
   rng = createRng(cfg.terrain.seed);
   state = newCampaign('cao');
+  reports = (state.reports ?? []).slice();
+  state.reports = reports;
   renderer = createMapRenderer(canvas, {
     terrain: state.terrain, cfg,
     style: mapStyle(),
