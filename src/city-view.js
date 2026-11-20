@@ -298,6 +298,38 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     drawHud(L);
   }
 
+  // ── 手绘块 / 抖线：城内建筑不再用标准 fillRect / strokeRect ──────────
+  // 扰动由坐标确定性给出，不引入随机源，重放逐帧一致。
+  /** 一笔不规则闭合夯土块：四边低频起伏，不是矩形也不是椭圆。 */
+  function inkBlock(x, y, w, h, seed, amp = .06) {
+    const A = Math.min(w, h) * amp;
+    const corners = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]];
+    const pts = [];
+    for (let e = 0; e < 4; e++) {
+      const [ax, ay] = corners[e], [bx, by] = corners[(e + 1) % 4];
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      const nx = -dy / len, ny = dx / len;
+      for (let i = 0; i < 4; i++) {
+        const t = i / 4, n = Math.sin(seed * 1.31 + e * 3.7 + i * 2.9) * A;
+        pts.push([ax + dx * t + nx * n, ay + dy * t + ny * n]);
+      }
+    }
+    ctx.beginPath(); ctx.moveTo(...pts[0]);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(...pts[i]);
+    ctx.closePath();
+  }
+  /** 一条低频抖动的线，替代贯通直边。 */
+  function inkLine(x1, y1, x2, y2, seed, amp = 1.1) {
+    const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len, N = Math.max(3, Math.round(len / 26));
+    ctx.beginPath();
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, n = Math.sin(seed * 1.13 + i * 2.3) * amp;
+      const px = x1 + dx * t + nx * n, py = y1 + dy * t + ny * n;
+      if (i) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+    }
+  }
+
   function drawCamp(L, sec) {
     // 营地地面 + 斜纹
     ctx.fillStyle = rgba('#2c3a30', 0.75);
@@ -348,39 +380,50 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     // 篝火（相位取模拟时间）
     const fx = L.campW * 0.5, fy = H - 44;
     const pulse = 0.7 + Math.sin(sec * 3.1) * 0.25;
-    ctx.fillStyle = rgba('#e8a24a', 0.55 * pulse);
-    ctx.beginPath(); ctx.arc(fx, fy, 7 * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = rgba('#e8a24a', 0.5 * pulse);
+    ctx.beginPath();
+    ctx.moveTo(fx - 7 * pulse, fy + 2);
+    ctx.quadraticCurveTo(fx - 9 * pulse, fy - 5 * pulse, fx - 1.5, fy - 9 * pulse);
+    ctx.quadraticCurveTo(fx + 2.5, fy - 4 * pulse, fx + 7.5 * pulse, fy - 6 * pulse);
+    ctx.quadraticCurveTo(fx + 9 * pulse, fy + 1, fx - 7 * pulse, fy + 2);
+    ctx.closePath(); ctx.fill();
     ctx.fillStyle = rgba('#f6d78a', 0.8);
     ctx.beginPath(); ctx.moveTo(fx, fy - 8); ctx.lineTo(fx + 4, fy + 2);
     ctx.lineTo(fx - 4, fy + 2); ctx.closePath(); ctx.fill();
   }
 
   function drawWall(L, sec) {
-    const x = L.wallX;
+    const x = L.wallX, top = L.padTop - 6, bot = H - 18;
+    // 墙体：一笔不规则夯土竖带，不是等宽 fillRect
     ctx.fillStyle = rgba('#0d1210', 0.8);
-    ctx.fillRect(x - 4, L.padTop - 6, 14, H - L.padTop - 8);
+    inkBlock(x - 5, top, 16, bot - top, x + 1.7, .035); ctx.fill();
     ctx.fillStyle = rgba('#9a9278', 0.75);
-    ctx.fillRect(x - 2, L.padTop - 4, 10, H - L.padTop - 12);
-    ctx.fillStyle = rgba('#d8cfae', 0.55);
-    for (let y = L.padTop; y < H - 20; y += 12) {
-      ctx.fillRect(x - 4, y, 5, 6);
-      ctx.fillRect(x + 6, y + 6, 5, 6);
+    inkBlock(x - 3, top + 2, 12, bot - top - 4, x + 2.9, .04); ctx.fill();
+    // 雉堞：上下交错的短笔，不是等距小方块阵列
+    ctx.strokeStyle = rgba('#d8cfae', 0.5); ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    for (let y = L.padTop, i = 0; y < H - 22; y += 12 + (i % 3) * 2, i++) {
+      ctx.beginPath();
+      ctx.moveTo(x - 3, y); ctx.lineTo(x + (i % 2 ? 8 : 1), y - 2.5); ctx.stroke();
     }
-    // 角楼
-    for (const y of [L.padTop - 4, H - 26]) {
-      ctx.fillStyle = rgba('#121a15', 0.9); ctx.fillRect(x - 9, y - 5, 24, 22);
-      ctx.fillStyle = rgba('#cfc4a2', 0.85); ctx.fillRect(x - 7, y - 3, 20, 18);
-      ctx.fillStyle = rgba('#3a4237', 0.9); ctx.fillRect(x - 4, y, 14, 12);
+    // 角楼：三层不规则台，两座形变不同，不是同心矩形
+    for (const [yy, sd] of [[L.padTop - 4, 5.1], [H - 26, 8.3]]) {
+      ctx.fillStyle = rgba('#121a15', 0.9);
+      inkBlock(x - 10, yy - 6, 26, 24, x + sd, .07); ctx.fill();
+      ctx.fillStyle = rgba('#cfc4a2', 0.8);
+      inkBlock(x - 7, yy - 3, 20, 18, x + sd + 1.3, .08); ctx.fill();
+      ctx.fillStyle = rgba('#3a4237', 0.9);
+      inkBlock(x - 4, yy, 14, 11, x + sd + 2.7, .09); ctx.fill();
     }
-    // 城门洞（gate.row 对应）
-    const gy = L.oy + (CV.gate.row + 0.5) * L.cell;
+    // 城门洞：暗色不规则块 + 抖笔门楣
+    const gy = L.oy + (CV.gate.row + 0.5) * L.cell, gh = L.cell * 1.8;
     ctx.fillStyle = rgba('#0b100e', 0.95);
-    ctx.fillRect(x - 6, gy - L.cell * 0.9, 18, L.cell * 1.8);
-    ctx.fillStyle = rgba(factionColor(campaign.cities[getCityId()]?.owner), 0.5);
-    ctx.fillRect(x - 3, gy - L.cell * 0.7, 12, L.cell * 1.4);
-    ctx.strokeStyle = rgba(GOLD, 0.7); ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(x - 6, gy - L.cell * 0.9); ctx.lineTo(x + 12, gy - L.cell * 0.9);
-    ctx.moveTo(x - 6, gy + L.cell * 0.9); ctx.lineTo(x + 12, gy + L.cell * 0.9); ctx.stroke();
+    inkBlock(x - 7, gy - gh / 2, 20, gh, x + 11.3, .05); ctx.fill();
+    ctx.fillStyle = rgba(factionColor(campaign.cities[getCityId()]?.owner), 0.45);
+    inkBlock(x - 4, gy - gh * .38, 13, gh * .76, x + 13.1, .06); ctx.fill();
+    ctx.strokeStyle = rgba(GOLD, 0.62); ctx.lineWidth = 1.5;
+    inkLine(x - 7, gy - gh / 2, x + 13, gy - gh / 2 - 1, x + 3.1); ctx.stroke();
+    inkLine(x - 7, gy + gh / 2, x + 13, gy + gh / 2 + 1, x + 4.7); ctx.stroke();
+    ctx.lineCap = 'butt';
   }
 
   function drawInner(L, sec) {
@@ -396,38 +439,75 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     for (let r = 0; r <= CV.rows; r++) {
       ctx.beginPath(); ctx.moveTo(ox, oy + r * cell); ctx.lineTo(ox + gridW, oy + r * cell); ctx.stroke();
     }
-    // 街巷：每 4 格加宽，带车辙
-    ctx.fillStyle = rgba(cfg.presentation.cityStreet ?? '#8a8267', 0.22);
-    for (let c = 0; c < CV.cols; c += 4) ctx.fillRect(ox + c * cell, oy, cell, gridH);
-    for (let r = 0; r < CV.rows; r += 4) ctx.fillRect(ox, oy + r * cell, gridW, cell);
-    ctx.strokeStyle = rgba('#e0d6b4', 0.12); ctx.lineWidth = 0.8;
+    // 街巷：沿街走向的断续踩踏痕，间隔 / 长度 / 偏转全由坐标确定性变化，
+    // 不是等距虚线阵列，也不是贯通色带（第一版实拍读成米粒串，已推翻）。
+    ctx.strokeStyle = rgba(cfg.presentation.cityStreet ?? '#8a8267', 0.30);
+    ctx.lineCap = 'round';
+    const wob2 = (v) => Math.sin(v * 2.17) * .5 + Math.sin(v * .71) * .34;
     for (let c = 0; c < CV.cols; c += 4) {
-      ctx.beginPath(); ctx.moveTo(ox + c * cell + cell / 2, oy);
-      ctx.lineTo(ox + c * cell + cell / 2, oy + gridH); ctx.stroke();
+      const sx = ox + c * cell + cell / 2, sd = c * 2.9;
+      for (let y = oy, i = 0; y < oy + gridH; i++) {
+        const w = wob2(sd + i * 1.7);
+        const len = cell * (.62 + .62 * (w + .84) / 1.68);
+        const gap = cell * (1.15 + .62 * (w + .84) / 1.68);
+        ctx.lineWidth = Math.max(1.6, cell * (.30 + .22 * Math.abs(w)));
+        ctx.beginPath();
+        ctx.moveTo(sx + wob2(sd * 1.3 + i) * cell * .12, y);
+        ctx.lineTo(sx + wob2(sd * 1.7 + i) * cell * .12, y + len);
+        ctx.stroke();
+        y += len + gap * .42;
+      }
     }
-    // 府衙：重檐 + 台阶 + 旗
+    for (let r = 0; r < CV.rows; r += 4) {
+      const sy = oy + r * cell + cell / 2, sd = r * 3.7 + 11;
+      for (let px = ox, i = 0; px < ox + gridW; i++) {
+        const w = wob2(sd + i * 1.9);
+        const len = cell * (.62 + .62 * (w + .84) / 1.68);
+        const gap = cell * (1.15 + .62 * (w + .84) / 1.68);
+        ctx.lineWidth = Math.max(1.6, cell * (.30 + .22 * Math.abs(w)));
+        ctx.beginPath();
+        ctx.moveTo(px, sy + wob2(sd * 1.3 + i) * cell * .12);
+        ctx.lineTo(px + len, sy + wob2(sd * 1.7 + i) * cell * .12);
+        ctx.stroke();
+        px += len + gap * .42;
+      }
+    }
+    // 府衙：不规则夯土台基 + 抖笔重檐 + 短笔台阶，不用标准矩形
     const yx = ox + (CV.yamen.col + 0.5) * cell, yy = oy + (CV.yamen.row + 0.5) * cell;
     const rw = cell * 3.4, rh = cell * 2.4;
-    ctx.fillStyle = rgba('#121a15', 0.85); ctx.fillRect(yx - rw / 2 - 3, yy - rh / 2 - 3, rw + 6, rh + 6);
-    ctx.fillStyle = rgba('#b9ad86', 0.55); ctx.fillRect(yx - rw / 2, yy - rh / 2, rw, rh);
-    ctx.fillStyle = rgba('#5c6b52', 0.85); ctx.fillRect(yx - rw / 2 + 4, yy - rh / 2 + 4, rw - 8, rh - 8);
+    ctx.fillStyle = rgba('#121a15', 0.85);
+    inkBlock(yx - rw / 2 - 3, yy - rh / 2 - 3, rw + 6, rh + 6, yx + 1.1, .085); ctx.fill();
+    ctx.fillStyle = rgba('#b9ad86', 0.55);
+    inkBlock(yx - rw / 2, yy - rh / 2, rw, rh, yx + 2.7, .09); ctx.fill();
+    ctx.fillStyle = rgba('#5c6b52', 0.85);
+    inkBlock(yx - rw / 2 + 4, yy - rh / 2 + 4, rw - 8, rh - 8, yx + 4.3, .10); ctx.fill();
     ctx.strokeStyle = rgba('#e8dcb4', 0.7); ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(yx - rw / 2 - 8, yy - rh / 2); ctx.lineTo(yx, yy - rh / 2 - 12);
-    ctx.lineTo(yx + rw / 2 + 8, yy - rh / 2); ctx.stroke();
-    ctx.fillStyle = rgba('#c9b98d', 0.5);
-    ctx.fillRect(yx - rw / 2 - 4, yy + rh / 2, rw + 8, 4);
-    // 仓 / 井
-    for (const [c, r] of [[6, 3], [6, 12], [14, 3], [14, 12]]) {
-      const x = ox + (c + 0.5) * cell, y = oy + (r + 0.5) * cell;
-      ctx.fillStyle = rgba('#8a8267', 0.6);
-      ctx.fillRect(x - cell * 0.8, y - cell * 0.8, cell * 1.6, cell * 1.6);
-      ctx.strokeStyle = rgba('#e0d6b4', 0.35); ctx.lineWidth = 1;
-      ctx.strokeRect(x - cell * 0.8, y - cell * 0.8, cell * 1.6, cell * 1.6);
+    inkLine(yx - rw / 2 - 8, yy - rh / 2, yx, yy - rh / 2 - 12, yx + 6.1, 1.6); ctx.stroke();
+    inkLine(yx, yy - rh / 2 - 12, yx + rw / 2 + 8, yy - rh / 2, yx + 8.9, 1.6); ctx.stroke();
+    ctx.strokeStyle = rgba('#c9b98d', 0.5);
+    for (let i = 0; i < 3; i++) {
+      const sy = yy + rh / 2 + 2 + i * 2.2, w2 = rw + 8 - i * 5;
+      ctx.beginPath(); ctx.moveTo(yx - w2 / 2, sy); ctx.lineTo(yx + w2 / 2, sy + .5); ctx.stroke();
     }
-    // 外框
+    // 仓 / 井：不规则夯土台 + 断续边笔，四块各自形变不同
+    for (const [c, r] of [[6, 3], [6, 12], [14, 3], [14, 12]]) {
+      const x = ox + (c + .5) * cell, y = oy + (r + .5) * cell;
+      const q = cell * 1.6, sd = c * 3.7 + r * 1.9;
+      ctx.fillStyle = rgba('#8a8267', 0.6);
+      inkBlock(x - q / 2, y - q / 2, q, q, sd, .08); ctx.fill();
+      ctx.strokeStyle = rgba('#e0d6b4', 0.38); ctx.lineWidth = 1;
+      inkLine(x - q / 2, y - q / 2, x + q / 2, y - q / 2, sd + 1.1, .8); ctx.stroke();
+      inkLine(x + q / 2, y - q / 2, x + q / 2, y + q / 2, sd + 2.3, .8); ctx.stroke();
+      inkLine(x - q / 2, y + q / 2, x - q / 2, y - q / 2, sd + 3.9, .8); ctx.stroke();
+    }
+    // 外框：四条抖笔，首尾不闭合
     ctx.strokeStyle = rgba(GOLD, 0.45); ctx.lineWidth = 1.5;
-    ctx.strokeRect(ox - 1, oy - 1, gridW + 2, gridH + 2);
+    const fr = [[ox - 1, oy - 1, ox + gridW + 1, oy - 1],
+                [ox + gridW + 1, oy - 1, ox + gridW + 1, oy + gridH + 1],
+                [ox + gridW + 1, oy + gridH + 1, ox - 1, oy + gridH + 1],
+                [ox - 1, oy + gridH + 1, ox - 1, oy - 1]];
+    fr.forEach(([ax, ay, bx, by], i) => { inkLine(ax, ay, bx, by, 17.3 + i * 4.1, 1.3); ctx.stroke(); });
+    ctx.lineCap = 'butt';
   }
 
   function drawUnit(u, L, sec) {
@@ -527,6 +607,44 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     drawInkFade(c, sec);
     const gx = (col) => L.ox + (col + 0.5) * L.cell;
     const gy = (row) => L.oy + (row + 0.5) * L.cell;
+
+    // 城门耐久的现场反馈：左上角 HUD 之外，交战处门洞自己也得读得出破损。
+    // 借墨战「交战的时候留意城池血量」这一层表现；只读 combat，纯渲染层，
+    // 不改归属（既定口径「没有堡垒的自动归属」）、不写 state / 快照 / 重放。
+    {
+      const gmax = c.gateHpMax ?? cfg.battle.gateHp ?? 1;
+      const k = Math.max(0, Math.min(1, (c.gateHp ?? gmax) / gmax));
+      const n = Math.round((1 - k) * 7);
+      if (n > 0) {
+        const wx = L.wallX, doorY = L.oy + (CV.gate.row + .5) * L.cell;
+        const dh = L.cell * 1.8;
+        ctx.save();
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        ctx.strokeStyle = 'rgba(18,25,20,.78)';
+        for (let i = 0; i < n; i++) {
+          const t = (i + .5) / n, yy = doorY - dh / 2 + t * dh;
+          const w = Math.sin(i * 2.7 + wx * .13) * 2.4;
+          ctx.lineWidth = .9 + (i % 3) * .55;
+          ctx.beginPath();
+          ctx.moveTo(wx - 7 - w, yy - 1.2);
+          ctx.lineTo(wx + 1 + w * .6, yy + 2.6 + (i % 2) * 1.4);
+          ctx.lineTo(wx + 10 - w, yy - 2);
+          ctx.stroke();
+        }
+        // 将破：门楣几笔淡朱崩落，不是进度条数字
+        if (k < .3) {
+          ctx.strokeStyle = 'rgba(166,49,41,.55)'; ctx.lineWidth = 1.2;
+          for (let i = 0; i < 4; i++) {
+            const xx = wx - 6 + (i + .3) * 4.4;
+            ctx.beginPath();
+            ctx.moveTo(xx, doorY - dh / 2 - 3);
+            ctx.lineTo(xx + Math.sin(i * 3.1) * 2.5, doorY - dh / 2 + 3 + i);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+    }
 
     // 城门 / 府衙耐久：细金条，不盖住城池名称
     const bars = [
@@ -692,7 +810,8 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
       ctx.lineWidth = p.type === 'stone' ? 2.4 : 1.3;
       if (p.type === 'stone') {
         ctx.fillStyle = rgba('#8b8676', 0.95);
-        ctx.beginPath(); ctx.arc(x, y - lift, Math.max(1.6, L.cell * 0.16), 0, Math.PI * 2); ctx.fill();
+        const sr = Math.max(1.6, L.cell * 0.16);
+        inkBlock(x - sr, y - lift - sr, sr * 2, sr * 2, p.col * 1.7 + p.ttl, .16); ctx.fill();
       } else {
         const n = Math.hypot(p.vx, p.vy) || 1;
         const len = L.cell * (p.type === 'bolt' ? 0.66 : 0.42);
