@@ -57,6 +57,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
   let formationShape = 'block';  // 横队 / 方阵 / 楔形，HUD 右上热区点击切换
   const pathByUnit = new Map();  // 一次性 A* 路线，渲染层私有，不进 state
   let currentCombat = null;
+  // 战殁消散锚点：渲染层私有，不进 state / 快照 / 重放。
+  // 借墨战「敌人在每次战斗后的消散」这一层表现，不涉及任何兵种合成或卡牌。
+  const fadeAnchors = new Map();   // id -> {x,y}
   // ── 行军动画（渲染层私有，绝不进 state） ──────────────────────────────
   const motion = new Map();    // id -> {fx,fy,tx,ty,startSec,dur,dir,seed,heading}
   const lastKey = new Map();   // id -> "zone:col:row"，用来检测逻辑位置变化
@@ -455,8 +458,73 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     if (r.ok && r.path.length > 1) pathByUnit.set(id, r.path);
   }
 
+  /** 战殁墨化消散：只读 c.events 近 1.1s 的 unitDown，淡墨散开后化尽。
+      纯渲染层；不写 state、不进快照、不进重放，也不改战斗结算。 */
+  function drawInkFade(c, sec) {
+    const ev = c.events ?? [], FADE = 1.1;
+    for (let i = ev.length - 1; i >= 0; i--) {
+      const e = ev[i];
+      if (e.sec < sec - FADE) break;            // 事件按 sec 递增
+      if (e.kind !== 'unitDown') continue;
+      let a = fadeAnchors.get(e.id);
+      if (!a) {
+        const u = allUnits().find((v) => v.id === e.id);
+        const q = u ? unitXY(u) : lastXY.get(e.id);
+        if (!q) continue;
+        a = { x: q.x, y: q.y }; fadeAnchors.set(e.id, a);
+      }
+      const k = Math.max(0, 1 - (sec - e.sec) / FADE);
+      const cell = layout?.cell ?? 18;
+      ctx.save();
+      ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+      // 一团不规则淡墨晕：一次闭合笔路，不是椭圆也不是矩形。
+      // 形变量按 id / 时刻确定性给出，不引入随机，重放一致。
+      const seedA = Math.abs(e.id.length * 1.7 + e.sec * 3.1);
+      const rr = cell * (.34 + (1 - k) * .70);
+      ctx.beginPath();
+      for (let q = 0; q < 11; q++) {
+        const ang = q / 11 * Math.PI * 2;
+        const wob = 1 + Math.sin(q * 2.7 + seedA) * .24;
+        const px = a.x + Math.cos(ang) * rr * wob;
+        const py = a.y + Math.sin(ang) * rr / wob;
+        if (q) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(26,33,27,.62)'; ctx.globalAlpha = k * .30; ctx.fill();
+      // 五笔向外散开的短锋，随化散飘远；线宽与半径都随 k 收
+      ctx.strokeStyle = 'rgba(20,27,22,.88)'; ctx.lineWidth = 1.7;
+      for (let q = 0; q < 5; q++) {
+        const ang = (seedA + q * 2.399) % (Math.PI * 2);
+        const r = cell * (.30 + (1 - k) * (1.05 + q * .16));
+        ctx.globalAlpha = k * .72;
+        ctx.beginPath();
+        ctx.moveTo(a.x + Math.cos(ang) * r * .28, a.y + Math.sin(ang) * r * .28);
+        ctx.quadraticCurveTo(a.x + Math.cos(ang + .32) * r * .76,
+          a.y + Math.sin(ang + .32) * r * .76,
+          a.x + Math.cos(ang) * r, a.y + Math.sin(ang) * r);
+        ctx.stroke();
+      }
+      // 三点淡墨也用短笔，不用 ellipse：散出去就化在纸里
+      for (let q = 0; q < 3; q++) {
+        const ang = (q * 2.1 + e.sec * 3) % (Math.PI * 2);
+        const r = cell * (.55 + (1 - k) * (1.3 + q * .35));
+        const px = a.x + Math.cos(ang) * r, py = a.y + Math.sin(ang) * r;
+        ctx.globalAlpha = k * .40;
+        ctx.beginPath();
+        ctx.moveTo(px - 2.2, py + 1.2);
+        ctx.lineTo(px, py - 1.8);
+        ctx.lineTo(px + 2.4, py + .8);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+    // 锚点只留近期，避免长局累积
+    if (fadeAnchors.size > 160) fadeAnchors.clear();
+  }
+
   /** 战斗层只读可视化：投射物、主帅、城防、士气、终局。不写任何状态。 */
   function drawCombat(L, c, sec) {
+    drawInkFade(c, sec);
     const gx = (col) => L.ox + (col + 0.5) * L.cell;
     const gy = (row) => L.oy + (row + 0.5) * L.cell;
 
