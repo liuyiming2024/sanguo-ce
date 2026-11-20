@@ -35,6 +35,44 @@ const TH_DARK = { stroke: '#080d0b', text: '#e9e3d1', gold: '#d8b46a', dim: '#a9
 const TH_LIGHT = { stroke: '#efe8d2', text: '#26302a', gold: '#8a6b34', dim: '#5c6b5a',
   pass: '#3c6f78', ridge: '#3f5a48', water: '#37636b', lake: '#37636b', huanghe: '#2f5f66',
   frame: '#2f3a33', hud: '#cdc4a7', reach: '#a6483a' };
+// ── 手绘笔路：主地图不再出现标准 arc / strokeRect 的景物与框 ──────────
+// 扰动由坐标+种子确定性给出，不引入随机源，重放逐帧一致。
+/** 一圈低频形变的运笔，收笔留两小段缺口；不是标准圆、不是虚线阵列。
+ *  fill 给色时先画闭合淡染，再留一圈未收口的运笔路径供调用方 stroke。 */
+function inkCircle(g, cx, cy, r, seed, fill = null, amp = .075) {
+  const N = 26, pts = [];
+  for (let i = 0; i < N; i++) {
+    const a = i / N * Math.PI * 2;
+    const wob = 1 + Math.sin(a * 3 + seed) * amp + Math.sin(a * 7 + seed * 1.7) * amp * .56;
+    pts.push([cx + Math.cos(a) * r * wob, cy + Math.sin(a) * r / wob]);
+  }
+  if (fill) {
+    g.beginPath(); g.moveTo(...pts[0]);
+    for (let i = 1; i <= N; i++) g.lineTo(...pts[i % N]);
+    g.closePath(); g.fillStyle = fill; g.fill();
+  }
+  g.beginPath(); g.moveTo(...pts[0]);
+  for (let i = 1; i <= N - 2; i++) g.lineTo(...pts[i]);   // 留缺口
+}
+/** 四边低频起伏的抖笔框；close 为真时闭合并 fill，否则首尾留缺口供 stroke。 */
+function inkQuad(g, x, y, w, h, seed, amp = 0, close = false) {
+  const A = amp || Math.min(w, h) * .055;
+  const corners = [[x, y], [x + w, y], [x + w, y + h], [x, y + h]], pts = [];
+  for (let e = 0; e < 4; e++) {
+    const [ax, ay] = corners[e], [bx, by] = corners[(e + 1) % 4];
+    const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len, ny = dx / len;
+    for (let i = 0; i < 4; i++) {
+      const t = i / 4;
+      // 角点扰动趋零、边中段最大：框自然闭合，角落不出现折返缺口
+      const n = Math.sin(seed * 1.31 + e * 3.7 + i * 2.9) * A * Math.sin(Math.PI * t);
+      pts.push([ax + dx * t + nx * n, ay + dy * t + ny * n]);
+    }
+  }
+  g.beginPath(); g.moveTo(...pts[0]);
+  for (let i = 1; i < pts.length + (close ? 1 : -1); i++) g.lineTo(...pts[i % pts.length]);
+}
+
 function theme(st) { return st === 'jiehua' ? TH_DARK : TH_LIGHT; }
 
 function hash(x, y, s = 1) {
@@ -129,10 +167,17 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       const s = 0.8 + hash(t.c, t.r, 13) * 0.5;
       g.strokeStyle = rgba('#121b14', 0.7); g.lineWidth = 1;
       g.beginPath(); g.moveTo(cx, cy + 3); g.lineTo(cx, cy - 2 * s); g.stroke();
+      // 三层「冠」是三笔变宽短弧，不是三个正圆色片
+      g.lineCap = 'round';
       for (const [dy, r, col] of [[0, 3.1, '#1e3526'], [-1.7, 2.5, '#2b4832'], [-3.2, 1.7, '#3b5a3d']]) {
-        g.fillStyle = col;
-        g.beginPath(); g.arc(cx, cy + dy * s, r * s, 0, Math.PI * 2); g.fill();
+        const yy = cy + dy * s, rr = r * s;
+        g.strokeStyle = col; g.lineWidth = rr * 1.05;
+        g.beginPath();
+        g.moveTo(cx - rr * .78, yy + rr * .30);
+        g.quadraticCurveTo(cx - rr * .1, yy - rr * .48, cx + rr * .82, yy + rr * .18);
+        g.stroke();
       }
+      g.lineCap = 'butt';
     }
 
     // 5) 良田：田埂 + 斜向条纹
@@ -243,18 +288,28 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       g.fillStyle = rgba('#c9b98d', 0.22);
       g.fillRect(x0 + size / 2 - 4, y0 + size / 2 - 4, 8, 8);
 
-      // 城墙（带垛口）
+      // 城墙：抖笔不闭合城廓，不是两个同心 strokeRect
+      const cseed = x0 * .013 + y0 * .021;
+      g.lineCap = 'round'; g.lineJoin = 'round';
       g.strokeStyle = rgba('#0d1210', 0.75); g.lineWidth = 3;
-      g.strokeRect(x0 + 1.5, y0 + 1.5, size - 3, size - 3);
+      inkQuad(g, x0 + 1.5, y0 + 1.5, size - 3, size - 3, cseed, 1.5); g.stroke();
       g.strokeStyle = rgba('#b9b199', 0.75); g.lineWidth = 1.6;
-      g.strokeRect(x0 + 2.5, y0 + 2.5, size - 5, size - 5);
-      g.fillStyle = rgba('#d8cfae', 0.62);
-      for (let k = 0; k < size - 6; k += 5) {
-        g.fillRect(x0 + 2 + k, y0, 3, 3);
-        g.fillRect(x0 + 2 + k, y0 + size - 3, 3, 3);
-        g.fillRect(x0, y0 + 2 + k, 3, 3);
-        g.fillRect(x0 + size - 3, y0 + 2 + k, 3, 3);
+      inkQuad(g, x0 + 2.5, y0 + 2.5, size - 5, size - 5, cseed + 2.1, 1.2); g.stroke();
+      // 垛口：不等距短笔，不是 5px 等距的 fillRect 阵列
+      g.strokeStyle = rgba('#d8cfae', 0.62); g.lineWidth = 2.6;
+      for (let k = 3, i = 0; k < size - 7; i++) {
+        const step = 4.2 + (Math.sin(cseed + i * 2.3) + 1) * 1.8;
+        const w = 2.2 + Math.abs(Math.sin(cseed * 1.7 + i)) * 1.6;
+        const q = x0 + 2 + k, t = y0 + 2 + k;
+        g.beginPath();
+        g.moveTo(q, y0); g.lineTo(q + w, y0);
+        g.moveTo(q, y0 + size - 3); g.lineTo(q + w, y0 + size - 3);
+        g.moveTo(x0, t); g.lineTo(x0, t + w);
+        g.moveTo(x0 + size - 3, t); g.lineTo(x0 + size - 3, t + w);
+        g.stroke();
+        k += step;
       }
+      g.lineCap = 'butt';
       // 角楼
       for (const [ax, ay] of [[x0, y0], [x0 + size - 7, y0],
         [x0, y0 + size - 7], [x0 + size - 7, y0 + size - 7]]) {
@@ -445,7 +500,10 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     ctx.lineWidth = Math.max(1, s * .13);
     // 躯干一笔、头一点、双腿交替、兵器随朝向偏
     ctx.beginPath(); ctx.moveTo(0, -s * .12); ctx.lineTo(sway, -s * .62); ctx.stroke();
-    ctx.beginPath(); ctx.arc(sway, -s * .72, s * .13, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(sway - s * .13, -s * .70);
+    ctx.quadraticCurveTo(sway, -s * .89, sway + s * .13, -s * .70);
+    ctx.stroke();   // 头是一笔短弧，不是圆点
     ctx.beginPath(); ctx.moveTo(sway, -s * .12);
     ctx.lineTo(sway - s * .18 + sway * .5, s * .24);
     ctx.moveTo(sway, -s * .12);
@@ -641,8 +699,14 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       const col = p.kind === 'ford' ? th.pass : th.gold;
       ctx.fillStyle = col; ctx.strokeStyle = rgba(th.stroke, 0.9); ctx.lineWidth = 1.2 * k;
       ctx.beginPath();
-      if (p.kind === 'ford') ctx.arc(x, y, 4 * k, 0, Math.PI * 2);
-      else {
+      if (p.kind === 'ford') {
+        // 津渡浅滩：一笔不规则浅弧，不是正圆
+        const R = 4 * k;
+        ctx.moveTo(x - R, y + R * .3);
+        ctx.quadraticCurveTo(x, y - R * .85, x + R, y + R * .22);
+        ctx.quadraticCurveTo(x, y + R * .72, x - R, y + R * .3);
+        ctx.closePath();
+      } else {
         ctx.moveTo(x, y - 5 * k); ctx.lineTo(x + 4.5 * k, y + 4 * k);
         ctx.lineTo(x - 4.5 * k, y + 4 * k); ctx.closePath();
       }
@@ -778,24 +842,28 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       const th = theme(style);
       const cx = (selection.c + 0.5) * TP, cy = (selection.r + 0.5) * TP;
       if (style !== 'jiehua') {
-        // 细线圈 + 淡晕，不再是方格框
-        ctx.beginPath(); ctx.arc(cx, cy, TP * 0.82, 0, Math.PI * 2);
-        ctx.fillStyle = rgba(th.reach, 0.07); ctx.fill();
-        ctx.beginPath(); ctx.arc(cx, cy, TP * 0.62, 0, Math.PI * 2);
-        ctx.strokeStyle = rgba(th.text, 0.78); ctx.lineWidth = 1.4 / camera.scale; ctx.stroke();
+        // 手画墨圈 + 淡染，不是两个同心正圆
+        const sd = cx * .013 + cy * .021;
+        inkCircle(ctx, cx, cy, TP * 0.80, sd, rgba(th.reach, 0.07));
+        ctx.lineWidth = 1.4 / camera.scale; ctx.strokeStyle = rgba(th.text, 0.78); ctx.stroke();
+        inkCircle(ctx, cx, cy, TP * 0.62, sd + 2.7);
+        ctx.stroke();
       } else {
+        // 界画档也用抖笔方框，不再 strokeRect
+        const sd = cx * .017 + cy * .011;
         ctx.strokeStyle = GOLD; ctx.lineWidth = 2.2 / camera.scale;
-        ctx.strokeRect(selection.c * TP + 1, selection.r * TP + 1, TP - 2, TP - 2);
+        inkQuad(ctx, selection.c * TP + 1, selection.r * TP + 1, TP - 2, TP - 2, sd, 1.2 / camera.scale); ctx.stroke();
         ctx.strokeStyle = rgba(GOLD, 0.4); ctx.lineWidth = 1 / camera.scale;
-        ctx.strokeRect((selection.c - 1) * TP, (selection.r - 1) * TP, TP * 3, TP * 3);
+        inkQuad(ctx, (selection.c - 1) * TP, (selection.r - 1) * TP, TP * 3, TP * 3, sd + 1.9, 2 / camera.scale); ctx.stroke();
       }
     }
     if (circle) {
-      ctx.strokeStyle = rgba(style !== 'jiehua' ? '#a6483a' : '#e8d9a8', 0.95); ctx.lineWidth = 1.8 / camera.scale;
-      ctx.setLineDash([5 / camera.scale, 4 / camera.scale]);
-      ctx.beginPath(); ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = rgba(style !== 'jiehua' ? '#a6483a' : '#e8d9a8', 0.10); ctx.fill();
+      const c = style !== 'jiehua' ? '#a6483a' : '#e8d9a8';
+      ctx.setLineDash([]);   // 手画的一笔，不要虚线阵列
+      inkCircle(ctx, circle.x, circle.y, circle.r, circle.r * .13 + circle.x * .007, rgba(c, 0.10));
+      ctx.strokeStyle = rgba(c, 0.95); ctx.lineWidth = 1.8 / camera.scale;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.stroke();
+      ctx.lineCap = 'butt';
     }
     ctx.restore();
     drawScreenHud(ctx);

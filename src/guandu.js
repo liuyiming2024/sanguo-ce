@@ -253,9 +253,9 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
   // ── 图廓 ──────────────────────────────────────────────────────────────
   function border() {
     ctx.strokeStyle='rgba(95,84,58,.58)'; ctx.lineWidth=1.2;
-    ctx.strokeRect(16,16,W-32,H-32);
+    wq(16,16,W-32,H-32,11.3,2.2); ctx.stroke();
     ctx.strokeStyle='rgba(95,84,58,.30)'; ctx.lineWidth=.8;
-    ctx.strokeRect(23,23,W-46,H-46);
+    wq(23,23,W-46,H-46,14.7,1.6); ctx.stroke();
     const L=22;
     ctx.strokeStyle='rgba(140,112,62,.66)'; ctx.lineWidth=1.5;
     for (const [x,y,sx,sy] of [[16,16,1,1],[W-16,16,-1,1],[16,H-16,1,-1],[W-16,H-16,-1,-1]]) {
@@ -411,6 +411,31 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     path.lineTo(x1-nx*w1, y1-ny*w1);
     path.lineTo(x1+nx*w1, y1+ny*w1);
     path.closePath();
+  }
+
+  /** 抖笔方框：四边低频起伏、首尾留缺口；不是 strokeRect 的标准四边形。
+      seed 由坐标确定性给出，不推进 rnd()，既有绘制序列一字不动。
+      close 为真时闭合（用于需要 fill 的印面 / 台基）。 */
+  function wq(x,y,w,h,sd,amp,close){
+    const A=amp||Math.min(w,h)*.06, pts=[];
+    const cs=[[x,y],[x+w,y],[x+w,y+h],[x,y+h]];
+    for(let e=0;e<4;e++){
+      const [ax,ay]=cs[e],[bx,by]=cs[(e+1)%4];
+      const dx=bx-ax,dy=by-ay,L=Math.hypot(dx,dy)||1,nx=-dy/L,ny=dx/L;
+      for(let i=0;i<4;i++){
+        const t=i/4;
+        // 角点扰动趋零、边中段最大：四角对齐不折返，只在边上有笔势起伏
+        const n=Math.sin(sd*1.31+e*3.7+i*2.9)*A*Math.sin(Math.PI*t);
+        pts.push([ax+dx*t+nx*n, ay+dy*t+ny*n]);
+      }
+    }
+    ctx.beginPath(); ctx.moveTo(...pts[0]);
+    for(let i=1;i<pts.length;i++) ctx.lineTo(...pts[i]);
+    if(close){ ctx.lineTo(...pts[0]); ctx.closePath(); }
+  }
+  /** 手刻印面：不规则闭合块，不是 fillRect 的实心方。 */
+  function seal(x,y,w,h,sd){
+    wq(x,y,w,h,sd,Math.min(w,h)*.045,true);
   }
 
   // ── 一个树冠团：顺场风势的一次运笔，不是方硬色片 ─────────────────────
@@ -728,8 +753,15 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
         const a=rr(0,Math.PI*2), R=rr(.15,.72);
         const x=cx+Math.cos(a)*rx*R, y=cy+Math.sin(a)*ry*R;
         const rw=rr(5,13), rh=rr(1.6,3.4);
+        // 蒲苇：一笔不规则叶形，不是 ellipse
         ctx.fillStyle=rgba('#e9e0ca',rr(.42,.72));
-        ctx.beginPath(); ctx.ellipse(x,y,rw,rh,a,0,Math.PI*2); ctx.fill();
+        const ca=Math.cos(a), sa=Math.sin(a);
+        const px=x+ca*rw, py=y+sa*rw, qx=x-ca*rw, qy=y-sa*rw;
+        ctx.beginPath();
+        ctx.moveTo(qx-sa*rh*.6, qy+ca*rh*.6);
+        ctx.quadraticCurveTo(qx, qy-rh*.9, px, py-rh*.4);
+        ctx.quadraticCurveTo(px+sa*rh*.3, py+rh*.8, qx-sa*rh*.6, qy+ca*rh*.6);
+        ctx.closePath(); ctx.fill();
         reeds.push({x,y,r:Math.max(rw,rh)});
       }
       // 分割水道：从泽心向外，笔断意连，不连成一条贯穿全画的「路」
@@ -826,8 +858,9 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     // 朱印
     const sx=tx+8, sy=ty+big.length*bp+20;
     ctx.save();
-    ctx.fillStyle='rgba(156,51,43,.90)'; ctx.fillRect(sx-13,sy,26,26);
-    ctx.strokeStyle='rgba(240,190,160,.5)'; ctx.lineWidth=1; ctx.strokeRect(sx-13,sy,26,26);
+    ctx.fillStyle='rgba(156,51,43,.90)'; seal(sx-13,sy,26,26,sx*.17+sy*.09); ctx.fill();
+    ctx.strokeStyle='rgba(240,190,160,.5)'; ctx.lineWidth=1;
+    seal(sx-13,sy,26,26,sx*.17+sy*.09); ctx.stroke();
     ctx.fillStyle='#f2e6d1'; ctx.font=`15px ${font}`;
     ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('舆',sx,sy+13);
     ctx.restore();
@@ -895,13 +928,14 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     for(const [name,lon,lat] of LANDMARKS){
       const [x,y]=proj(lon,lat), s=9, h=s*.70;
       ctx.save();
+      const sd=x*.013+y*.021;
       ctx.strokeStyle='rgba(68,66,52,.78)'; ctx.lineWidth=1;
-      ctx.strokeRect(x-s,y-h,s*2,h*2);
+      wq(x-s,y-h,s*2,h*2,sd,1.1); ctx.stroke();
       ctx.strokeStyle='rgba(247,239,216,.58)'; ctx.lineWidth=.5;
-      ctx.strokeRect(x-s+1.2,y-h+1.2,s*2-2.4,h*2-2.4);
+      wq(x-s+1.2,y-h+1.2,s*2-2.4,h*2-2.4,sd+1.7,.8); ctx.stroke();
       for(const [ox,oy] of [[x-s,y-h],[x+s,y+h]]){
         ctx.strokeStyle='rgba(68,66,52,.72)'; ctx.lineWidth=.8;
-        ctx.strokeRect(ox-1.8,oy-1.8,3.6,3.6);
+        wq(ox-1.8,oy-1.8,3.6,3.6,sd+ox*.1,.5); ctx.stroke();
       }
       ctx.restore();
       const deep=field(x,y)>.52;
@@ -1051,20 +1085,21 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
   function walledHold(x,y,ang,sc) {
     const s=rr(11,16)*sc;
     ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
+    const sd=x*.017+y*.013;
     ctx.strokeStyle='rgba(68,66,52,.88)'; ctx.lineWidth=1.1;
-    ctx.strokeRect(-s,-s*.80,s*2,s*1.60);
+    wq(-s,-s*.80,s*2,s*1.60,sd,1.3); ctx.stroke();
     ctx.strokeStyle='rgba(240,234,214,.78)'; ctx.lineWidth=.6;
-    ctx.strokeRect(-s+1.4,-s*.80+1.4,s*2-2.8,s*1.60-2.8);
+    wq(-s+1.4,-s*.80+1.4,s*2-2.8,s*1.60-2.8,sd+1.9,1.0); ctx.stroke();
     for(const [ox,oy] of [[-s,-s*.80],[s,-s*.80],[-s,s*.80],[s,s*.80]]){
-      const u=rr(2.6,4.2)*sc;
+      const u=rr(2.6,4.2)*sc, sd2=sd+ox*.13+oy*.09;
       ctx.strokeStyle='rgba(68,66,52,.90)'; ctx.lineWidth=1;
-      ctx.strokeRect(ox-u/2,oy-u/2,u,u);
+      wq(ox-u/2,oy-u/2,u,u,sd2,.6); ctx.stroke();
       ctx.fillStyle='rgba(240,234,214,.52)';
-      ctx.fillRect(ox-u/2+1,oy-u/2+1,u-2,u-2);
+      seal(ox-u/2+1,oy-u/2+1,u-2,u-2,sd2); ctx.fill();
     }
     // 门楼（南面）
     ctx.strokeStyle='rgba(68,66,52,.82)'; ctx.lineWidth=1;
-    ctx.strokeRect(-s*.22,s*.80-2.5,s*.44,4.5);
+    wq(-s*.22,s*.80-2.5,s*.44,4.5,sd+4.1,.5); ctx.stroke();
     // 飞桥只部分坞堡有，避免整片同款
     if(h1(x*.11+y*.13)>.62){
       ctx.strokeStyle='rgba(88,78,56,.55)'; ctx.lineWidth=.7;
@@ -1080,13 +1115,15 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
       const a=nearestRiver(x,y).a;
       ctx.save(); ctx.translate(x,y); ctx.rotate(a);
       ctx.strokeStyle='rgba(68,66,52,.80)'; ctx.lineWidth=1;
+      const sd=x*.019+y*.011;
       for(let k=0;k<5;k++){
         const w=rr(6,9), h=rr(4,6);
         const ox=(k%3-1)*11+rr(-2,2), oy=Math.floor(k/3)*9+rr(-2,2);
-        ctx.strokeRect(ox-w/2,oy-h/2,w,h);
+        ctx.strokeStyle='rgba(68,66,52,.80)'; ctx.lineWidth=1;
+        wq(ox-w/2,oy-h/2,w,h,sd+k*2.7,.7); ctx.stroke();
       }
       ctx.strokeStyle='rgba(226,214,176,.46)'; ctx.lineWidth=.7;
-      ctx.strokeRect(-19,14,38,5);
+      wq(-19,14,38,5,sd+9.3,.6); ctx.stroke();
       ctx.restore();
       vertical(name,x+16,y-12,9,'#f0e9d5',.78);
     }
@@ -1130,33 +1167,41 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
       ctx.lineTo(px+Math.cos(a+.9)*l*.5,py+Math.sin(a+.9)*l*.5);
       ctx.stroke();
     }
+    const sd=x*.013+y*.019;
     ctx.strokeStyle='rgba(68,66,52,.88)'; ctx.lineWidth=1.5;
-    ctx.strokeRect(L,T,s*2,h*2);
+    wq(L,T,s*2,h*2,sd,1.9); ctx.stroke();
     ctx.strokeStyle='rgba(68,66,52,.42)'; ctx.lineWidth=.8;
-    ctx.strokeRect(L+2.5,T+2.5,s*2-5,h*2-5);
+    wq(L+2.5,T+2.5,s*2-5,h*2-5,sd+2.3,1.4); ctx.stroke();
     ctx.strokeStyle='rgba(247,239,216,.72)'; ctx.lineWidth=.7;
-    ctx.strokeRect(L+1.4,T+1.4,s*2-2.8,h*2-2.8);
+    wq(L+1.4,T+1.4,s*2-2.8,h*2-2.8,sd+4.7,1.2); ctx.stroke();
     if (rank<=2) {
       const u=s*.42;
       ctx.strokeStyle='rgba(68,66,52,.66)'; ctx.lineWidth=1;
-      ctx.strokeRect(x-u,T+4,u*2,h*.86);
+      wq(x-u,T+4,u*2,h*.86,sd+6.1,1.0); ctx.stroke();
       ctx.strokeStyle='rgba(247,239,216,.6)'; ctx.lineWidth=.6;
-      ctx.strokeRect(x-u+1.2,T+5.2,u*2-2.4,h*.86-2.4);
+      wq(x-u+1.2,T+5.2,u*2-2.4,h*.86-2.4,sd+8.3,.8); ctx.stroke();
     }
     ctx.strokeStyle='rgba(68,66,52,.5)'; ctx.lineWidth=.7;
     for (const [ox,oy] of [[-s*.55,h*.1],[s*.3,-h*.25],[s*.42,h*.28]]) {
       const w=rr(4,7), ht=rr(3.5,5.5);
-      ctx.strokeRect(x+ox,T+h+oy,w,ht);
+      wq(x+ox,T+h+oy,w,ht,sd+ox*.11+oy*.07,.7); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(x+ox-1,T+h+oy); ctx.lineTo(x+ox+w/2,T+h+oy-3);
       ctx.lineTo(x+ox+w+1,T+h+oy); ctx.stroke();
     }
-    ctx.fillStyle='rgba(68,66,52,.72)';
+    // 城垛：不等距短笔，不是等宽 fillRect 小方块
+    ctx.strokeStyle='rgba(68,66,52,.72)'; ctx.lineWidth=2.6; ctx.lineCap='round';
     for (const [a,b] of [[L+4,L+s*.6],[L+s*.8,L+s*1.3],[R-s*.5,R-4]]) {
-      let px=a;
-      while (px<b-3){ const w=rr(2.8,4.8); ctx.fillRect(px,T-rr(3,4.6),w,rr(3,4.6)); px+=w+rr(2,4.6); }
+      let px=a, i=0;
+      while (px<b-3){
+        const w=rr(2.4,4.6), hh=rr(2.8,4.4);
+        ctx.beginPath(); ctx.moveTo(px,T-hh); ctx.lineTo(px+w,T-hh+.4); ctx.stroke();
+        px+=w+rr(2.0,4.8); i++;
+      }
     }
+    ctx.lineCap='butt';
     const gw=s*.48;
-    ctx.fillStyle='rgba(234,226,205,.96)'; ctx.fillRect(x-gw/2,B-1,gw,3.5);
+    ctx.fillStyle='rgba(234,226,205,.96)';
+    seal(x-gw/2,B-1,gw,3.5,sd+11.7); ctx.fill();
     ctx.strokeStyle='rgba(68,66,52,.86)'; ctx.lineWidth=1.3;
     ctx.beginPath();
     ctx.moveTo(x-gw/2,B+2); ctx.lineTo(x-gw/2,T+h*.55);
@@ -1170,7 +1215,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     }
     ctx.strokeStyle='rgba(68,66,52,.62)'; ctx.lineWidth=1;
     for (const [cx,cy] of [[L,T],[R,T],[L,B],[R,B]]) {
-      ctx.strokeRect(cx-3,cy-3,6,6);
+      wq(cx-3,cy-3,6,6,sd+cx*.07+cy*.05,.6); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(cx-4.5,cy-3); ctx.lineTo(cx,cy-6); ctx.lineTo(cx+4.5,cy-3); ctx.stroke();
     }
     ctx.strokeStyle='rgba(120,72,48,.7)'; ctx.lineWidth=.9;
@@ -1191,7 +1236,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     ctx.restore();
     vertical(name,R+10,T-2,fs,ink,.96);
     const by=T+name.length*(fs*1.12)+3, bs=rank===1?10:8;
-    ctx.fillStyle=rgba('#9c332b',.94); ctx.fillRect(R+6,by,bs,bs);
+    ctx.fillStyle=rgba('#9c332b',.94); seal(R+6,by,bs,bs,R*.11+by*.07); ctx.fill();
     ctx.fillStyle=rgba('#f2e6d1',.95);
     ctx.font=`${rank===1?8:7}px serif`; ctx.textAlign='center'; ctx.textBaseline='top';
     ctx.fillText(rank===1?'都':rank===2?'郡':rank===3?'县':'垒',R+6+bs/2,by+1);
@@ -1239,7 +1284,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
       const ox=(k-(n-1)/2)*7*sc, oy=rr(-2,2)*sc;
       const X=x+ox*ca-oy*sa, Y=y+ox*sa+oy*ca;
       const w=rr(4,6.5)*sc, h=rr(3,4.6)*sc;
-      ctx.strokeRect(X-w/2,Y-h,w,h);
+      wq(X-w/2,Y-h,w,h,X*.09+Y*.07,.6); ctx.stroke();
       ctx.beginPath();
       ctx.moveTo(X-w/2-1,Y-h); ctx.lineTo(X,Y-h-2.6*sc); ctx.lineTo(X+w/2+1,Y-h);
       ctx.stroke();

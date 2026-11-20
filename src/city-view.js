@@ -631,8 +631,31 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
           ctx.lineTo(wx + 10 - w, yy - 2);
           ctx.stroke();
         }
-        // 将破：门楣几笔淡朱崩落，不是进度条数字
+        // 将破：门楣几笔淡朱崩落 + 一层墨晕崩尘。
+        // 借墨战「倒塌建筑物的模糊效果」这层纯视觉表现，不是机制；
+        // 不规则晕开 + 散锋，不用正圆/椭圆，也不做进度条数字。
         if (k < .3) {
+          const dust = 1 - k / .3;
+          ctx.fillStyle = `rgba(28,34,28,${(.06 + dust * .10).toFixed(3)})`;
+          ctx.beginPath();
+          const dr = 7 + dust * 9;
+          for (let q = 0; q < 11; q++) {
+            const ang = q / 11 * Math.PI * 2;
+            const wob = 1 + Math.sin(q * 2.7 + wx * .13) * .26;
+            const px = wx + Math.cos(ang) * dr * wob;
+            const py = doorY + Math.sin(ang) * dr * .72 / wob;
+            if (q) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+          }
+          ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = `rgba(38,44,36,${(.28 + dust * .22).toFixed(3)})`;
+          for (let i = 0; i < 4; i++) {
+            const sd = wx * .13 + i * 3.1;
+            ctx.lineWidth = .7 + (i % 2) * .5;
+            ctx.beginPath();
+            ctx.moveTo(wx - 8 + Math.sin(sd) * 3, doorY - dh * .38 + i * 5);
+            ctx.lineTo(wx - 8 + Math.sin(sd + 1.4) * 6, doorY - dh * .30 + i * 5);
+            ctx.stroke();
+          }
           ctx.strokeStyle = 'rgba(166,49,41,.55)'; ctx.lineWidth = 1.2;
           for (let i = 0; i < 4; i++) {
             const xx = wx - 6 + (i + .3) * 4.4;

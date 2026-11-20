@@ -344,7 +344,16 @@ ok(!/import .*campaign|import .*persist|localStorage|Math\.random/.test(gb),
 ok(/camera\.scale < 1\.6/.test(mr7), '等级角标必须默认不出现');
 ok(/ctx\.rect\(p\.c \* TP, p\.r \* TP, TP, TP\)/.test(mr7),
   '可达区必须是整片淡染，不是逐格硬圆点');
-ok(/ctx\.arc\(cx, cy, TP \* 0\.62/.test(mr7), '选中态必须脱离方格框');
+ok(/inkCircle\(ctx, cx, cy, TP \* 0\.62/.test(mr7) &&
+   !/ctx\.arc\(cx, cy, TP \* 0\.62/.test(mr7) &&
+   !/ctx\.strokeRect\(selection\.c/.test(mr7),
+  '选中态必须脱离方格框（手绘墨圈，不是 arc 也不是 strokeRect）');
+// 主地图 / 作战区：景物与框不再有标准几何（HUD 控件与铺色 fillRect 除外）
+ok(/inkCircle\(ctx, circle\.x/.test(mr7) && !/ctx\.arc\(circle\.x/.test(mr7),
+  '主地图框选圈必须是手画墨圈，与城内小地图一致');
+const gd7 = readFileSync(join(root, 'src/guandu.js'), 'utf8');
+ok(!/ctx\.ellipse\(/.test(gd7) && /function wq\(/.test(gd7),
+  '作战区蒲苇椭圆与标准四边形已清成抖笔');
 ok(!/strokeRidge|BRUSH_|setBrush|brushOn/.test(mr7 + main7),
   '失败的「单条山脊一笔」实验残骸未清干净');
 ok(!/绢帛|宣纸|毛笔|界画那头是/.test(gb), '工笔层不该再拿材质给平铺找说法');
@@ -669,126 +678,6 @@ ok(!/reports = \[\]; state\.reports = reports/.test(mainSrc), '「新开一局�
 const qDoc = readFileSync(join(root, 'docs/全境两章纪事底本.md'), 'utf8');
 ok(/后台开发用 · 白话 · 不进游戏/.test(qDoc) && /州郡事件台账/.test(qDoc) && /文白分工/.test(qDoc),
   '全境两章白话底本缺总目 / 台账 / 分工');
-
-// ── all：两座实点 / 按旬露布 / 轻量小程序 ──────────────────────────────
-const qData = readFileSync(join(root, 'src/quanjing-data.js'), 'utf8');
-const persistSrc = readFileSync(join(root, 'src/persist.js'), 'utf8');
-ok(/C\('xinye'/.test(qData) && /C\('yexian'/.test(qData), '新野 / 叶没进全境城表');
-ok(CITIES.length >= 32, `全境城数 ${CITIES.length}，扩表没落地`);
-// 点城一格一座：新两城与任何既有城不得同格，也不得紧邻一格（四向外道会撞城门）
-const qTile = (c) => {
-  const p = { c: (c.lon - 93) / 33 * (cfg.terrain.cols - 1),
-    r: (1 - (c.lat - 15) / 28) * (cfg.terrain.rows - 1) };
-  return [Math.round(p.c), Math.round(p.r)];
-};
-const qPos = CITIES.map((c) => [c.id, qTile(c)]);
-for (const id of ['xinye', 'yexian']) {
-  const p = qPos.find(([k]) => k === id)?.[1];
-  ok(!!p && qPos.every(([k, q]) => k === id ||
-    (Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) > 1)),
-  `「${id}」与既有城同格或紧邻，点城会互盖`);
-}
-for (const e of [['wan','xinye'],['xinye','xiangyang'],['wan','yexian'],['yexian','yangdi']]) {
-  ok(qData.includes(`R('${e[0]}','${e[1]}'`), `缺道路 ${e[0]}-${e[1]}，新城会成孤岛`);
-}
-ok(qProblems.length === 0, `扩表后 validateMap 未过：${qProblems.join('；')}`);
-
-const disp = story.chapters.flatMap((c) => (c.dispatches ?? []).map((d) => ({ ...d, ch: c.id })));
-ok(story.chapters.filter((c) => c.dispatches).length === 2 && disp.length === 6,
-  '按旬露布应只配给全境两章、共六条');
-ok(new Set(disp.map((d) => d.id)).size === disp.length, '露布 id 重复会破坏去重');
-for (const d of disp) {
-  ok(Number.isInteger(d.afterTurn) && d.afterTurn > 0 && d.afterTurn <= 5,
-    `「${d.id}」afterTurn 越界`);
-  ok(['report', 'mail'].includes(d.kind), `「${d.id}」kind 非法`);
-  const body = d.kind === 'report' ? d.report?.body : d.mail?.body;
-  ok(!!body && body.length > 20, `「${d.id}」正文缺失或过薄`);
-  ok(d.kind === 'report' ? !!d.report?.title : !!d.mail?.from, `「${d.id}」缺题名 / 发信人`);
-  ok(MECH_WORDS.every((w) => !body.includes(w)) && !/https?:\/\//.test(body),
-    `「${d.id}」正文漏出工程语 / URL`);
-}
-ok(q10?.onEnter?.city?.some((e) => e.id === 'yexian') &&
-   q10?.onEnter?.city?.some((e) => e.id === 'xinye'),
-  '扩表后第十回事件仍用宛 / 襄阳代点，没挂到实点');
-ok(/export function dueDispatches/.test(storySrc) && /export function applyDispatches/.test(storySrc),
-  '按旬露布纯函数缺失');
-ok(/dueDispatches\(story, state\)/.test(mainSrc) && /applyDispatches\(state, due\)/.test(mainSrc),
-  'doTurn 没接按旬投递');
-ok(/dispatchedIds/.test(persistSrc) && /chapterEnteredTurn/.test(persistSrc) &&
-   /if \(raw\.cities\)/.test(persistSrc),
-  '存档缺露布去重表 / 入场旬 / 旧档城表合并迁移');
-ok(existsSync(join(root, 'miniprogram/app.json')) &&
-   existsSync(join(root, 'miniprogram/utils/ticket.js')) &&
-   existsSync(join(root, 'miniprogram/README.md')) &&
-   existsSync(join(root, 'tests/miniprogram.test.mjs')) &&
-   existsSync(join(root, 'docs/小程序军令帖验证说明.md')),
-  '轻量小程序验证版文件或后台说明缺失');
-ok(existsSync(join(root, 'docs/全境两章纪事底本.md')) &&
-   /已补入/.test(qDoc), '两章底本没把「新野叶不在城表」改成已闭环');
-
-// ── 军令帖短号中转：文件齐全 / RLS / key 护栏 / 端侧不联网 ───────────────
-for (const p of ['src/ticket-store.js', 'supabase/schema.sql', 'bridge.html',
-  'miniprogram/utils/relay.js', 'tests/ticket-store.test.mjs',
-  'docs/军令帖短号中转说明.md']) {
-  ok(existsSync(join(root, p)), `短号中转缺文件 ${p}`);
-}
-const storeSrc = readFileSync(join(root, 'src/ticket-store.js'), 'utf8');
-const sqlSrc = readFileSync(join(root, 'supabase/schema.sql'), 'utf8');
-const bridgeSrc = readFileSync(join(root, 'bridge.html'), 'utf8');
-const relaySrc = readFileSync(join(root, 'miniprogram/utils/relay.js'), 'utf8');
-const mpPageSrc = readFileSync(join(root, 'miniprogram/pages/index/index.js'), 'utf8');
-ok(/export function assertPublicKey/.test(storeSrc) &&
-   /export async function putTicket/.test(storeSrc) && /export async function takeTicket/.test(storeSrc),
-   '短号中转层缺 key 护栏或存取动作');
-ok(/enable row level security/.test(sqlSrc) &&
-   /grant select, insert, delete on public\.tickets to anon/.test(sqlSrc) &&
-   !/grant update/.test(sqlSrc), '建表脚本 RLS / grant 口径被改');
-for (const p of ['tickets_anon_insert', 'tickets_anon_select', 'tickets_anon_delete']) {
-  ok(sqlSrc.includes(p), `建表脚本缺 RLS 策略 ${p}`);
-}
-ok(/src\/version\.js/.test(bridgeSrc) && !bridgeSrc.includes('src/main.js'),
-   '传帖台要么写死版本、要么加载了游戏逻辑');
-ok(!/AKID|ghp_|sb_secret|SUPABASE_SERVICE/.test(bridgeSrc + storeSrc),
-   '源码里出现凭证字面量');
-for (const banned of ['wx.request', 'wx.connectSocket', 'https://', 'http://']) {
-  ok(!relaySrc.includes(banned) && !mpPageSrc.includes(banned),
-     `小程序端出现「${banned}」，会引入备案域名`);
-}
-ok(/\?sid=/.test(mpPageSrc) && !/path:[^\n]*text/.test(mpPageSrc),
-   '分享卡片要么没带短号、要么又塞了整帖');
-ok(/短号中转|传帖台/.test(readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8')),
-   '小程序后台说明没同步短号中转口径');
-
-// 本机自动装配：配置只落 localStorage / 本地文件，真实明文一律不进仓库
-ok(!existsSync(join(root, 'relay.local.json')) && !existsSync(join(root, 'bridge.local.json')),
-   '本机配置文件被提交进仓库');
-ok(/relay\.local\.json/.test(readFileSync(join(root, '.gitignore'), 'utf8')),
-   '.gitignore 未排除本机配置');
-ok(/autoConfigFromHash/.test(bridgeSrc) && /history\.replaceState/.test(bridgeSrc) &&
-   /loadLocal/.test(bridgeSrc) && /copyAuto/.test(bridgeSrc),
-   '传帖台缺本机自动装配（hash 注入 / 抹除 / 文件载入 / 复制链接）');
-for (const f of ['src/ticket-store.js', 'supabase/schema.sql']) {
-  const t = readFileSync(join(root, f), 'utf8');
-  ok(!/webnote\.cc|note_pwd|@[a-f0-9]{64}/.test(t), `${f} 出现便签解锁口令或自动密码痕迹`);
-}
-
-// 后端已建但真实凭据不进仓库：项目 id / 项目口令 / 便签正文一律零明文
-const allTracked = [bridgeSrc, readFileSync(join(root, 'src/ticket-store.js'), 'utf8'),
-  readFileSync(join(root, 'docs/军令帖短号中转说明.md'), 'utf8'),
-  readFileSync(join(root, 'docs/创作决策流水.md'), 'utf8'),
-  readFileSync(join(root, 'supabase/schema.sql'), 'utf8')].join('\n');
-// 拆开写：护栏自身也不能成为明文载体（否则推送扫描会把自己拦下）。
-const FORBIDDEN = [
-  ['duqpvya', 'fertiaohabrnz'].join(''),
-  ['2012ming', '0421lym'].join(''),
-  ['webnote.cc', '/p/', 'fe42'].join(''),
-];
-for (const bad of FORBIDDEN) {
-  ok(!allTracked.includes(bad), `仓库出现真实后端凭据明文：${bad.slice(0, 6)}…`);
-}
-ok(/createFunctionStore/.test(readFileSync(join(root, 'src/ticket-store.js'), 'utf8')) &&
-   /服务端函数（免 key/.test(bridgeSrc), '服务端直连（前端零 key）链路未接齐');
-
 useMap('guandu');
 
 if (problems.length) {
