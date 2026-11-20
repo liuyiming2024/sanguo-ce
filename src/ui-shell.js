@@ -640,7 +640,8 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
         <button class="bigBtn ghost" type="button" data-act="atlasFocus" data-f="jingyang" aria-pressed="false">荆扬详图</button>
       </div>
       <canvas id="atlasCanvas" aria-label="建安五年十三州全境舆图"></canvas>
-      <p class="readBody">此图全幅十三州，与行台沙盘之豫兖战区非同一图幅。背景层为地表成因，
+      <p class="readBody">竖屏一进来是放大到能读的局部，左右拖着看；点「复位」回到整幅十三州全境。
+        此图全幅十三州，与行台沙盘之豫兖战区非同一图幅。背景层为地表成因，
         地物层为州郡、关津、烽燧、长城与主景题识；势力归属不预绘，由局内动态给出。
         笔法、连续场、色板与史料锚点悉仍其旧，见 docs/十三州全境取数表.md。
         中原、河北、荆扬三幅分图各有独立注记分级；缩小后注记会逐层收回，势力归属仍由局内动态给出。</p>
@@ -712,6 +713,10 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
 
   // ── 十三州全境舆图：bg+fg + 按档重渲 + 屏幕空间工笔层与三级注记 ────
   let atlasInst = null;
+  // render() 会重建整块 innerHTML（refreshUI / 切页 / 章回推进都会触发），
+  // mountAtlas() 随之重跑。视图状态放在实例外，重建后接着用户已选的档位，
+  // 否则刚点完「中原详图」被一次 render 冲回全境，实测表现为按钮点了没反应。
+  const atlasState = { zoom: null, px: 0, py: 0, focus: 'all', detail: false };
   function mountAtlas() {
     const c = screen.querySelector('#atlasCanvas');
     if (!c) return;
@@ -722,7 +727,13 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     c.width = Math.round(cw * dpr); c.height = Math.round(ch * dpr);
     const ctx = c.getContext('2d');
     const base = Math.min(cw / a.W, ch / a.H);
-    let zoom = 1, px = 0, py = 0, detail = false, focus = 'all';
+    // 竖屏按宽度 contain 后整幅只有约 270px 高、地名必挤；一进来先放大到能读，
+    // 左右拖着看，点「复位」仍回 VIEWS.all 的 ×1.00 整幅全境。桌面横屏不变。
+    const portrait = cw < 720;
+    let zoom = atlasState.zoom ?? (portrait ? 1.55 : 1);
+    let px = atlasState.px, py = atlasState.py;
+    let detail = atlasState.detail, focus = atlasState.focus;
+    if (focus !== 'all' && a.setFocus) a.setFocus(focus);
     /* 四档视角与 demos 同表；lon/lat → 1400×1100 图幅像素 → CSS px（乘 base）。
        缩小到阈值以下注记逐层收起，不锁死。 */
     const VIEWS = {
@@ -731,7 +742,12 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       hebei:    {zoom:3.10, lon:115.20, lat:37.20},
       jingyang: {zoom:2.80, lon:115.80, lat:29.00},
     };
+    function saveState() {
+      atlasState.zoom = zoom; atlasState.px = px; atlasState.py = py;
+      atlasState.focus = focus; atlasState.detail = detail;
+    }
     function paint() {
+      saveState();
       // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹
       if (a.setTier) a.setTier(a.tierOf(zoom));
       // 先按设备像素清屏，再用整数 CSS 尺寸铺底：cw/ch 可能是小数，
@@ -821,6 +837,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       setFocus,
       get focus() { return focus; },
     };
+    syncFocusButtons();          // 重建后把按钮文本 / aria 对齐恢复的档位
   }
 
   // ── 事件委托：所有按钮一处处理 ────────────────────────────────────────
@@ -897,7 +914,13 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       }
       case 'atlasView': navigate('atlasView'); break;
       case 'atlasZoom': atlasInst?.zoom(el.dataset.d); break;
-      case 'atlasDetail': atlasInst?.toggleDetail(el); break;
+      case 'atlasDetail': {
+        // 直接按当前档切，不靠 detail 布尔量推断：detail 与 focus 在多次
+        // render / 复位后可能不同步，实测会让「中原详图」点了没反应。
+        const f = atlasInst?.focus === 'zhongyuan' ? 'all' : 'zhongyuan';
+        atlasInst?.setFocus?.(f);
+        break;
+      }
       case 'atlasFocus': atlasInst?.setFocus?.(el.dataset.f); break;
       default: break;
     }

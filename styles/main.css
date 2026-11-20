@@ -360,7 +360,11 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
 @media (max-width:720px){
   .arcList{grid-template-columns:1fr}
   .arcPre{font-size:13px;line-height:2.05}
-  #atlasCanvas{aspect-ratio:1400/1100}
+  /* 竖屏不能跟着 1.27:1 的横图幅比例走：390px 宽会把画布压成 270px 的矮条，
+     整幅十三州缩成一小块、地名挤成一团。改成给足高度，地图按宽度铺满，
+     上下留暗绢渐变（不是死黑），读成摊在案上的卷轴；配合初始 ×1.55 与
+     自动避让，一进来字就散得开，左右拖着看，点「复位」回整幅全境。 */
+  #atlasCanvas{aspect-ratio:auto;height:min(70vh,600px)}
 }
 .readBody{font-size:13px;line-height:1.95;color:var(--paper2);padding:14px 16px;
   border:1px solid var(--line2);background:var(--cardBg);border-radius:2px;white-space:pre-wrap}

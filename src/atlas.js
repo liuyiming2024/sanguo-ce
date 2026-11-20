@@ -196,46 +196,72 @@ function drawLabels(g, view){
   const sc=(mx,my)=>[W/2+view.panX+(mx-W/2)*view.zoom, H/2+view.panY+(my-H/2)*view.zoom];
   const prio={seal:0,capital:1,state:2,cmd:3,ink:3,county:4};
   const placed=[];
-  // 先按重要性落字；包围盒相交的下级注记自动跳过 —— 密处少显，疏处多显
+  const hit=(b)=>placed.some(q=>b[0]<q[2]&&b[2]>q[0]&&b[1]<q[3]&&b[3]>q[1]);
+  /* 自动避让：撞了先挪、挪不开再微缩一档、仍不行才让位跳过。
+     原来「包围盒相交就 continue」在放大档 L3（80 县邑 + 40 郡治 + 墨注）
+     会把密处整片吃空，剩下的字稀稀拉拉，反而不如不避让；而且这是游戏，
+     不是真的古舆图，不能拿「古图本有叠压」当借口让字糊在一起。 */
+  const CAND=[[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1],
+              [0,-2],[0,2],[-2,0],[2,0]];
+  // 先按重要性落字：朱题 / 州治是锚，绝不挪；其余让位
   for(const L of [...labels].sort((a,b)=>(prio[a.kind]??9)-(prio[b.kind]??9))){
     if(L.level>=2 && !L2) continue;
     if(L.level>=3 && !L3) continue;
-    // 朱题只在全境与中原出现：河北/荆扬分图不串朱色
     if(F!=='all' && L.kind==='seal' && !(F==='zhongyuan' && L.area==='zhongyuan')) continue;
     const [sx,sy]=sc(L.mx,L.my);
     if(sx<-90||sx>W+90||sy<-90||sy>H+90) continue;
-    const fs = L.kind==='seal'?15*k : L.kind==='capital'?12*k : L.kind==='state'?11*k
+    const baseFs = L.kind==='seal'?15*k : L.kind==='capital'?12*k : L.kind==='state'?11*k
              : L.kind==='cmd'?10*k : L.kind==='county'?9*k : 10*k;
     const vert = L.kind==='seal'||L.kind==='capital';
-    const bw = vert ? fs*1.55 : L.txt.length*fs*.98;
-    const bh = vert ? L.txt.length*(fs+2)*1.05 : fs*1.40;
-    const cy = L.kind==='seal' ? sy+12*k+(L.txt.length-1)*(15*k+2)/2
-             : vert ? sy+(L.txt.length-1)*(fs+2)/2 : sy;
-    const box=[sx-bw/2,cy-bh/2,sx+bw/2,cy+bh/2];
-    if(placed.some(q=>box[0]<q[2]&&box[2]>q[0]&&box[1]<q[3]&&box[3]>q[1])) continue;
-    placed.push(box);
+    const isAnchor = L.kind==='seal'||L.kind==='capital';
+    // 朱题带不规则淡纸衬，包围盒按实际外扩，别让别的字压到纸衬上；
+    // 其余注记也外扩一点「呼吸空间」——只判硬贴边的话，中原 L3 那一片
+    // 小字虽不重叠却仍糊成一团，留了气才读得出单个地名。
+    const pad = L.kind==='seal' ? 7*k : 2.0*k + baseFs*.45;
+    const movable = (prio[L.kind]??9)>=3;   // 郡治 / 墨注 / 县邑才允许挪或缩
+    let pick=null, fs=baseFs;
+    // 两轮：原字号 → 微缩 0.82 档（只有可让位的注记进第二轮）
+    for(const round of [0,1]){
+      if(round){ if(!movable) break; fs=baseFs*.82; }
+      const bw = vert ? fs*1.55 : L.txt.length*fs*.98;
+      const bh = vert ? L.txt.length*(fs+2)*1.05 : fs*1.40;
+      const cy = L.kind==='seal' ? sy+12*k+(L.txt.length-1)*(15*k+2)/2
+               : vert ? sy+(L.txt.length-1)*(fs+2)/2 : sy;
+      const step = isAnchor ? 0 : L.kind==='county' ? fs*1.45 : fs*1.15;
+      for(const [ux,uy] of CAND){
+        const dx=ux*step, dy=uy*step;
+        const b=[sx-bw/2-pad+dx, cy-bh/2-pad+dy, sx+bw/2+pad+dx, cy+bh/2+pad+dy];
+        if(b[0]<-30||b[1]<-30||b[2]>W+30||b[3]>H+30) continue;
+        if(hit(b)) continue;
+        pick={dx,dy,b,fs,cy}; break;
+      }
+      if(pick) break;
+    }
+    if(!pick) continue;                       // 十三方向都放不下，才真正让位
+    placed.push(pick.b);
+    const X=sx+pick.dx, Y=sy+pick.dy, CY=pick.cy;  // fs 已是两轮后的最终字号
     if(L.kind==='seal'){
-      const n=L.txt.length, s=15*k, step=s+2, y0=sy+12*k, cy=y0+(n-1)*step/2;
-      irregular(g,sx,cy,10*k,n*9*k+7,sx*.1+sy*.07,'rgba(233,227,209,.80)',null,0);
-      vlabel(g,L.txt,sx,y0,s,'rgba(116,38,30,.95)','rgba(236,228,206,.92)',step);
+      const n=L.txt.length, step=fs+2, y0=Y+12*k;
+      irregular(g,X,CY,10*k,n*9*k+7,X*.1+Y*.07,'rgba(233,227,209,.80)',null,0);
+      vlabel(g,L.txt,X,y0,fs,'rgba(116,38,30,.95)','rgba(236,228,206,.92)',step);
     } else if(L.kind==='capital'){
-      vlabel(g,L.txt,sx,sy,12*k,'rgba(38,32,24,.94)','rgba(236,228,206,.90)',12*k+2);
+      vlabel(g,L.txt,X,Y,fs,'rgba(38,32,24,.94)','rgba(236,228,206,.90)',fs+2);
     } else if(L.kind==='state'){
-      g.font=`${11*k}px serif`; g.textAlign='left'; g.lineWidth=2.4;
-      g.strokeStyle='rgba(236,228,206,.75)'; g.strokeText(L.txt,sx,sy);
-      g.fillStyle='rgba(140,58,44,.72)'; g.fillText(L.txt,sx,sy);
+      g.font=`${fs}px serif`; g.textAlign='left'; g.lineWidth=2.4;
+      g.strokeStyle='rgba(236,228,206,.75)'; g.strokeText(L.txt,X,Y);
+      g.fillStyle='rgba(140,58,44,.72)'; g.fillText(L.txt,X,Y);
     } else if(L.kind==='cmd'){
-      g.font=`${10*k}px serif`; g.textAlign='center'; g.lineWidth=2;
-      g.strokeStyle='rgba(236,228,206,.65)'; g.strokeText(L.txt,sx,sy);
-      g.fillStyle='rgba(52,44,32,.76)'; g.fillText(L.txt,sx,sy);
+      g.font=`${fs}px serif`; g.textAlign='center'; g.lineWidth=2;
+      g.strokeStyle='rgba(236,228,206,.65)'; g.strokeText(L.txt,X,Y);
+      g.fillStyle='rgba(52,44,32,.76)'; g.fillText(L.txt,X,Y);
     } else if(L.kind==='county'){
-      g.font=`${9*k}px serif`; g.textAlign='center'; g.lineWidth=1.8;
-      g.strokeStyle='rgba(236,228,206,.58)'; g.strokeText(L.txt,sx,sy);
-      g.fillStyle='rgba(72,62,46,.62)'; g.fillText(L.txt,sx,sy);
+      g.font=`${fs}px serif`; g.textAlign='center'; g.lineWidth=1.8;
+      g.strokeStyle='rgba(236,228,206,.58)'; g.strokeText(L.txt,X,Y);
+      g.fillStyle='rgba(72,62,46,.62)'; g.fillText(L.txt,X,Y);
     } else { // ink
-      g.font=`${10*k}px serif`; g.textAlign='left'; g.lineWidth=2.2;
-      g.strokeStyle='rgba(236,228,206,.86)'; g.strokeText(L.txt,sx,sy);
-      g.fillStyle='rgba(64,52,38,.86)'; g.fillText(L.txt,sx,sy);
+      g.font=`${fs}px serif`; g.textAlign='left'; g.lineWidth=2.2;
+      g.strokeStyle='rgba(236,228,206,.86)'; g.strokeText(L.txt,X,Y);
+      g.fillStyle='rgba(64,52,38,.86)'; g.fillText(L.txt,X,Y);
     }
   }
   if(F!=='all'){
