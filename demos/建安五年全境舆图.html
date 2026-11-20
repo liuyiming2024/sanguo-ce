@@ -44,6 +44,7 @@
     <button id="zoomIn">放大</button>
     <button id="zoomOut">缩小</button>
     <button id="reset">复位</button>
+    <button id="exportSvg">导出矢量</button>
   </div>
   <div id="tip">滚轮缩放 · 拖动平移 · 建安五年二月 · 纵横不拘实距</div>
   <div id="gridState">—</div>
@@ -54,6 +55,9 @@
 (() => {
 'use strict';
 const W = 1400, H = 1100;
+/* 格网基准：原 46px 相对全境过密过小，放大到 92px；主格每 3 细格一道。
+   格网本身是矢量线（canvas path / 下面的 SVG line），不烘进位图。 */
+const GRID_BASE = 92;
 const LON0=93, LON1=126, LAT0=15, LAT1=43;           // 图幅：西止玉门、东含乐浪、南含日南
 const lon2x = l => (l-LON0)/(LON1-LON0)*W;
 const lat2y = t => (LAT1-t)/(LAT1-LAT0)*H;
@@ -1086,7 +1090,7 @@ function composite(){
   // 格网：墨底 + 亮金双色，按 zoom 连续退场
   let state='格网 · 全隐';
   if(showGrid){
-    const z=zoom, cell=46*z, alphaFine=clamp((z-0.62)/0.32,0,1), alphaMajor=clamp((z-0.38)/0.30,0,1);
+    const z=zoom, cell=GRID_BASE*z, alphaFine=clamp((z-0.62)/0.32,0,1), alphaMajor=clamp((z-0.38)/0.30,0,1);
     if(alphaFine>0.01){
       ctx.save(); ctx.globalAlpha=alphaFine*.30;
       ctx.strokeStyle='#c8a86a'; ctx.lineWidth=1/z;
@@ -1098,7 +1102,7 @@ function composite(){
     if(alphaMajor>0.01){
       ctx.save(); ctx.globalAlpha=alphaMajor*.50;
       ctx.strokeStyle='#e0c287'; ctx.lineWidth=1.3/z;
-      const m=cell*5; ctx.beginPath();
+      const m=cell*3; ctx.beginPath();
       for(let x=(panX%m+m)%m;x<W;x+=m){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
       for(let y=(panY%m+m)%m;y<H;y+=m){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
       ctx.stroke(); ctx.restore();
@@ -1109,8 +1113,105 @@ function composite(){
   const noteState = (showFeatures && bg) ? drawLabels() : '注记 · 关闭';
   const inkState = inkN>0 ? ` · 工笔 ${inkN} 笔` : '';
   document.getElementById('gridState').textContent =
-    `${FOCUS[focus].title.split(' · ')[0]} · ${state} · ×${zoom.toFixed(2)} · 格距 ${(46*zoom).toFixed(0)}px · ${noteState}${inkState}`;
+    `${FOCUS[focus].title.split(' · ')[0]} · ${state} · ×${zoom.toFixed(2)} · 格距 ${(GRID_BASE*zoom).toFixed(0)}px · ${noteState}${inkState}`;
 }
+/* ── 真正的矢量交付物 ──────────────────────────────────────────────
+   本图的地貌笔触层本来就是运行时 canvas 路径（数学描述，不是位图），
+   仓库里的 preview-*.png 只是实拍截图，不是地图文件。这里把「图廓 /
+   格网 / 水系 / 州界 / 城邑 / 注记」导出成纯 SVG：浏览器打开可无限放大，
+   线宽用 non-scaling-stroke 恒定，不随放大糊掉。 */
+function svgPath(pts, wobble=0){
+  if(!pts||!pts.length) return '';
+  const f=n=>(+n.toFixed(1));
+  let d=`M ${f(pts[0][0])} ${f(pts[0][1])}`;
+  for(let i=1;i<pts.length;i++){
+    const a=pts[i-1], b=pts[i];
+    if(wobble){
+      const mx=(a[0]+b[0])/2 + Math.sin(i*12.9898+pts.length)*wobble;
+      const my=(a[1]+b[1])/2 + Math.cos(i*78.233+pts.length)*wobble;
+      d+=` Q ${f(mx)} ${f(my)} ${f(b[0])} ${f(b[1])}`;
+    } else d+=` L ${f(b[0])} ${f(b[1])}`;
+  }
+  return d;
+}
+function buildSvg(){
+  const sc=(mx,my)=>[W/2+panX+(mx-W/2)*zoom, H/2+panY+(my-H/2)*zoom];
+  const P=(lon,lat)=>sc(lon2x(lon),lat2y(lat));
+  const F=n=>(+n.toFixed(1));
+  const O=[];
+  O.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
+  O.push(`<title>建安五年全境舆图 · 矢量骨架</title>`);
+  O.push(`<desc>纯矢量：图廓/州界/水系/城邑/格网/注记。地貌笔触层由页面运行时路径绘制，不烘焙进位图。州界为示意，纵横不拘实距。</desc>`);
+  O.push(`<rect width="${W}" height="${H}" fill="#e9e3d1"/>`);
+  // 图廓：抖笔四边，不用正矩形描边
+  const fr=[[24,24],[W-24,24],[W-24,H-24],[24,H-24],[24,24]];
+  O.push(`<g id="frame" fill="none" stroke="#8a6b34" stroke-width="2" stroke-linecap="round"><path d="${svgPath(fr,3.2)}"/></g>`);
+  // 格网：细格 + 主格
+  if(showGrid){
+    const cell=GRID_BASE*zoom, m=cell*3;
+    const ox=((panX%cell)+cell)%cell, oy=((panY%cell)+cell)%cell;
+    const mx=((panX%m)+m)%m, my=((panY%m)+m)%m;
+    let d='',dm='';
+    for(let x=ox;x<W;x+=cell){ d+=`M ${F(x)} 0 L ${F(x)} ${H} `; }
+    for(let y=oy;y<H;y+=cell){ d+=`M 0 ${F(y)} L ${W} ${F(y)} `; }
+    for(let x=mx;x<W;x+=m){ dm+=`M ${F(x)} 0 L ${F(x)} ${H} `; }
+    for(let y=my;y<H;y+=m){ dm+=`M 0 ${F(y)} L ${W} ${F(y)} `; }
+    O.push(`<g id="grid-fine" fill="none" stroke="#c8a86a" stroke-opacity="0.30" stroke-width="1" vector-effect="non-scaling-stroke"><path d="${d}"/></g>`);
+    O.push(`<g id="grid-major" fill="none" stroke="#e0c287" stroke-opacity="0.55" stroke-width="1.3" vector-effect="non-scaling-stroke"><path d="${dm}"/></g>`);
+  }
+  // 水系：宽青底 + 细亮芯，读成双勾河
+  let rv='';
+  for(const R of RIVERS){
+    const pts=R.p.map(([l,t])=>P(l,t));
+    rv+=`<path d="${svgPath(pts,2.4)}" fill="none" stroke="#7fa8ac" stroke-opacity="0.62" stroke-width="${F(R.w*2.2)}" stroke-linecap="round" stroke-linejoin="round"/>`;
+    rv+=`<path d="${svgPath(pts,2.4)}" fill="none" stroke="#e4eee4" stroke-opacity="0.55" stroke-width="1" stroke-linecap="round"/>`;
+  }
+  O.push(`<g id="rivers">${rv}</g>`);
+  // 州界：抖笔朱线，不闭合、不作考据边界
+  let st='';
+  STATES.forEach((S,si)=>{
+    const pts=S.p.map(([l,t])=>P(l,t));
+    st+=`<path d="${svgPath(pts,2.8)}" fill="none" stroke="#a6483a" stroke-opacity="0.42" stroke-width="1.1" stroke-dasharray="9 6" stroke-linecap="round"/>`;
+  });
+  O.push(`<g id="stateBounds">${st}</g>`);
+  // 城邑：不规则墨点，不用方块
+  let cp='';
+  CAPITALS.forEach((C,i)=>{
+    const [x,y]=P(C.l,C.t), r=C.k==='capital'?4.6:2.6;
+    const a=i*0.7;
+    cp+=`<path d="M ${F(x-r)} ${F(y)} Q ${F(x)} ${F(y-r-1+Math.sin(a))} ${F(x+r)} ${F(y+.4)} Q ${F(x+.6)} ${F(y+r)} ${F(x-r)} ${F(y)} Z" fill="#3a4038" fill-opacity="0.86"/>`;
+  });
+  O.push(`<g id="cities">${cp}</g>`);
+  // 注记：全量写入，按 level 分组；竖排名逐字成 text，放大仍清晰
+  const FS={seal:15,capital:12,state:11,cmd:10,county:9,ink:10};
+  let tx='';
+  for(const L of labels){
+    const [sx,sy]=sc(L.mx,L.my);
+    if(sx<-100||sx>W+100||sy<-100||sy>H+100) continue;
+    const fs=FS[L.kind]??10;
+    const col=L.kind==='seal'?'#a63129':L.kind==='capital'?'#8a3a2c':'#49544a';
+    const vert=L.kind==='seal'||L.kind==='capital';
+    let one='';
+    if(vert){
+      for(let i=0;i<L.txt.length;i++)
+        one+=`<text x="${F(sx)}" y="${F(sy+i*(fs+2))}">${L.txt[i]}</text>`;
+    } else one=`<text x="${F(sx)}" y="${F(sy)}">${L.txt}</text>`;
+    tx+=`<g class="l${L.level}" font-size="${fs}" fill="${col}" text-anchor="middle" font-family="Noto Serif CJK SC,Source Han Serif SC,Songti SC,serif">${one}</g>`;
+  }
+  O.push(`<g id="labels">${tx}</g>`);
+  O.push(`<g id="colophon" font-size="17" fill="#5b4a30" font-family="Noto Serif CJK SC,serif"><text x="52" y="66">建安五年二月 · 十三州全境</text></g>`);
+  O.push(`<g id="scale" font-size="10" fill="#6c6046" font-family="Noto Serif CJK SC,serif"><text x="52" y="${H-44}">每方约百里 · 纵横不拘实距 · 州界示意</text></g>`);
+  O.push('</svg>');
+  return O.join('\n');
+}
+window.__atlasSvg = buildSvg;   // 验证脚本取静态矢量文件用
+document.getElementById('exportSvg').addEventListener('click', ()=>{
+  const blob=new Blob([buildSvg()],{type:'image/svg+xml;charset=utf-8'});
+  const u=URL.createObjectURL(blob), a=document.createElement('a');
+  a.href=u; a.download='建安五年全境舆图-矢量.svg'; document.body.appendChild(a);
+  a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1500);
+});
+
 /* 背景按倍率分档重渲：只在跨档时重算，滚轮/拖动仍即时合成 */
 let bgTier = 1;
 const tierOf = z => clamp(Math.round(z),1,3);

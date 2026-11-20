@@ -47,6 +47,7 @@ let cfg, uiData, story, tutorialDef, state, rng, renderer, cityView = null, shel
 let openingChoice = 'farm', chapterGateWasReady = false;
 let session = null, snapshot = null, battleCityId = null;
 let auto = true, accTurn = 0, last = 0, started = false, dirty = true;
+let lastPortraitReady = false;
 let selection = null, selectedCity = null, toastTimer = null, saveTick = 0;
 let lastBattleOutcome = null;
 let reports = [];
@@ -225,7 +226,7 @@ function refreshUI() {
   for (const c of CITIES) owners[c.id] = state.cities[c.id].owner;
   renderer.setCityOwners(owners);
   renderer.invalidateBorders();
-  renderer.setOrders(state.orders);
+  renderer.setOrders(state.orders, state.cities);
   renderer.setReachable(reachableTiles(state.terrain, state.playerFaction, 1400));
   if (selection) showInfo(selection.c, selection.r);
   if (selectedCity) showCity(selectedCity);
@@ -1003,8 +1004,17 @@ function frame(now) {
       }
     }
   }
-  const needDraw = !state?.settings?.idleStop || dirty || battleOpen || session?.active;
-  if (needDraw) { renderer.draw(ctx); dirty = false; }
+  const pr = renderer?.portraitsReady ?? false;
+  // 有在途军令时持续重画，行军队列才会真的走起来（idleStop 下也不停）。
+  const marching = state?.orders?.some((o) => o.path?.length > 1 &&
+    (o.arriveTurn ?? 0) > state.turn) ?? false;
+  const needDraw = !state?.settings?.idleStop || dirty || battleOpen || session?.active
+    || marching || pr !== lastPortraitReady;
+  lastPortraitReady = pr;
+  if (needDraw) {
+    renderer.draw(ctx, { turn: state.turn, sub: Math.min(1, accTurn / cfg.calendar.secPerTurn) });
+    dirty = false;
+  }
   if (cityView && battleOpen) cityView.draw(session?.sec ?? 0, session?.combat ?? null);
   requestAnimationFrame(frame);
 }

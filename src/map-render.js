@@ -16,6 +16,8 @@ import { T, TYPE_LABEL } from './terrain.js';
 import { paintGongbi, GONGBI } from './gongbi.js';
 import { renderGuanduLayers } from './guandu.js';
 import { createAtlas } from './atlas.js';
+import { createPortraits } from './portrait.js';
+import { headingFromDelta } from './direction.js';
 
 const PAL = {
   plain: '#3f4c3c', farmland: '#5d6641', forest: '#2c4133', hill: '#4a4e3c',
@@ -48,6 +50,11 @@ const rgba = (hex, a) => {
 export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atlas' }) {
   const TP = cfg.terrain.tilePx;
   const W = terrain.cols * TP, H = terrain.rows * TP;
+  // 士兵精细立绘（8 向 idle / 左右步）此前只接在城内小地图；主地图这里补上。
+  // 素材异步加载，就绪后回调让主循环重画一帧；加载失败自动回退程序化短笔。
+  let portraitReadyCb = null;
+  const portraits = createPortraits({ onReady: () => portraitReadyCb?.() });
+  let garrisons = null;
   const off = document.createElement('canvas');
   off.width = W; off.height = H;
   const g = off.getContext('2d');
@@ -409,7 +416,159 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     }
   }
 
-  function drawOrders(ctx) {
+  /** 沿 A* 路径按累计距离取一点：t∈[0,1] 是在途进度，不是格序号。
+      返回 {x,y,heading,done}；全是渲染层插值，不写 state / 存档 / 命令日志。 */
+  function pointOnPath(path, t) {
+    if (!path?.length) return null;
+    if (path.length === 1) return { x: path[0].c * TP + TP / 2,
+      y: path[0].r * TP + TP / 2, heading: 0, done: t >= 1 };
+    const segs = [];
+    let total = 0;
+    for (let i = 1; i < path.length; i++) {
+      const dx = (path[i].c - path[i - 1].c) * TP, dy = (path[i].r - path[i - 1].r) * TP;
+      const d = Math.hypot(dx, dy) || 0.001;
+      segs.push({ d, dx, dy }); total += d;
+    }
+    let want = Math.max(0, Math.min(1, t)) * total, k = 0;
+    while (k < segs.length - 1 && want > segs[k].d) { want -= segs[k].d; k++; }
+    const sg = segs[k], f = Math.min(1, want / sg.d);
+    const px = (path[k].c + .5) * TP + sg.dx * f;
+    const py = (path[k].r + .5) * TP + sg.dy * f;
+    return { x: px, y: py, heading: Math.atan2(sg.dy, sg.dx), done: t >= 1 };
+  }
+
+  /** 程序化小兵：素材没就绪时用的一笔短人形，不是圆点、不是方块。 */
+  function inkTrooper(ctx, x, y, s, heading, phase, col) {
+    ctx.save(); ctx.translate(x, y);
+    const sway = Math.sin(phase * 2.1) * s * .06;
+    ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(1, s * .13);
+    // 躯干一笔、头一点、双腿交替、兵器随朝向偏
+    ctx.beginPath(); ctx.moveTo(0, -s * .12); ctx.lineTo(sway, -s * .62); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sway, -s * .72, s * .13, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(sway, -s * .12);
+    ctx.lineTo(sway - s * .18 + sway * .5, s * .24);
+    ctx.moveTo(sway, -s * .12);
+    ctx.lineTo(sway + s * .18 + sway * .5, s * .24); ctx.stroke();
+    const hx = Math.cos(heading) * s * .5, hy = Math.sin(heading) * s * .32;
+    ctx.beginPath(); ctx.moveTo(sway, -s * .48);
+    ctx.lineTo(sway + hx, -s * .48 + hy); ctx.stroke();
+    ctx.restore();
+  }
+
+  /** 一座城池的驻军剪影：让做了很久的士兵立绘真的出现在大地图上。
+      数量按守军规模 clamp，位置确定性错开，不进任何状态。 */
+  function drawGarrisonTroops(ctx, clk) {
+    if (!garrisons) return;
+    const col = style === 'jiehua' ? 'rgba(230,221,196,.88)' : 'rgba(38,48,40,.86)';
+    for (const city of CITIES) {
+      const g = garrisons[city.id];
+      if (!g || (g.garrison ?? 0) <= 0) continue;
+      const info = terrain.cityTiles?.[city.id];
+      if (!info) continue;
+      const n = Math.max(1, Math.min(3, Math.round((g.garrison ?? 0) / 40) + 1));
+      const bx = (info.c + info.rad + .7) * TP;
+      const by = (info.r + .3) * TP;
+      const s = TP * .78;
+      for (let i = 0; i < n; i++) {
+        const x = bx + (i % 2) * TP * .5, y = by + Math.floor(i / 2) * TP * .42;
+        const ok = portraits.ready && portraits.draw(ctx, {
+          x, y, s, heading: Math.PI / 2, walk: false, phase: 0,
+          amp: 1, hp: 1, kind: 'trooper', selected: false, champion: false,
+        });
+        if (!ok) inkTrooper(ctx, x, y, s, Math.PI / 2, clk.turn * .5 + i, col);
+      }
+    }
+  }
+
+  /** 在途军令的行军队列：墨迹拖尾 + 一队真在走的小兵。
+      进度由策略层 turn + 旬内比例给出，确定性，双时钟 / 存档重放一致。 */
+  function drawMarchers(ctx, o, clk) {
+    const path = o.path;
+    if (!path?.length || path.length < 2) return;
+    const span = Math.max(1, (o.arriveTurn ?? (o.issuedTurn ?? 0) + 1) - (o.issuedTurn ?? 0));
+    const t = Math.max(0, Math.min(1, ((clk.turn ?? 0) + (clk.sub ?? 0) - (o.issuedTurn ?? 0)) / span));
+    if (t <= 0 || t >= 1) return;
+    const f = cfg.factions.find((v) => v.id === o.faction);
+    const col = rgba(f?.color ?? GOLD, .92);
+    const head = pointOnPath(path, t);
+    const lastIdx = Math.max(1, Math.floor(t * (path.length - 1)));
+    const walked = [];
+    for (let i = 0; i <= lastIdx; i++)
+      walked.push([path[i].c * TP + TP / 2, path[i].r * TP + TP / 2]);
+    walked.push([head.x, head.y]);
+    ctx.save();
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.setLineDash([]);
+    // 对照墨战「部队在移动过程中拖动的水墨痕迹」：不是一条从头到尾一样粗的
+    // 规划线，而是逐段渐隐的墨痕 —— 越靠近队首越浓越宽，身后慢慢散掉。
+    // 每段中点带确定性偏移，读成笔拖出来的痕，不是等宽折线。
+    const N = walked.length - 1;
+    for (let i = 1; i <= N; i++) {
+      const u = i / N;                       // 0 → 出发处，1 → 队首
+      const a0 = walked[i - 1], b0 = walked[i];
+      const mx = (a0[0] + b0[0]) / 2 + Math.sin(i * 1.37 + o.id) * TP * .22;
+      const my = (a0[1] + b0[1]) / 2 + Math.cos(i * 2.11 + o.id) * TP * .22;
+      // 淡纸衬：托住队列，不被密林/城郭吃掉；越近越实
+      ctx.strokeStyle = `rgba(236,228,206,${(.10 + .44 * u * u).toFixed(3)})`;
+      ctx.lineWidth = TP * (.55 + 1.35 * u);
+      ctx.beginPath(); ctx.moveTo(a0[0], a0[1]);
+      ctx.quadraticCurveTo(mx, my, b0[0], b0[1]); ctx.stroke();
+      // 墨痕：浓淡与宽度都随距离衰减，队首那一段最重
+      ctx.strokeStyle = rgba(f?.color ?? GOLD, (.06 + .52 * u * u).toFixed(3));
+      ctx.lineWidth = (1.2 + 4.2 * u) / camera.scale;
+      ctx.beginPath(); ctx.moveTo(a0[0], a0[1]);
+      ctx.quadraticCurveTo(mx, my, b0[0], b0[1]); ctx.stroke();
+    }
+    // 消散：队首刚过去的一小段散出几笔淡墨点，对应「留下的墨迹」渐渐化开
+    const tail = pointOnPath(path, Math.max(0, t - .055));
+    if (tail) {
+      ctx.strokeStyle = rgba(f?.color ?? GOLD, .26);
+      ctx.lineWidth = 1.1 / camera.scale;
+      for (let i = 0; i < 5; i++) {
+        const ang = i * 1.257 + o.id;
+        const rr = TP * (.3 + (i % 3) * .24);
+        const px = tail.x + Math.cos(ang) * rr, py = tail.y + Math.sin(ang) * rr * .7;
+        ctx.beginPath(); ctx.moveTo(px, py);
+        ctx.lineTo(px + Math.cos(ang) * 2.6, py + Math.sin(ang) * 2.2); ctx.stroke();
+      }
+    }
+    // 队列：5 人错开，尺寸放大到一格多；左右步由 turn 确定性给出
+    const s = TP * 1.15;
+    for (let i = 0; i < 5; i++) {
+      const q = pointOnPath(path, Math.max(0, t - i * .014));
+      if (!q) continue;
+      const ph = (clk.turn ?? 0) * .8 + (clk.sub ?? 0) * 6 + i * 1.7;
+      const ok = portraits.ready && portraits.draw(ctx, {
+        x: q.x, y: q.y, s, heading: q.heading, walk: true, phase: ph,
+        amp: 1, hp: 1, kind: 'trooper', selected: false, champion: false,
+      });
+      if (!ok) inkTrooper(ctx, q.x, q.y, s, q.heading, ph, col);
+    }
+    // 领队小朱旗：一笔旗面 + 一笔旗杆，随队列走
+    const lead = pointOnPath(path, t);
+    ctx.strokeStyle = 'rgba(36,42,36,.9)'; ctx.lineWidth = 1.6 / camera.scale;
+    ctx.beginPath(); ctx.moveTo(lead.x, lead.y + s * .2);
+    ctx.lineTo(lead.x, lead.y - s * 1.5); ctx.stroke();
+    ctx.fillStyle = 'rgba(166,49,41,.9)';
+    ctx.beginPath();
+    ctx.moveTo(lead.x, lead.y - s * 1.5);
+    ctx.quadraticCurveTo(lead.x + s * .85, lead.y - s * 1.34, lead.x + s * .72, lead.y - s * 1.02);
+    ctx.lineTo(lead.x, lead.y - s * 1.02); ctx.closePath(); ctx.fill();
+    // 起尘：三笔断续短弧，不是圆点阵列
+    ctx.strokeStyle = rgba(f?.color ?? GOLD, .48);
+    ctx.lineWidth = 1.4 / camera.scale;
+    for (let i = 0; i < 3; i++) {
+      const q = pointOnPath(path, Math.max(0, t - .035 - i * .014));
+      if (!q) continue;
+      ctx.beginPath();
+      ctx.moveTo(q.x - s * .5, q.y + s * .3);
+      ctx.quadraticCurveTo(q.x - s * .7, q.y + s * .12, q.x - s * .95, q.y + s * .28);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawOrders(ctx, clk) {
     for (const o of orders) {
       if (!o.path?.length) continue;
       const f = cfg.factions.find((v) => v.id === o.faction);
@@ -433,6 +592,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       ctx.lineTo(bx - 6 * Math.cos(ang - 0.5), by - 6 * Math.sin(ang - 0.5));
       ctx.lineTo(bx - 6 * Math.cos(ang + 0.5), by - 6 * Math.sin(ang + 0.5));
       ctx.closePath(); ctx.fill();
+      drawMarchers(ctx, o, clk);
     }
   }
 
@@ -576,7 +736,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     return (lonStep / terrain.cols * 3.4).toFixed(1);
   }
 
-  function draw(ctx) {
+  function draw(ctx, clock = null) {
+    const clk = clock ?? { turn: 0, sub: 0 };
     // 同 city-view：位图尺寸必须与 CSS 尺寸逐像素对应，否则点击与画面错位。
     if (canvas.clientWidth > 0 && canvas.clientHeight > 0 &&
         (Math.abs(canvas.clientWidth - cssW) > 3 ||
@@ -594,6 +755,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
 
     drawBorders(ctx);
     drawCityFlags(ctx);
+    drawGarrisonTroops(ctx, clk);
     // atlas 模式的城名 / 关津 / 山水题识已画在对面地物层里，再画一遍会重影；
     // 旧画法仍走屏幕空间注记。
     if (style !== 'atlas') drawAnnotations(ctx);
@@ -610,7 +772,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       ctx.fillStyle = rgba(th.reach, style !== 'jiehua' ? 0.10 : 0.18);
       ctx.fill();
     }
-    drawOrders(ctx);
+    drawOrders(ctx, clk);
 
     if (selection) {
       const th = theme(style);
@@ -646,7 +808,15 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     setSelection(p) { selection = p; },
     setCircle(c) { circle = c; },
     setReachable(list) { reachable = list; },
-    setOrders(list) { orders = list; },
+    setOrders(list, garrisonMap = undefined) {
+      orders = list;
+      if (garrisonMap !== undefined) garrisons = garrisonMap;
+    },
+    setPortraitReady(cb) {
+      portraitReadyCb = cb;
+      if (portraits.ready) cb?.();
+    },
+    get portraitsReady() { return portraits.ready; },
     setCityOwners(map) { cityOwners = map; borderPaths = null; },
     setStyle(next) {
       const v = next === 'quanjing' ? 'quanjing' : next === 'jiehua' ? 'jiehua' : next === 'gongbi' ? 'gongbi' : 'atlas';
