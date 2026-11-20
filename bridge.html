@@ -84,6 +84,9 @@ button:disabled{opacity:.42;cursor:not-allowed}
     <div class="row">
       <button id="saveCfg" class="primary">记 于 本 机</button>
       <button id="clearCfg" class="ghost">清 除</button>
+      <button id="copyAuto" class="ghost">复 制 本 机 链 接</button>
+      <button id="loadLocal" class="ghost">从 本 机 文 件 载 入</button>
+      <input id="localFile" type="file" accept=".json,application/json" hidden>
     </div>
     <p id="cfgNote" class="relNote" hidden></p>
     <p class="relNote">首次使用请先在 Supabase SQL Editor 执行 <code>supabase/schema.sql</code>；表未建、RLS 未开、CORS 未放行，都会在这里报出原始状态，不静默吞错。</p>
@@ -237,7 +240,46 @@ button:disabled{opacity:.42;cursor:not-allowed}
     $('gChars').textContent = tip;
   });
 
+  // 本机自动装配：三种入口都只把 anon public key 写进 localStorage，
+  // 不写仓库、不随页面发出。service_role 由 assertPublicKey() 在 store 构造时硬拦。
+  function applyAutoCfg(url, key, from) {
+    if (!/^https:\/\//i.test(url)) throw new Error('项目地址须为 https 开头');
+    if (!key) throw new Error('请填 anon public key');
+    localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
+    $('supaUrl').value = url; $('supaKey').value = key;
+    clearErr('postErr'); clearErr('getErr');
+    note(`已${from}自动装配；anon key 只存本机，不写进仓库。`);
+  }
+  function autoConfigFromHash() {
+    const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+    if (!h.has('u') && !h.has('k')) return false;
+    try {
+      applyAutoCfg((h.get('u') || '').trim(), (h.get('k') || '').trim(), '由装配链接');
+      // hash 不进服务器日志 / referer；用完立刻抹掉，避免 key 留在地址栏与历史里。
+      history.replaceState(null, '', location.pathname + location.search);
+      return true;
+    } catch (e) { showErr('postErr', e); return false; }
+  }
+  $('copyAuto').addEventListener('click', async () => {
+    try {
+      const u = $('supaUrl').value.trim(), k = $('supaKey').value.trim();
+      if (!/^https:\/\//i.test(u) || !k) throw new Error('先填好项目地址与 anon key');
+      const link = location.origin + location.pathname + '#u=' + encodeURIComponent(u) + '&k=' + encodeURIComponent(k);
+      note(await copy(link, '已复制本机装配链接；另一台设备打开即自动填好。anon key 可公开，别用 service_role，也别贴公开论坛。'));
+    } catch (e) { showErr('postErr', e); }
+  });
+  $('loadLocal').addEventListener('click', () => $('localFile').click());
+  $('localFile').addEventListener('change', async (ev) => {
+    const f = ev.target.files?.[0]; if (!f) return;
+    try {
+      const c = JSON.parse(await f.text());
+      applyAutoCfg(String(c.url || '').trim(), String(c.anonKey || '').trim(), '由本机文件');
+    } catch (e) { showErr('postErr', e); }
+    finally { ev.target.value = ''; }
+  });
+
   loadCfg();
+  autoConfigFromHash();
 </script>
 </body>
 </html>

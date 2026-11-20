@@ -1,0 +1,5 @@
+# 本机传帖台配置：含真实项目地址与 anon key，绝不进仓库
+relay.local.json
+*.local.json
+node_modules/
+__pycache__/

@@ -120,6 +120,19 @@ try {
   await page.click('#doPost');
   await page.waitForTimeout(150);
   ck('service_role key 被前端硬拦', (await page.textContent('#postErr')).includes('service_role'));
+
+  // 本机自动装配：hash 注入后立刻抹掉，配置只落 localStorage
+  const auto = await browser.newPage();
+  await auto.goto(`http://127.0.0.1:${PORT}/bridge.html#u=${encodeURIComponent('https://ref.supabase.co')}&k=${encodeURIComponent('auto-anon-key')}`,
+    { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await auto.waitForFunction(() => document.querySelector('[data-version]')?.textContent !== '—', { timeout: 10000 });
+  ck('装配链接自动填好地址与 key',
+    (await auto.inputValue('#supaUrl')) === 'https://ref.supabase.co' &&
+    (await auto.inputValue('#supaKey')) === 'auto-anon-key');
+  ck('装配后 hash 被抹掉', !(await auto.evaluate(() => location.hash)));
+  ck('本机配置提示出现', (await auto.textContent('#cfgNote')).includes('自动装配'));
+  await auto.close();
+
   ck('全程零 JS 报错', errors.length === 0, errors.join(' | '));
 } finally {
   await browser.close();

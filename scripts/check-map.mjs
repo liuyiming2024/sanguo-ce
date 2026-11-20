@@ -759,6 +759,19 @@ ok(/\?sid=/.test(mpPageSrc) && !/path:[^\n]*text/.test(mpPageSrc),
 ok(/短号中转|传帖台/.test(readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8')),
    '小程序后台说明没同步短号中转口径');
 
+// 本机自动装配：配置只落 localStorage / 本地文件，真实明文一律不进仓库
+ok(!existsSync(join(root, 'relay.local.json')) && !existsSync(join(root, 'bridge.local.json')),
+   '本机配置文件被提交进仓库');
+ok(/relay\.local\.json/.test(readFileSync(join(root, '.gitignore'), 'utf8')),
+   '.gitignore 未排除本机配置');
+ok(/autoConfigFromHash/.test(bridgeSrc) && /history\.replaceState/.test(bridgeSrc) &&
+   /loadLocal/.test(bridgeSrc) && /copyAuto/.test(bridgeSrc),
+   '传帖台缺本机自动装配（hash 注入 / 抹除 / 文件载入 / 复制链接）');
+for (const f of ['src/ticket-store.js', 'supabase/schema.sql']) {
+  const t = readFileSync(join(root, f), 'utf8');
+  ok(!/webnote\.cc|note_pwd|@[a-f0-9]{64}/.test(t), `${f} 出现便签解锁口令或自动密码痕迹`);
+}
+
 useMap('guandu');
 
 if (problems.length) {
