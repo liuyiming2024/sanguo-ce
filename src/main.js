@@ -21,6 +21,7 @@ import {
   currentChapter, chapterIndex, goalProgress, canAdvance, chapterHeadline,
   applyOpening, advanceChapter as advanceStory, chooseOption as chooseStory,
   claimChapterReward as claimStoryReward, allMails, openingDispatches,
+  dueDispatches, applyDispatches,
 } from './story.js';
 import {
   appendCommand, hashState, verifyReplay, encodeTicket, decodeTicket,
@@ -116,6 +117,8 @@ function newCampaign(factionId = story.meta.faction) {
   for (const [k, v] of Object.entries(opening.flags)) (s.storyFlags ??= {})[k] = v;
   s.storyMails = opening.mail ? [opening.mail] : [];
   s.reports = opening.report ? [{ turn: s.turn, red: false, ...opening.report }] : [];
+  s.dispatchedIds = [];
+  (s.chapterEnteredTurn ??= {})[story.chapters[0].id] = s.turn;
   collectResources(s, { apply: false });   // 只算流量，开局库存保持 0
   applyOpening(s, story, openingChoice);
   appendCommand(s.commandLog, {
@@ -171,6 +174,8 @@ function loadGame() {
   state.settings ??= { idleStop: true, snap: true };
   state.chapter ??= story.chapters[0].id;
   state.storyMails ??= [];
+  state.dispatchedIds ??= [];
+  state.chapterEnteredTurn ??= {};
   state.storyFlags ??= {};
   state.storyChoices ??= {};
   state.chapterHistory ??= [];
@@ -372,6 +377,15 @@ function refreshBattleUI() {
 // ── 回合推进 ────────────────────────────────────────────────────────────
 function doTurn() {
   const evs = advanceTurn(state, rng);
+  // 章回军情按旬陆续到：跳旬 / 自动推进会一次补齐中间漏掉的，去重靠 dispatchedIds。
+  const due = dueDispatches(story, state);
+  if (due.length) {
+    const applied = applyDispatches(state, due);
+    reports = state.reports;   // 保持全局 reports 与 state.reports 同一引用
+    for (const d of due) if (applied.includes(d.id)) {
+      log(`纪事：${d.kind === 'mail' ? '私信' : '露布'} · ${d.mail?.title ?? d.report?.title}`);
+    }
+  }
   for (const e of evs.slice(0, 6)) {
     const fn = cfg.factions.find((f) => f.id === e.faction)?.name ?? '';
     if (e.type === 'claim') { log(`${fn} 占据 (${e.c},${e.r})`); pushReport({ title: `占据土地 (${e.c},${e.r})`, tag: '占领', sub: fn, body: `${formatCalendar(state.turn, cfg.calendar, 'short')}，${fn} 于 (${e.c},${e.r}) 插旗，领地相连。` }); }

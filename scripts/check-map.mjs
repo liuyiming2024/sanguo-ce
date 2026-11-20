@@ -669,6 +669,62 @@ ok(!/reports = \[\]; state\.reports = reports/.test(mainSrc), '「新开一局�
 const qDoc = readFileSync(join(root, 'docs/全境两章纪事底本.md'), 'utf8');
 ok(/后台开发用 · 白话 · 不进游戏/.test(qDoc) && /州郡事件台账/.test(qDoc) && /文白分工/.test(qDoc),
   '全境两章白话底本缺总目 / 台账 / 分工');
+
+// ── all：两座实点 / 按旬露布 / 轻量小程序 ──────────────────────────────
+const qData = readFileSync(join(root, 'src/quanjing-data.js'), 'utf8');
+const persistSrc = readFileSync(join(root, 'src/persist.js'), 'utf8');
+ok(/C\('xinye'/.test(qData) && /C\('yexian'/.test(qData), '新野 / 叶没进全境城表');
+ok(CITIES.length >= 32, `全境城数 ${CITIES.length}，扩表没落地`);
+// 点城一格一座：新两城与任何既有城不得同格，也不得紧邻一格（四向外道会撞城门）
+const qTile = (c) => {
+  const p = { c: (c.lon - 93) / 33 * (cfg.terrain.cols - 1),
+    r: (1 - (c.lat - 15) / 28) * (cfg.terrain.rows - 1) };
+  return [Math.round(p.c), Math.round(p.r)];
+};
+const qPos = CITIES.map((c) => [c.id, qTile(c)]);
+for (const id of ['xinye', 'yexian']) {
+  const p = qPos.find(([k]) => k === id)?.[1];
+  ok(!!p && qPos.every(([k, q]) => k === id ||
+    (Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) > 1)),
+  `「${id}」与既有城同格或紧邻，点城会互盖`);
+}
+for (const e of [['wan','xinye'],['xinye','xiangyang'],['wan','yexian'],['yexian','yangdi']]) {
+  ok(qData.includes(`R('${e[0]}','${e[1]}'`), `缺道路 ${e[0]}-${e[1]}，新城会成孤岛`);
+}
+ok(qProblems.length === 0, `扩表后 validateMap 未过：${qProblems.join('；')}`);
+
+const disp = story.chapters.flatMap((c) => (c.dispatches ?? []).map((d) => ({ ...d, ch: c.id })));
+ok(story.chapters.filter((c) => c.dispatches).length === 2 && disp.length === 6,
+  '按旬露布应只配给全境两章、共六条');
+ok(new Set(disp.map((d) => d.id)).size === disp.length, '露布 id 重复会破坏去重');
+for (const d of disp) {
+  ok(Number.isInteger(d.afterTurn) && d.afterTurn > 0 && d.afterTurn <= 5,
+    `「${d.id}」afterTurn 越界`);
+  ok(['report', 'mail'].includes(d.kind), `「${d.id}」kind 非法`);
+  const body = d.kind === 'report' ? d.report?.body : d.mail?.body;
+  ok(!!body && body.length > 20, `「${d.id}」正文缺失或过薄`);
+  ok(d.kind === 'report' ? !!d.report?.title : !!d.mail?.from, `「${d.id}」缺题名 / 发信人`);
+  ok(MECH_WORDS.every((w) => !body.includes(w)) && !/https?:\/\//.test(body),
+    `「${d.id}」正文漏出工程语 / URL`);
+}
+ok(q10?.onEnter?.city?.some((e) => e.id === 'yexian') &&
+   q10?.onEnter?.city?.some((e) => e.id === 'xinye'),
+  '扩表后第十回事件仍用宛 / 襄阳代点，没挂到实点');
+ok(/export function dueDispatches/.test(storySrc) && /export function applyDispatches/.test(storySrc),
+  '按旬露布纯函数缺失');
+ok(/dueDispatches\(story, state\)/.test(mainSrc) && /applyDispatches\(state, due\)/.test(mainSrc),
+  'doTurn 没接按旬投递');
+ok(/dispatchedIds/.test(persistSrc) && /chapterEnteredTurn/.test(persistSrc) &&
+   /if \(raw\.cities\)/.test(persistSrc),
+  '存档缺露布去重表 / 入场旬 / 旧档城表合并迁移');
+ok(existsSync(join(root, 'miniprogram/app.json')) &&
+   existsSync(join(root, 'miniprogram/utils/ticket.js')) &&
+   existsSync(join(root, 'miniprogram/README.md')) &&
+   existsSync(join(root, 'tests/miniprogram.test.mjs')) &&
+   existsSync(join(root, 'docs/小程序军令帖验证说明.md')),
+  '轻量小程序验证版文件或后台说明缺失');
+ok(existsSync(join(root, 'docs/全境两章纪事底本.md')) &&
+   /已补入/.test(qDoc), '两章底本没把「新野叶不在城表」改成已闭环');
 useMap('guandu');
 
 if (problems.length) {

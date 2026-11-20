@@ -1,0 +1,47 @@
+<view class="page">
+  <view class="head">
+    <view class="seal">策</view>
+    <view class="htext">
+      <view class="title">军 令 帖</view>
+      <view class="sub">建安五年 · 一旬一传</view>
+    </view>
+  </view>
+
+  <view class="note">此页只传一局，不带战场、不带地图。把整段口令复制给对方，对方粘进本页校验，或粘回网页版「导入」接续一旬。</view>
+
+  <textarea class="box" placeholder="粘贴对方发来的整段军令帖" value="{{text}}" bindinput="onInput" auto-height="{{false}}" maxlength="-1" />
+
+  <view class="row">
+    <button class="btn" bindtap="onPaste">读出</button>
+    <button class="btn primary" bindtap="onInspect">校 验</button>
+  </view>
+  <view class="row">
+    <button class="btn" bindtap="onCopy">复 制</button>
+    <button class="btn" bindtap="onKeep">存本机</button>
+  </view>
+
+  <view wx:if="{{err}}" class="err">{{err}}</view>
+
+  <view wx:if="{{info}}" class="card">
+    <view class="ct">帖 中 所 载</view>
+    <view class="kv"><text>军历</text><text>{{info.date}}</text></view>
+    <view class="kv"><text>刊本</text><text>{{info.version}}</text></view>
+    <view class="kv"><text>图幅</text><text>{{info.mapId}}</text></view>
+    <view class="kv"><text>旬次</text><text>第 {{info.turn}} 旬</text></view>
+    <view class="kv"><text>命令尾</text><text>{{info.logTail}} 条</text></view>
+    <view class="kv"><text>指纹</text><text class="mono">{{info.hash}}</text></view>
+    <view class="kv"><text>长度</text><text>{{info.chars}} 字符</text></view>
+    <view class="tip">本页只校字段，不重放局面；重放与结算仍在网页版。</view>
+  </view>
+
+  <view wx:if="{{recent.length}}" class="recent">
+    <view class="ct">本机近帖</view>
+    <view wx:for="{{recent}}" wx:key="at" class="item" data-i="{{index}}" bindtap="onUse">
+      <text>{{item.date}} · {{item.mapId}} · 第 {{item.turn}} 旬</text>
+      <text class="arrow">›</text>
+    </view>
+    <button class="btn ghost" bindtap="onClear">清 空 本 机</button>
+  </view>
+
+  <view class="foot">分享卡片只带一句提示，整段口令走剪贴板 · 零外部域名 · 零位图</view>
+</view>

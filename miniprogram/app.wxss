@@ -1,0 +1,2 @@
+page { background: #e9e3d1; color: #0a0d0c; font-family: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", "SimSun", serif; }
+button::after { border: none; }

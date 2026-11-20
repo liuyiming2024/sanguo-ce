@@ -56,6 +56,8 @@ export function serializeGame({ cfg, state, rng, snapshot, ui }) {
     storyChoices: state.storyChoices ?? {},
     chapterHistory: state.chapterHistory ?? [],
     storyMails: state.storyMails ?? [],
+    dispatchedIds: state.dispatchedIds ?? [],
+    chapterEnteredTurn: state.chapterEnteredTurn ?? {},
     actors: state.actors ?? {},
     commandLog: state.commandLog ?? { v: 1, seq: 0, entries: [] },
     rngCalls: state.rngCalls ?? 0,
@@ -88,12 +90,22 @@ export function deserializeGame(cfg, raw) {
     t.cost = cost;
     t.y = { wood: w, stone: s, iron: ir, grain: g };
   }
-  const keys = ['cities', 'resources', 'yield', 'orders', 'mailbox',
+  const keys = ['resources', 'yield', 'orders', 'mailbox',
     'forces', 'intel', 'forts', 'battles', 'stats',
     'facilities', 'armies', 'copper', 'settings', 'reports', 'claimedTasks',
     'chapter', 'storyBaseline', 'storyFlags', 'storyChoices', 'chapterHistory', 'storyMails',
+    'dispatchedIds', 'chapterEnteredTurn',
     'actors', 'commandLog', 'rngCalls', 'mapId'];
   for (const k of keys) if (raw[k] != null) state[k] = raw[k];
+  // 城表迁移：新版本在城表里补了点位时，旧存档不能把新增城吞掉。
+  // 以重建的城表为底，只让存档覆盖它认得的 id，其余保留初始值。
+  if (raw.cities) {
+    for (const [id, saved] of Object.entries(raw.cities)) {
+      if (state.cities[id]) state.cities[id] = saved;
+    }
+  }
+  state.dispatchedIds ??= [];
+  state.chapterEnteredTurn ??= {};
   if (Array.isArray(raw.nextIds)) {
     [state.nextOrderId, state.nextForceId, state.nextUnitId, state.nextBattleId] = raw.nextIds;
   }

@@ -117,6 +117,45 @@ export function openingDispatches(story) {
   };
 }
 
+/** 按旬分批投递的军情露布。
+ *  章回入场时只发一封私信 / 一条纪事；其余史事按「入场后第几旬」陆续到，
+ *  不再是开局一次性灌完。纯函数，不改 state；跳旬快进时用 >= 一次补齐，
+ *  已发的靠 state.dispatchedIds 去重，重放 / 读档都不重复投递。
+ *  chapterEnteredTurn 记的是本章实际入场旬（全境两章被装配层重映射过）。
+ */
+export function dueDispatches(story, state) {
+  const cur = currentChapter(story, state);
+  const list = cur?.dispatches ?? [];
+  if (!list.length) return [];
+  const enterTurn = state.chapterEnteredTurn?.[cur.id] ?? 0;
+  const done = new Set(state.dispatchedIds ?? []);
+  const out = [];
+  for (const d of list) {
+    if (done.has(d.id)) continue;
+    if (state.turn < enterTurn + d.afterTurn) continue;
+    out.push({
+      id: d.id, chapterId: cur.id, kind: d.kind, turn: state.turn,
+      report: d.kind === 'report' ? { ...d.report, turn: state.turn } : null,
+      mail: d.kind === 'mail' ? { ...d.mail, turn: state.turn, id: d.id } : null,
+    });
+  }
+  return out;
+}
+
+/** 把 dueDispatches 的结果落到 state（纯 state 变更，可重放、可存档）。 */
+export function applyDispatches(state, list) {
+  const applied = [];
+  const done = (state.dispatchedIds ??= []);
+  for (const d of list) {
+    if (done.includes(d.id)) continue;
+    if (d.report) (state.reports ??= []).unshift({ red: false, ...d.report });
+    if (d.mail) (state.storyMails ??= []).push(d.mail);
+    done.push(d.id);
+    applied.push(d.id);
+  }
+  return applied;
+}
+
 /** 推进到下一回：校验 → 领奖 → 应用上一回抉择 → 入场史实事件。 */
 export function advanceChapter(state, story, { autoChoose = true } = {}) {
   const gate = canAdvance(story, state);
@@ -142,6 +181,7 @@ export function advanceChapter(state, story, { autoChoose = true } = {}) {
   const next = gate.next;
   state.chapter = next.id;
   (state.chapterHistory ??= []).push({ id: cur.id, turn: state.turn, completed: true });
+  (state.chapterEnteredTurn ??= {})[next.id] = state.turn;
   (state.storyFlags ??= {}).chapterEntered = next.id;
 
   const on = next.onEnter ?? {};

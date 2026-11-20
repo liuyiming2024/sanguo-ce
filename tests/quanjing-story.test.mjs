@@ -105,7 +105,8 @@ test('推进第十回：州郡事件真落 state，归属不变，斥候情报�
   assert.equal(st.cities.qiaoxian.garrison, before.qiaoxian.garrison + 400);
   assert.equal(st.cities.qiaoxian.wall, before.qiaoxian.wall + 20);
   assert.equal(st.cities.ye.morale, before.ye.morale - 12);
-  assert.equal(st.cities.wan.garrison, before.wan.garrison + 300);
+  assert.equal(st.cities.yexian.garrison, before.yexian.garrison + 300);
+  assert.equal(st.cities.xinye.garrison, before.xinye.garrison + 200);
   for (const [id, b] of Object.entries(before)) {
     assert.equal(st.cities[id].owner, b.owner, `「${id}」归属被章回改动，越过了玩法三色约束`);
   }

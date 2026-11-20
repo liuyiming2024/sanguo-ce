@@ -1,0 +1,16 @@
+{
+  "description": "三国策 · 军令帖轻量验证版（非发布版）",
+  "miniprogramRoot": "./",
+  "appid": "touristappid",
+  "projectname": "sanguo-ce-ticket",
+  "compileType": "miniprogram",
+  "libVersion": "3.0.0",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "minified": false,
+    "urlCheck": false,
+    "postcss": true
+  },
+  "condition": {}
+}
