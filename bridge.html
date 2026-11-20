@@ -72,14 +72,25 @@ button:disabled{opacity:.42;cursor:not-allowed}
 
   <section class="relSec">
     <h2>一、接续</h2>
-    <p>填入你自己的项目地址与 <b>anon public key</b>，只存在本机浏览器，不写进仓库、不随页面发出。anon key 按设计可公开；<b>service_role key 绝不要填</b>，页面会直接拒收。</p>
+    <p>两种接法都只把配置存在本机浏览器，不写进仓库。<b>表直连</b>要 anon public key（按设计可公开）；<b>服务端函数</b>由服务端持有数据库口令，前端<b>一个 key 都不用填</b>。<b>service_role 与项目口令绝不要填</b>，页面会直接拒收。</p>
     <div class="fld">
-      <label for="supaUrl">项目地址</label>
-      <input id="supaUrl" type="text" spellcheck="false" autocomplete="off" placeholder="https://your-project.supabase.co">
+      <label for="relayMode">接法</label>
+      <select id="relayMode" spellcheck="false">
+        <option value="rest">表直连（anon key）</option>
+        <option value="fn">服务端函数（免 key · 推荐）</option>
+      </select>
     </div>
-    <div class="fld">
+    <div class="fld" id="fldRestA">
+      <label for="supaUrl">项目地址</label>
+      <input id="supaUrl" type="text" spellcheck="false" autocomplete="off" placeholder="https://&lt;project-ref&gt;.supabase.co">
+    </div>
+    <div class="fld" id="fldRestB">
       <label for="supaKey">anon public key</label>
       <input id="supaKey" type="password" spellcheck="false" autocomplete="off" placeholder="eyJ...（anon）">
+    </div>
+    <div class="fld" id="fldFn" hidden>
+      <label for="fnEndpoint">服务端函数地址</label>
+      <input id="fnEndpoint" type="text" spellcheck="false" autocomplete="off" placeholder="https://&lt;project-ref&gt;.supabase.co/functions/v1/relay">
     </div>
     <div class="row">
       <button id="saveCfg" class="primary">记 于 本 机</button>
@@ -89,7 +100,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
       <input id="localFile" type="file" accept=".json,application/json" hidden>
     </div>
     <p id="cfgNote" class="relNote" hidden></p>
-    <p class="relNote">首次使用请先在 Supabase SQL Editor 执行 <code>supabase/schema.sql</code>；表未建、RLS 未开、CORS 未放行，都会在这里报出原始状态，不静默吞错。</p>
+    <p class="relNote">表直连首次使用请先在 SQL Editor 执行 <code>supabase/schema.sql</code>；服务端函数走 <code>supabase/服务端直连说明.md</code>，口令由环境变量注入。表未建、函数未部署、CORS 未放行，都会在这里报出原始状态，不静默吞错。</p>
   </section>
 
   <section class="relSec">
@@ -145,7 +156,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
 
 <script type="module">
   import { VERSION } from './src/version.js';
-  import { createSupabaseStore, putTicket, takeTicket } from './src/ticket-store.js';
+  import { createSupabaseStore, createFunctionStore, putTicket, takeTicket } from './src/ticket-store.js';
 
   const $ = (id) => document.getElementById(id);
   const CFG_KEY = 'sg:relay';
@@ -154,12 +165,20 @@ button:disabled{opacity:.42;cursor:not-allowed}
   let lastTicket = '';
   let lastShort = '';
 
+  function mode() { return $('relayMode').value === 'fn' ? 'fn' : 'rest'; }
+  function syncModeFields() {
+    const fn = mode() === 'fn';
+    $('fldRestA').hidden = fn; $('fldRestB').hidden = fn; $('fldFn').hidden = !fn;
+  }
   function loadCfg() {
     try {
       const c = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
+      $('relayMode').value = c.mode === 'fn' ? 'fn' : 'rest';
       $('supaUrl').value = c.url || '';
       $('supaKey').value = c.key || '';
+      $('fnEndpoint').value = c.endpoint || '';
     } catch { /* 本机配置坏了就当没配过 */ }
+    syncModeFields();
   }
   function showErr(id, e) {
     const n = $(id);
@@ -168,10 +187,12 @@ button:disabled{opacity:.42;cursor:not-allowed}
   }
   function clearErr(id) { $(id).hidden = true; }
   function store() {
+    const fetchImpl = (...a) => fetch(...a);
+    if (mode() === 'fn') return createFunctionStore({ endpoint: $('fnEndpoint').value, fetchImpl });
     return createSupabaseStore({
       url: $('supaUrl').value,
       anonKey: $('supaKey').value,
-      fetchImpl: (...a) => fetch(...a),
+      fetchImpl,
     });
   }
   async function copy(text, tip) {
@@ -185,20 +206,29 @@ button:disabled{opacity:.42;cursor:not-allowed}
     $('cfgNote').textContent = text;
     $('cfgNote').hidden = !text;
   }
+  $('relayMode').addEventListener('change', syncModeFields);
   $('saveCfg').addEventListener('click', () => {
     try {
       const url = $('supaUrl').value.trim(), key = $('supaKey').value.trim();
-      // 只校验形状，不发起请求；anon key 合法性由 store 构造时再拦。
-      if (!/^https:\/\//i.test(url)) throw new Error('项目地址须为 https 开头');
-      if (!key) throw new Error('请填 anon public key');
-      localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
+      const ep = $('fnEndpoint').value.trim();
+      const cfg = { mode: mode(), url, key, endpoint: ep };
+      if (cfg.mode === 'fn') {
+        if (!/^https:\/\//i.test(ep)) throw new Error('函数地址须为 https 开头');
+        // 服务端模式绝不收任何 key；项目口令也不该出现在这里。
+        if (/service_role/i.test(ep)) throw new Error('service_role key 绝不能放进前端');
+      } else {
+        // 只校验形状，不发起请求；anon key 合法性由 store 构造时再拦。
+        if (!/^https:\/\//i.test(url)) throw new Error('项目地址须为 https 开头');
+        if (!key) throw new Error('请填 anon public key');
+      }
+      localStorage.setItem(CFG_KEY, JSON.stringify(cfg));
       clearErr('postErr'); clearErr('getErr');
-      note('已记于本机；下面两项可以直接用了。');
+      note(cfg.mode === 'fn' ? '已记于本机；服务端函数模式前端不带任何 key。' : '已记于本机；下面两项可以直接用了。');
     } catch (e) { note(''); showErr('postErr', e); }
   });
   $('clearCfg').addEventListener('click', () => {
     localStorage.removeItem(CFG_KEY);
-    $('supaUrl').value = ''; $('supaKey').value = '';
+    $('supaUrl').value = ''; $('supaKey').value = ''; $('fnEndpoint').value = '';
     note('本机配置已清除。');
   });
 
@@ -240,21 +270,30 @@ button:disabled{opacity:.42;cursor:not-allowed}
     $('gChars').textContent = tip;
   });
 
-  // 本机自动装配：三种入口都只把 anon public key 写进 localStorage，
-  // 不写仓库、不随页面发出。service_role 由 assertPublicKey() 在 store 构造时硬拦。
-  function applyAutoCfg(url, key, from) {
-    if (!/^https:\/\//i.test(url)) throw new Error('项目地址须为 https 开头');
-    if (!key) throw new Error('请填 anon public key');
-    localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
-    $('supaUrl').value = url; $('supaKey').value = key;
+  // 本机自动装配：配置只写 localStorage，不写仓库、不随页面发出。
+  // fn 模式压根没有 key；rest 模式的 anon key 由 assertPublicKey() 在构造时硬拦。
+  function applyAutoCfg(cfg, from) {
+    const m = cfg.mode === 'fn' ? 'fn' : 'rest';
+    const url = String(cfg.url || '').trim(), key = String(cfg.key || '').trim();
+    const ep = String(cfg.endpoint || '').trim();
+    if (m === 'fn') {
+      if (!/^https:\/\//i.test(ep)) throw new Error('函数地址须为 https 开头');
+    } else {
+      if (!/^https:\/\//i.test(url)) throw new Error('项目地址须为 https 开头');
+      if (!key) throw new Error('请填 anon public key');
+    }
+    localStorage.setItem(CFG_KEY, JSON.stringify({ mode: m, url, key, endpoint: ep }));
+    $('relayMode').value = m;
+    $('supaUrl').value = url; $('supaKey').value = key; $('fnEndpoint').value = ep;
+    syncModeFields();
     clearErr('postErr'); clearErr('getErr');
-    note(`已${from}自动装配；anon key 只存本机，不写进仓库。`);
+    note(`已${from}自动装配；${m === 'fn' ? '服务端函数模式前端零 key' : 'anon key 只存本机'}，不写进仓库。`);
   }
   function autoConfigFromHash() {
     const h = new URLSearchParams(location.hash.replace(/^#/, ''));
-    if (!h.has('u') && !h.has('k')) return false;
+    if (!h.has('u') && !h.has('k') && !h.has('e') && !h.has('m')) return false;
     try {
-      applyAutoCfg((h.get('u') || '').trim(), (h.get('k') || '').trim(), '由装配链接');
+      applyAutoCfg({ mode: h.get('m'), url: h.get('u'), key: h.get('k'), endpoint: h.get('e') }, '由装配链接');
       // hash 不进服务器日志 / referer；用完立刻抹掉，避免 key 留在地址栏与历史里。
       history.replaceState(null, '', location.pathname + location.search);
       return true;
@@ -262,10 +301,20 @@ button:disabled{opacity:.42;cursor:not-allowed}
   }
   $('copyAuto').addEventListener('click', async () => {
     try {
-      const u = $('supaUrl').value.trim(), k = $('supaKey').value.trim();
-      if (!/^https:\/\//i.test(u) || !k) throw new Error('先填好项目地址与 anon key');
-      const link = location.origin + location.pathname + '#u=' + encodeURIComponent(u) + '&k=' + encodeURIComponent(k);
-      note(await copy(link, '已复制本机装配链接；另一台设备打开即自动填好。anon key 可公开，别用 service_role，也别贴公开论坛。'));
+      const m = mode(), link0 = location.origin + location.pathname;
+      let link;
+      if (m === 'fn') {
+        const ep = $('fnEndpoint').value.trim();
+        if (!/^https:\/\//i.test(ep)) throw new Error('先填好服务端函数地址');
+        link = link0 + '#m=fn&e=' + encodeURIComponent(ep);
+      } else {
+        const u = $('supaUrl').value.trim(), k = $('supaKey').value.trim();
+        if (!/^https:\/\//i.test(u) || !k) throw new Error('先填好项目地址与 anon key');
+        link = link0 + '#u=' + encodeURIComponent(u) + '&k=' + encodeURIComponent(k);
+      }
+      note(await copy(link, m === 'fn'
+        ? '已复制本机装配链接；服务端函数模式不带任何 key。'
+        : '已复制本机装配链接；另一台设备打开即自动填好。anon key 可公开，别用 service_role，也别贴公开论坛。'));
     } catch (e) { showErr('postErr', e); }
   });
   $('loadLocal').addEventListener('click', () => $('localFile').click());
@@ -273,7 +322,7 @@ button:disabled{opacity:.42;cursor:not-allowed}
     const f = ev.target.files?.[0]; if (!f) return;
     try {
       const c = JSON.parse(await f.text());
-      applyAutoCfg(String(c.url || '').trim(), String(c.anonKey || '').trim(), '由本机文件');
+      applyAutoCfg({ mode: c.mode, url: c.url, key: c.anonKey, endpoint: c.endpoint }, '由本机文件');
     } catch (e) { showErr('postErr', e); }
     finally { ev.target.value = ''; }
   });

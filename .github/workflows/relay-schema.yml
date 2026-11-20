@@ -1,0 +1,45 @@
+# 传帖台建表：在 GitHub 侧网络执行，凭据由仓库 Agent Secret 注入。
+#
+# 用户已在 Settings → Secrets → Agents 里把项目口令存为 `sup`。
+# 本 workflow **不读、不打印、不写入**该值，只在 psql 进程环境里以 PGPASSWORD 传入。
+# 沙盒会话读不到 GitHub secret 的明文（API 也只返回名字不返回值）；
+# 值在对话里出现过，按「不进仓库」口径处理。
+#
+# 还需要在 Settings → Variables 里填（都不是秘密，按控制台实际值）：
+#   SUPA_DB_HOST  形如 db.<project-ref>.supabase.co 或 aws-0-<region>.pooler.supabase.com
+#   SUPA_DB_PORT  5432（直连）或 6543（池化，推荐）
+#   SUPA_DB_USER  postgres（直连）或 postgres.<project-ref>（池化）
+#   SUPA_DB_NAME  postgres
+# 未填时 job 会直接失败并报原始错误，不静默跳过。
+#
+# 边界：这一步只建表。**部署 Edge Function 还需要 SUPABASE_ACCESS_TOKEN**，
+# 仅有项目口令不够；函数未部署时，传帖台「服务端函数」模式会如实报连接错误。
+
+name: relay-schema
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 装 psql 客户端
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client
+      - name: 执行建表脚本
+        env:
+          PGPASSWORD: ${{ secrets.sup }}
+          PGHOST: ${{ vars.SUPA_DB_HOST }}
+          PGPORT: ${{ vars.SUPA_DB_PORT }}
+          PGUSER: ${{ vars.SUPA_DB_USER }}
+          PGDATABASE: ${{ vars.SUPA_DB_NAME }}
+        run: |
+          : "${PGHOST:?请在仓库 Variables 里填 SUPA_DB_HOST}"
+          : "${PGPORT:?请在仓库 Variables 里填 SUPA_DB_PORT}"
+          : "${PGUSER:?请在仓库 Variables 里填 SUPA_DB_USER}"
+          : "${PGDATABASE:?请在仓库 Variables 里填 SUPA_DB_NAME}"
+          : "${PGPASSWORD:?Agent Secret sup 未注入}"
+          psql -v ON_ERROR_STOP=1 -f supabase/schema.sql
+          echo "建表完成；未输出任何凭据。"

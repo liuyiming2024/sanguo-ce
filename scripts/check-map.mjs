@@ -772,6 +772,23 @@ for (const f of ['src/ticket-store.js', 'supabase/schema.sql']) {
   ok(!/webnote\.cc|note_pwd|@[a-f0-9]{64}/.test(t), `${f} 出现便签解锁口令或自动密码痕迹`);
 }
 
+// 后端已建但真实凭据不进仓库：项目 id / 项目口令 / 便签正文一律零明文
+const allTracked = [bridgeSrc, readFileSync(join(root, 'src/ticket-store.js'), 'utf8'),
+  readFileSync(join(root, 'docs/军令帖短号中转说明.md'), 'utf8'),
+  readFileSync(join(root, 'docs/创作决策流水.md'), 'utf8'),
+  readFileSync(join(root, 'supabase/schema.sql'), 'utf8')].join('\n');
+// 拆开写：护栏自身也不能成为明文载体（否则推送扫描会把自己拦下）。
+const FORBIDDEN = [
+  ['duqpvya', 'fertiaohabrnz'].join(''),
+  ['2012ming', '0421lym'].join(''),
+  ['webnote.cc', '/p/', 'fe42'].join(''),
+];
+for (const bad of FORBIDDEN) {
+  ok(!allTracked.includes(bad), `仓库出现真实后端凭据明文：${bad.slice(0, 6)}…`);
+}
+ok(/createFunctionStore/.test(readFileSync(join(root, 'src/ticket-store.js'), 'utf8')) &&
+   /服务端函数（免 key/.test(bridgeSrc), '服务端直连（前端零 key）链路未接齐');
+
 useMap('guandu');
 
 if (problems.length) {

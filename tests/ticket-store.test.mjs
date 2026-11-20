@@ -6,7 +6,7 @@ import { encodeTicket, decodeTicket } from '../src/sync.js';
 import {
   SHORT_ID_ALPHABET, SHORT_ID_LENGTH, MAX_TICKET_CHARS,
   makeShortId, normalizeShortId, describeTicket, assertPublicKey,
-  createMemoryStore, createRestStore, createSupabaseStore, putTicket, takeTicket,
+  createMemoryStore, createRestStore, createSupabaseStore, createFunctionStore, putTicket, takeTicket,
 } from '../src/ticket-store.js';
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
@@ -194,4 +194,42 @@ test('静态护栏：建表脚本开 RLS、只给 anon 写读删；前端页面�
   const src = read('src/ticket-store.js');
   assert.match(src, /assertPublicKey/);
   assert.equal(src.includes('stateFingerprint'), false, '中转层不该碰状态指纹');
+});
+
+
+// ── 服务端函数直连：前端零 key ─────────────────────────────────────────────
+test('createFunctionStore 请求不带 apikey / Authorization，且 put/get/del 可跑通', async () => {
+  const rows = new Map();
+  const seen = [];
+  const fn = async (url, opt) => {
+    seen.push({ url, headers: opt.headers, body: JSON.parse(opt.body) });
+    const { op, id, rec } = JSON.parse(opt.body);
+    if (op === 'put') {
+      if (rows.has(rec.id)) return { ok: true, text: () => Promise.resolve(JSON.stringify({ ok: true, conflict: true })) };
+      rows.set(rec.id, rec);
+      return { ok: true, text: () => Promise.resolve(JSON.stringify({ ok: true })) };
+    }
+    if (op === 'get') {
+      const r = rows.get(id);
+      return { ok: true, text: () => Promise.resolve(JSON.stringify({ ok: true, row: r ? { ...r, expires_at: '2099-01-01T00:00:00Z' } : null })) };
+    }
+    rows.delete(id);
+    return { ok: true, text: () => Promise.resolve(JSON.stringify({ ok: true })) };
+  };
+  const store = createFunctionStore({ endpoint: 'https://example.supabase.co/functions/v1/relay', fetchImpl: fn });
+  assert.equal(store.kind, 'function');
+  const rec = { id: 'K7M2QP', payload: 'x', hash: '', version: '0.9.4', map_id: 'guandu', turn: 1, expires_at: '2099-01-01T00:00:00Z' };
+  assert.deepEqual(await store.put(rec), { conflict: false });
+  assert.equal((await store.get('K7M2QP')).payload, 'x');
+  assert.equal(await store.del('K7M2QP'), true);
+  assert.equal(await store.get('K7M2QP'), null);
+  assert.ok(seen.every((r) => !('apikey' in r.headers) && !('Authorization' in r.headers)), '函数模式不许带任何 key');
+  assert.ok(seen.every((r) => r.url === 'https://example.supabase.co/functions/v1/relay'));
+  assert.deepEqual([...new Set(seen.map((r) => r.body.op))].sort(), ['del', 'get', 'put']);
+});
+
+test('createFunctionStore 拒非 https、把服务端 ok:false 当错误抛出', async () => {
+  assert.throws(() => createFunctionStore({ endpoint: 'http://x/f', fetchImpl: async () => ({}) }), /https/);
+  const bad = createFunctionStore({ endpoint: 'https://x/f', fetchImpl: async () => ({ ok: false, text: () => Promise.resolve('{"ok":false,"error":"库未建"}') }) });
+  await assert.rejects(() => bad.get('K7M2QP'), /库未建/);
 });

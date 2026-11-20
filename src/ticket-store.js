@@ -9,7 +9,7 @@
 //  · 短号不是加密，是「不易猜中的取件码」。库里放的是明文军令帖，
 //    拿到短号即可读帖；不要把口令换成的东西当成秘密凭证。
 //  · store 是可插拔接口：put / get / del。memory 供单测与离线回退，
-//    rest 供 PostgREST（Supabase）与将来自有域名反代 / 云函数中转共用。
+//    rest 供 PostgREST（Supabase），function 供服务端直连（前端零 key），二者可换。
 //  · 前端只准用 anon public key。service_role key 一旦进页面即等同泄露，
 //    assertPublicKey() 在这里硬拦，不靠自觉。
 
@@ -178,6 +178,55 @@ export function createSupabaseStore({ url, anonKey, table = 'tickets', fetchImpl
     fetchImpl,
     kind: 'supabase',
   });
+}
+
+// ── 服务端函数中转：前端零 key ─────────────────────────────────────────────
+//
+// 有项目数据库口令时，正解不是把口令或 service_role 塞进页面，而是让一个
+// 服务端函数持有 DATABASE_URL（或 service role），前端只打函数地址。
+// 这一路 **不需要 anon / publishable key**，也就不需要从控制台再取任何东西。
+// 约定单个 endpoint，POST JSON：{ op: 'put'|'get'|'del', id?, rec? }
+// 返回：{ ok:boolean, conflict?:boolean, row?:object }；row 字段与 rest 版一致。
+export function createFunctionStore({ endpoint, fetchImpl } = {}) {
+  const base = String(endpoint ?? '').trim().replace(/\/+$/, '');
+  if (!/^https:\/\//i.test(base)) throw new Error('函数地址须为 https 开头');
+  const f = fetchImpl ?? ((...a) => globalThis.fetch(...a));
+  if (typeof f !== 'function') throw new Error('当前环境没有 fetch，需显式传入 fetchImpl');
+
+  async function call(op, id, rec) {
+    const res = await f(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },   // 故意不带 apikey / Authorization
+      body: JSON.stringify({ op, id, rec }),
+    });
+    const txt = await (res.text?.() ?? Promise.resolve(''));
+    if (!res.ok) throw new Error(`中转失败 ${res.status}：${txt.slice(0, 180)}`);
+    let out;
+    try { out = JSON.parse(txt || '{}'); } catch { throw new Error('中转返回的不是 JSON'); }
+    if (out.ok === false) throw new Error(out.error || '中转拒绝');
+    return out;
+  }
+
+  return {
+    kind: 'function',
+    endpoint: base,
+    async put(rec) {
+      const r = await call('put', rec.id, rec);
+      return { conflict: !!r.conflict };
+    },
+    async get(id) {
+      const r = await call('get', id);
+      const row = r.row ?? null;
+      if (!row) return null;
+      const exp = Date.parse(row.expires_at);
+      if (Number.isFinite(exp) && exp <= Date.now()) return null;
+      return row;
+    },
+    async del(id) {
+      await call('del', id);
+      return true;
+    },
+  };
 }
 
 // ── 上层动作 ─────────────────────────────────────────────────────────────

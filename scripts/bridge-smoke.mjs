@@ -133,6 +133,42 @@ try {
   ck('本机配置提示出现', (await auto.textContent('#cfgNote')).includes('自动装配'));
   await auto.close();
 
+  // 服务端函数模式：前端零 key，项目口令只留在服务端环境变量
+  const fnPage = await browser.newPage();
+  fnPage.on('pageerror', (e) => errors.push(String(e)));
+  const fnRows = new Map();
+  let fnHeaders = null;
+  await fnPage.route('**/functions/v1/relay*', async (route) => {
+    const req = route.request();
+    fnHeaders = req.headers();
+    const { op, id, rec } = JSON.parse(req.postData() || '{}');
+    if (op === 'put') {
+      fnRows.set(rec.id, { ...rec, expires_at: rec.expires_at || '2099-01-01T00:00:00Z' });
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    } else if (op === 'get') {
+      const r = fnRows.get(id);
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ok: true, row: r ? { payload: r.payload, hash: r.hash, version: r.version, map_id: r.map_id, turn: r.turn, expires_at: r.expires_at } : null }) });
+    } else {
+      fnRows.delete(id);
+      await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    }
+  });
+  await fnPage.goto(`http://127.0.0.1:${PORT}/bridge.html#m=fn&e=${encodeURIComponent('https://example.supabase.co/functions/v1/relay')}`,
+    { waitUntil: 'domcontentloaded', timeout: 15000 });
+  await fnPage.waitForFunction(() => document.querySelector('[data-version]')?.textContent !== '—', { timeout: 10000 });
+  ck('服务端模式自动装配、rest 字段收起',
+    (await fnPage.inputValue('#fnEndpoint')) === 'https://example.supabase.co/functions/v1/relay' &&
+    (await fnPage.locator('#fldRestB').isHidden()) && !(await fnPage.locator('#fldFn').isHidden()));
+  await fnPage.fill('#postText', ticket);
+  await fnPage.click('#doPost');
+  await fnPage.waitForTimeout(220);
+  ck('服务端模式换得短号', /^[2-9A-HJ-NP-Z]{6}$/.test((await fnPage.textContent('#shortId')).trim()));
+  ck('服务端模式请求不带任何 key', !!fnHeaders && !('apikey' in fnHeaders) &&
+    !('authorization' in fnHeaders) && fnRows.size === 1);
+  ck('本机提示声明零 key', (await fnPage.textContent('#cfgNote')).includes('零 key'));
+  await fnPage.close();
+
   ck('全程零 JS 报错', errors.length === 0, errors.join(' | '));
 } finally {
   await browser.close();
