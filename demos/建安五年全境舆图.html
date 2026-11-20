@@ -1269,7 +1269,10 @@ function createSvgRecorder(){
 /* 连续场底罩的矢量等效：低频色块网格 + 高斯滤镜。仍是矢量指令，
    放大不像素化；密度低的边地透明度小，纸从缝里透出一丢丢。 */
 function svgWash(){
-  const NX=100, NY=78, cw=W/NX, ch=H/NY, o=[];
+  // 纯底罩行跳变 >1 像素的实测：100×78+blur2.6 = 8578；
+  // 140×110+blur 2.6/4.0/6.0/8.0 = 6928/2872/2479/1992。
+  // 细化色块 + 加大模糊一起用最平，取 140×110 + 8.0；南北渐变仍完整。
+  const NX=140, NY=110, cw=W/NX, ch=H/NY, o=[];
   const F=n=>(+n.toFixed(1));
   for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){
     const lon=LON0+(i+.5)/NX*(LON1-LON0), lat=LAT1-(j+.5)/NY*(LAT1-LAT0);
@@ -1296,7 +1299,7 @@ function buildSvg(){
   O.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   O.push(`<title>建安五年全境舆图 · 全量矢量</title>`);
   O.push(`<desc>纸底 / 连续场底罩 / 全部地貌笔触 / 水系 / 州界 / 城邑 / 题识 / 格网 / 注记，均为 path·rect·text 矢量指令，无位图。州界为示意，纵横不拘实距。</desc>`);
-  O.push(`<defs><filter id="washBlur" x="-4%" y="-4%" width="108%" height="108%"><feGaussianBlur stdDeviation="2.6"/></filter></defs>`);
+  O.push(`<defs><filter id="washBlur" x="-4%" y="-4%" width="108%" height="108%"><feGaussianBlur stdDeviation="8.0"/></filter></defs>`);
   O.push(`<rect id="paper" width="${W}" height="${H}" fill="#e9e3d1"/>`);
   O.push(svgWash());
   O.push(`<g id="strokes">\n${strokeParts}\n</g>`);

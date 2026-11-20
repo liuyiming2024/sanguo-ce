@@ -747,20 +747,40 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     }
   }
 
+  /** 手画圈：一圈不规则运笔，只在收笔处留个小缺口。
+      不是标准圆、不是虚线阵列，也不是碎成几段的残弧 —— 要一眼读得出「画了个圈」。
+      借墨战「画圈选中」的手势感；只改画法，不改选人逻辑。 */
+  function inkRing(cx, cy, r, seed) {
+    const N = 26, pts = [];
+    for (let i = 0; i < N; i++) {
+      const a = i / N * Math.PI * 2;
+      const wob = 1 + Math.sin(a * 3 + seed) * .075
+                    + Math.sin(a * 7 + seed * 1.7) * .042;
+      pts.push([cx + Math.cos(a) * r * wob, cy + Math.sin(a) * r / wob]);
+    }
+    ctx.setLineDash([]);   // 上游若留了虚线阵列，先清，保证是手画的一笔
+    ctx.beginPath(); ctx.moveTo(...pts[0]);
+    for (let i = 1; i <= N; i++) ctx.lineTo(...pts[i % N]);
+    ctx.closePath();
+    ctx.fillStyle = rgba(GOLD, 0.10); ctx.fill();
+    // 一笔连写，末尾留两小段不收口：手画的圈，不是几何圆
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(...pts[0]);
+    for (let i = 1; i <= N - 2; i++) ctx.lineTo(...pts[i]);
+    ctx.stroke();
+  }
+
   function drawOverlays(L, sec) {
     if (circle) {
-      ctx.strokeStyle = rgba(GOLD, 0.95); ctx.lineWidth = 1.6;
-      ctx.setLineDash([5, 4]);
-      ctx.beginPath(); ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = rgba(GOLD, 0.09); ctx.fill();
+      ctx.strokeStyle = rgba(GOLD, 0.95); ctx.lineWidth = 1.7;
+      inkRing(circle.x, circle.y, circle.r, circle.r * .13);
+      ctx.lineCap = 'butt';
     }
     if (dragUnit) {
       const p = dragPos ?? unitXY(dragUnit);
       ctx.strokeStyle = rgba(GOLD, 0.9); ctx.lineWidth = 1.5;
-      ctx.setLineDash([3, 3]);
-      ctx.beginPath(); ctx.arc(p.x, p.y, CV.unitPx * 0.8, 0, Math.PI * 2); ctx.stroke();
-      ctx.setLineDash([]);
+      inkRing(p.x, p.y, CV.unitPx * 0.8, 2.3);
+      ctx.lineCap = 'butt';
     }
   }
 
@@ -790,6 +810,9 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
 
   canvas.addEventListener('pointerdown', (e) => {
     const p = local(e);
+    // 新手势一按下就收掉上一次的圈：圈的 800ms 存活只为视觉反馈，
+    // 不能让「已有框选 + 短拖 = 方向指令」的判定在窗口期被误读成重新框选。
+    circle = null;
     // 命中单位永远优先：竖屏第一行兵可能正好落在 HUD 文字下方，不能被热区吃掉。
     const hit = hitUnit(p.x, p.y);
     // HUD 右上热区：只在没点到兵时生效，点一下循环切换阵型
@@ -919,17 +942,21 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
     callbacks.onSelect([]);
     callbacks.onChampion(null);
   }, sig);
-  for (const ev of ['pointercancel', 'lostpointercapture']) {
-    canvas.addEventListener(ev, () => {
-      pointer = null; dragUnit = null; dragPos = null; circle = null;
-    }, sig);
-  }
+  canvas.addEventListener('pointercancel', () => {
+    pointer = null; dragUnit = null; dragPos = null; circle = null;
+  }, sig);
+  // lostpointercapture 在 mouseup 之后照常触发，别在这里清 circle：
+  // 否则手画圈刚落下就被抹掉，玩家看不到框选反馈。交给 pointerup 里的定时器收尾。
+  canvas.addEventListener('lostpointercapture', () => {
+    pointer = null; dragUnit = null; dragPos = null;
+  }, sig);
 
   return {
     resize, draw,
     dispose() { ac.abort(); },
     get selection() { return [...selection]; },
     get champion() { return champion; },
+    get circle() { return circle ? { ...circle } : null; },
     get layout() { return layout; },
     get viewport() { return { W, H, dpr, attrW: canvas.width, attrH: canvas.height }; },
     get motionCount() { return motion.size; },
