@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { encodeTicket as webEncode, decodeTicket as webDecode } from '../src/sync.js';
 import { encodeTicket as mpEncode, decodeTicket as mpDecode, inspectTicket } from '../miniprogram/utils/ticket.js';
+import { normalizeShortId, shortIdHint } from '../miniprogram/utils/relay.js';
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const MP = 'miniprogram/';
@@ -54,7 +55,8 @@ test('小程序工程齐全：页面注册、零外部请求、零位图、不�
   }
   assert.ok(existsSync(new URL(`../${MP}project.config.json`, import.meta.url)));
   assert.ok(existsSync(new URL(`../${MP}sitemap.json`, import.meta.url)));
-  const js = [read(MP + 'app.js'), read(MP + 'utils/ticket.js'), read(MP + 'pages/index/index.js')].join('\n');
+  const js = [read(MP + 'app.js'), read(MP + 'utils/ticket.js'),
+    read(MP + 'utils/relay.js'), read(MP + 'pages/index/index.js')].join('\n');
   for (const banned of ['wx.request', 'wx.connectSocket', 'https://', 'http://', 'drawImage', 'new Image']) {
     assert.equal(js.includes(banned), false, `小程序端出现「${banned}」，会引入备案域名 / 渲染依赖`);
   }
@@ -74,9 +76,27 @@ test('小程序工程齐全：页面注册、零外部请求、零位图、不�
     '验证版不该搬策略层');
 });
 
-test('README 如实写明限制：分享 path 不承载整段口令、合规未启动、主工程未迁', () => {
+test('短号只作纯文本取件码：格式、分享 path、零联网', () => {
+  assert.equal(normalizeShortId(' k7m-2qp '), 'K7M2QP');
+  for (const bad of ['', 'K7M2Q', 'K7M2QP0', 'K7M2Q!']) {
+    assert.throws(() => normalizeShortId(bad), /6 位/);
+  }
+  assert.match(shortIdHint(), /传帖台/);
+  const page = read(MP + 'pages/index/index.js');
+  assert.match(page, /\?sid=/, '分享卡片应带六位短号');
+  const pathLine = page.split('\n').find((l) => l.includes('path: `/pages/index/index'));
+  assert.ok(pathLine, '缺分享 path');
+  assert.equal(pathLine.includes('text'), false, '分享 path 不该拼进整帖');
+  assert.equal(page.includes('wx.request'), false, '小程序端不联网兑换');
+  const relay = read(MP + 'utils/relay.js');
+  for (const banned of ['wx.request', 'wx.connectSocket', 'https://', 'http://']) {
+    assert.equal(relay.includes(banned), false, `短号工具出现「${banned}」`);
+  }
+});
+
+test('README 如实写明限制：分享 path 不承载整段口令、短号不联网兑换、合规未启动', () => {
   const doc = read(MP + 'README.md');
-  for (const s of ['不是发布版', '剪贴板', '备案', '个人主体', '主工程']) {
+  for (const s of ['不是发布版', '剪贴板', '备案', '个人主体', '主工程', '传帖台', '不联网']) {
     assert.ok(doc.includes(s), `README 缺「${s}」`);
   }
 });

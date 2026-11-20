@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0d0c">
+<link rel="icon" href="data:,">
+<title>三国策 · 官渡 ｜ 传帖台</title>
+<link rel="stylesheet" href="./styles/main.css">
+<style>
+/* 传帖台独立成页：色板仍取 main.css 的 :root，不加载游戏逻辑 */
+html,body{height:auto;min-height:100%;overflow:auto;overflow-x:hidden}
+body::before{position:fixed}
+.relWrap{position:relative;z-index:5;max-width:700px;margin:0 auto;padding:44px 22px 84px}
+.relHead{text-align:center;padding:0 0 26px;border-bottom:1px solid var(--line)}
+.relHead .mseal{margin:0 auto 16px}
+.relHead h1{margin:0;font-size:30px;letter-spacing:10px;color:var(--paper);font-weight:600}
+.relKicker{margin:13px 0 0;font-size:12px;letter-spacing:5px;color:var(--dim)}
+.relSec{margin:0;padding:26px 0 22px;border-bottom:1px solid var(--line2)}
+.relSec:last-of-type{border-bottom:0}
+.relSec h2{margin:0 0 14px;font-size:15px;letter-spacing:4px;color:var(--gold);font-weight:600}
+.relSec h2::before{content:"";display:inline-block;width:3px;height:13px;margin:0 9px 0 0;
+  vertical-align:-2px;background:var(--gold2);opacity:.7}
+.relSec p{font-size:12.5px;line-height:1.9;color:var(--txt);margin:0 0 11px}
+.fld{margin:0 0 12px}
+.fld label{display:block;margin:0 0 6px;font-size:11px;letter-spacing:2px;color:var(--dim)}
+.fld input,.fld textarea{width:100%;box-sizing:border-box;padding:10px 11px;
+  background:var(--inputBg);border:1px solid var(--line);border-radius:2px;
+  color:var(--txt);font-size:12.5px;font-family:inherit;line-height:1.7}
+.fld input::placeholder,.fld textarea::placeholder{color:var(--dimDeep)}
+.fld textarea{min-height:96px;resize:vertical;word-break:break-all;font-variant-numeric:tabular-nums}
+.fld input:focus-visible,.fld textarea:focus-visible,button:focus-visible{outline:1px solid var(--gold);outline-offset:2px}
+.row{display:flex;gap:9px;flex-wrap:wrap;margin:0 0 11px}
+button{padding:10px 20px;min-height:44px;background:transparent;border:1px solid var(--line);
+  border-radius:2px;color:var(--gold);font-size:12.5px;letter-spacing:3px;cursor:pointer;font-family:inherit}
+button:hover{background:rgba(200,168,106,.12)}
+button.primary{background:var(--ink);border-color:var(--gold);color:var(--gold);
+  box-shadow:inset 0 0 0 1px rgba(200,168,106,.22)}
+button.ghost{border-color:var(--line2);color:var(--dim);letter-spacing:1px}
+button:disabled{opacity:.42;cursor:not-allowed}
+.out{margin:12px 0 0;padding:13px 14px;border:1px solid var(--line2);border-radius:2px;background:var(--cardBg)}
+.out[hidden]{display:none}
+.out .short{font-size:26px;letter-spacing:9px;color:var(--paper);font-variant-numeric:tabular-nums}
+.out .kv{display:flex;gap:12px;padding:5px 0;font-size:12px;color:var(--dim);border-bottom:1px dashed var(--line2)}
+.out .kv:last-of-type{border-bottom:0}
+.out .kv b{min-width:66px;color:var(--paper2);font-weight:600;letter-spacing:1px}
+.out .kv span{word-break:break-all}
+.err{margin:12px 0 0;padding:10px 12px;border-left:2px solid var(--red);background:rgba(166,49,41,.10);
+  color:var(--redTxt);font-size:12px;line-height:1.7}
+.err[hidden]{display:none}
+.relNote{margin:11px 0 0;font-size:11px;color:var(--dimDeep);line-height:1.85}
+.relLinks a{color:var(--gold);text-decoration:none;border-bottom:1px solid var(--line)}
+.relLinks a:hover{color:var(--paper);border-bottom-color:var(--gold)}
+.relFoot{margin:32px 0 0;text-align:center;font-size:10px;color:var(--dimDeep);letter-spacing:1px}
+@media (max-width:600px){
+  .relWrap{padding:30px 15px 60px}
+  .relHead h1{font-size:23px;letter-spacing:7px}
+  .out .short{font-size:21px;letter-spacing:6px}
+  button{flex:1;min-width:120px}
+}
+</style>
+</head>
+<body>
+<main class="relWrap">
+
+  <header class="relHead">
+    <div class="mseal seal">驿</div>
+    <h1>传 帖 台</h1>
+    <p class="relKicker">短号代整帖 · 一旬一传</p>
+    <p class="relNote">此页只作传递，不入局、不重放、不推进旬历。刊本 <b data-version>—</b>。</p>
+  </header>
+
+  <section class="relSec">
+    <h2>一、接续</h2>
+    <p>填入你自己的项目地址与 <b>anon public key</b>，只存在本机浏览器，不写进仓库、不随页面发出。anon key 按设计可公开；<b>service_role key 绝不要填</b>，页面会直接拒收。</p>
+    <div class="fld">
+      <label for="supaUrl">项目地址</label>
+      <input id="supaUrl" type="text" spellcheck="false" autocomplete="off" placeholder="https://your-project.supabase.co">
+    </div>
+    <div class="fld">
+      <label for="supaKey">anon public key</label>
+      <input id="supaKey" type="password" spellcheck="false" autocomplete="off" placeholder="eyJ...（anon）">
+    </div>
+    <div class="row">
+      <button id="saveCfg" class="primary">记 于 本 机</button>
+      <button id="clearCfg" class="ghost">清 除</button>
+    </div>
+    <p id="cfgNote" class="relNote" hidden></p>
+    <p class="relNote">首次使用请先在 Supabase SQL Editor 执行 <code>supabase/schema.sql</code>；表未建、RLS 未开、CORS 未放行，都会在这里报出原始状态，不静默吞错。</p>
+  </section>
+
+  <section class="relSec">
+    <h2>二、发帖</h2>
+    <p>从游戏「系统 → 导出军令帖」复制整段口令，换取六位短号。短号发给对方即可，整帖留在库里，七日为期。</p>
+    <div class="fld">
+      <label for="postText">整段军令帖</label>
+      <textarea id="postText" spellcheck="false" placeholder="粘贴 base64url 军令帖"></textarea>
+    </div>
+    <div class="row">
+      <button id="doPost" class="primary">换 取 短 号</button>
+      <button id="copyShort" class="ghost" disabled>复 制 短 号</button>
+    </div>
+    <div id="postOut" class="out" hidden>
+      <div class="short" id="shortId">——————</div>
+      <p class="relNote" id="postMeta"></p>
+    </div>
+    <div id="postErr" class="err" hidden></div>
+  </section>
+
+  <section class="relSec">
+    <h2>三、取帖</h2>
+    <p>填入对方发来的短号，取回整帖后可复制、粘回网页版「导入」接续一旬。「取后即焚」会在读出后删掉该行。</p>
+    <div class="fld">
+      <label for="getId">短号（六位）</label>
+      <input id="getId" type="text" spellcheck="false" autocomplete="off" maxlength="10" placeholder="如 K7M2QP">
+    </div>
+    <div class="row">
+      <button id="doGet" class="primary">取 帖</button>
+      <button id="doBurn" class="ghost">取 后 即 焚</button>
+      <button id="copyTicket" class="ghost" disabled>复 制 整 帖</button>
+    </div>
+    <div id="getOut" class="out" hidden>
+      <div class="kv"><b>军历</b><span id="gDate">—</span></div>
+      <div class="kv"><b>刊本</b><span id="gVer">—</span></div>
+      <div class="kv"><b>图幅</b><span id="gMap">—</span></div>
+      <div class="kv"><b>旬次</b><span id="gTurn">—</span></div>
+      <div class="kv"><b>指纹</b><span id="gHash">—</span></div>
+      <div class="kv"><b>长度</b><span id="gChars">—</span></div>
+    </div>
+    <div id="getErr" class="err" hidden></div>
+  </section>
+
+  <section class="relSec">
+    <h2>四、凡例</h2>
+    <p>短号是取件码，不是密码：拿到即可读帖，库里存的是明文军令帖，别往帖里放凭证或个人信息。匿名可写意味着任何人都能提交短号，免费层不自带速率限制；七日过期行由读侧过滤，不会自动消失。</p>
+    <p>小程序端不直接访问外部服务，只在会话里传短号或整帖；外部域名需由本主体备案才能配进 request 合法域名，第三方项目域名做不到。完整口径、表结构、成本与未闭环项在后台文档。</p>
+    <p class="relLinks"><a href="./">进入游戏</a>　·　<a href="./release.html">刊行记</a>　·　<a href="https://github.com/liuyiming2024/sanguo-ce/blob/main/docs/%E5%86%9B%E4%BB%A4%E5%B8%96%E7%9F%AD%E5%8F%B7%E4%B8%AD%E8%BD%AC%E8%AF%B4%E6%98%8E.md">后台说明</a>　·　<a href="https://github.com/liuyiming2024/sanguo-ce/blob/main/supabase/schema.sql">建表脚本</a></p>
+  </section>
+
+  <p class="relFoot">建安五年 · 传帖台　｜　不加载游戏逻辑 · 不读写存档 · 版本只从 src/version.js 读入</p>
+</main>
+
+<script type="module">
+  import { VERSION } from './src/version.js';
+  import { createSupabaseStore, putTicket, takeTicket } from './src/ticket-store.js';
+
+  const $ = (id) => document.getElementById(id);
+  const CFG_KEY = 'sg:relay';
+  document.querySelectorAll('[data-version]').forEach((n) => { n.textContent = VERSION; });
+
+  let lastTicket = '';
+  let lastShort = '';
+
+  function loadCfg() {
+    try {
+      const c = JSON.parse(localStorage.getItem(CFG_KEY) || '{}');
+      $('supaUrl').value = c.url || '';
+      $('supaKey').value = c.key || '';
+    } catch { /* 本机配置坏了就当没配过 */ }
+  }
+  function showErr(id, e) {
+    const n = $(id);
+    n.textContent = e?.message || String(e);
+    n.hidden = false;
+  }
+  function clearErr(id) { $(id).hidden = true; }
+  function store() {
+    return createSupabaseStore({
+      url: $('supaUrl').value,
+      anonKey: $('supaKey').value,
+      fetchImpl: (...a) => fetch(...a),
+    });
+  }
+  async function copy(text, tip) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return tip;
+    } catch { return '复制失败，请手动选中复制'; }
+  }
+
+  function note(text) {
+    $('cfgNote').textContent = text;
+    $('cfgNote').hidden = !text;
+  }
+  $('saveCfg').addEventListener('click', () => {
+    try {
+      const url = $('supaUrl').value.trim(), key = $('supaKey').value.trim();
+      // 只校验形状，不发起请求；anon key 合法性由 store 构造时再拦。
+      if (!/^https:\/\//i.test(url)) throw new Error('项目地址须为 https 开头');
+      if (!key) throw new Error('请填 anon public key');
+      localStorage.setItem(CFG_KEY, JSON.stringify({ url, key }));
+      clearErr('postErr'); clearErr('getErr');
+      note('已记于本机；下面两项可以直接用了。');
+    } catch (e) { note(''); showErr('postErr', e); }
+  });
+  $('clearCfg').addEventListener('click', () => {
+    localStorage.removeItem(CFG_KEY);
+    $('supaUrl').value = ''; $('supaKey').value = '';
+    note('本机配置已清除。');
+  });
+
+  $('doPost').addEventListener('click', async () => {
+    clearErr('postErr');
+    try {
+      const r = await putTicket(store(), $('postText').value);
+      lastShort = r.id;
+      $('shortId').textContent = r.id;
+      $('postMeta').textContent = `图幅 ${r.mapId} · 第 ${r.turn} 旬 · 指纹 ${r.hash || '—'} · 至 ${new Date(r.expiresAt).toLocaleString('zh-CN')}`;
+      $('postOut').hidden = false;
+      $('copyShort').disabled = false;
+    } catch (e) { showErr('postErr', e); }
+  });
+  $('copyShort').addEventListener('click', async () => {
+    $('shortId').textContent = await copy(lastShort, lastShort);
+  });
+
+  async function doTake(burn) {
+    clearErr('getErr');
+    try {
+      const r = await takeTicket(store(), $('getId').value, { burn });
+      if (!r) { $('getOut').hidden = true; throw new Error('无此短号，或已过七日之期'); }
+      lastTicket = r.text;
+      $('gDate').textContent = r.date || '—';
+      $('gVer').textContent = r.version || '—';
+      $('gMap').textContent = r.mapId;
+      $('gTurn').textContent = `第 ${r.turn} 旬`;
+      $('gHash').textContent = r.hash || '—';
+      $('gChars').textContent = `${r.text.length} 字符${burn ? ' · 已焚' : ''}`;
+      $('getOut').hidden = false;
+      $('copyTicket').disabled = false;
+    } catch (e) { showErr('getErr', e); }
+  }
+  $('doGet').addEventListener('click', () => doTake(false));
+  $('doBurn').addEventListener('click', () => doTake(true));
+  $('copyTicket').addEventListener('click', async () => {
+    const tip = await copy(lastTicket, '已复制整帖，粘回网页版「导入」即可接续一旬');
+    $('gChars').textContent = tip;
+  });
+
+  loadCfg();
+</script>
+</body>
+</html>

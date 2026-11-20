@@ -6,6 +6,10 @@
 .note { margin: 24rpx 0 20rpx; }
 .box { width: 100%; height: 260rpx; padding: 20rpx; background: rgba(255,255,255,.46); border: 1rpx solid rgba(122,96,51,.34); color: #0a0d0c; font-size: 24rpx; line-height: 1.6; box-sizing: border-box; word-break: break-all; }
 .row { display: flex; gap: 20rpx; margin-top: 20rpx; }
+.shortRow { display: flex; gap: 20rpx; align-items: stretch; margin-top: 20rpx; }
+.short { flex: 1; min-width: 0; height: 76rpx; padding: 0 20rpx; background: rgba(255,255,255,.46); border: 1rpx solid rgba(122,96,51,.34); border-radius: 3rpx; color: #0a0d0c; font-size: 30rpx; letter-spacing: 6rpx; }
+.shortRow .btn { flex: 0 0 240rpx; margin-top: 0; }
+.shortRow + .tip { margin-top: 12rpx; }
 .btn { flex: 1; font-size: 28rpx; letter-spacing: 4rpx; background: rgba(255,255,255,.46); color: #6a5227; border: 1rpx solid rgba(122,96,51,.34); border-radius: 3rpx; }
 .btn.primary { background: #0a0d0c; color: #e0c287; border-color: #c8a86a; }
 .btn.ghost { margin-top: 20rpx; }

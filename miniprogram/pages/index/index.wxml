@@ -9,6 +9,12 @@
 
   <view class="note">此页只传一局，不带战场、不带地图。把整段口令复制给对方，对方粘进本页校验，或粘回网页版「导入」接续一旬。</view>
 
+  <view class="shortRow">
+    <input class="short" placeholder="短号（六位）" value="{{shortId}}" bindinput="onShortInput" maxlength="10" />
+    <button class="btn" bindtap="onCopyShort">复 制 短 号</button>
+  </view>
+  <view class="tip">{{shortHint}}</view>
+
   <textarea class="box" placeholder="粘贴对方发来的整段军令帖" value="{{text}}" bindinput="onInput" auto-height="{{false}}" maxlength="-1" />
 
   <view class="row">

@@ -8,11 +8,12 @@
 
 [在线试玩](https://liuyiming2024.github.io/sanguo-ce/)
 [刊行记 · 发布页](https://liuyiming2024.github.io/sanguo-ce/release.html)
+[传帖台 · 军令帖短号中转](https://liuyiming2024.github.io/sanguo-ce/bridge.html)
 
 ## 全境两章：同一套玩法，多铺一张图
 
 `?map=quanjing` 另开一局十三州全境：图幅 93–126E / 15–43N，与典籍页的《十三州全境舆图》
-同一线性投影，`bg + fg` 两份铺满整幅；30 座州郡含官渡本图十二城（id 原样保留），
+同一线性投影，`bg + fg` 两份铺满整幅；32 座州郡含官渡本图十二城（id 原样保留，另补叶、新野），
 格距自然粗一档（144×108 不变，seed 另取，河宽收 1 格，州郡缩成点城不铺外墙）。
 **不是第二套玩法**：点地、下令、推旬、看战报、城内攻城、命令日志、状态指纹、军令帖全复用
 `campaign / pathfind / terrain / siege / story / persist`，只换 `map-data.js` 的活绑定与两章料。

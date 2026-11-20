@@ -2,23 +2,47 @@
 // 主路径：复制口令 → 微信会话粘贴 → 对方粘进本页校验 / 或粘回 Web 版「导入」。
 // 不发起任何外部网络请求，不接云开发，零外部域名、零位图。
 import { inspectTicket } from '../../utils/ticket.js';
+import { normalizeShortId, shortIdHint } from '../../utils/relay.js';
 
 const KEY = 'sg:tickets';
 
 Page({
   data: {
     text: '',
+    shortId: '',
+    shortHint: shortIdHint(),
     info: null,
     err: '',
     recent: [],
   },
 
-  onLoad() {
-    this.setData({ recent: wx.getStorageSync(KEY) || [] });
+  onLoad(options) {
+    const sid = String(options?.sid || '').toUpperCase();
+    this.setData({
+      recent: wx.getStorageSync(KEY) || [],
+      shortId: /^[2-9A-HJ-NP-Z]{6}$/.test(sid) ? sid : '',
+    });
   },
 
   onInput(e) {
     this.setData({ text: e.detail.value, err: '', info: null });
+  },
+
+  onShortInput(e) {
+    this.setData({ shortId: String(e.detail.value || '').toUpperCase(), err: '' });
+  },
+
+  onCopyShort() {
+    try {
+      const id = normalizeShortId(this.data.shortId);
+      this.setData({ shortId: id });
+      wx.setClipboardData({
+        data: id,
+        success: () => wx.showToast({ title: '短号已复制，发给对方', icon: 'none' }),
+      });
+    } catch (e) {
+      wx.showToast({ title: e.message || '短号格式不对', icon: 'none' });
+    }
   },
 
   onPaste() {
@@ -54,6 +78,7 @@ Page({
       const item = {
         at: Date.now(), date: info.date, mapId: info.mapId, turn: info.turn,
         hash: info.hash, chars: info.chars, text: String(this.data.text).trim(),
+        shortId: this.data.shortId || '',
       };
       const recent = [item, ...(this.data.recent || [])]
         .filter((x, i, a) => a.findIndex((y) => y.hash === x.hash && y.turn === x.turn) === i)
@@ -70,23 +95,25 @@ Page({
     const i = Number(e.currentTarget.dataset.i);
     const item = (this.data.recent || [])[i];
     if (!item) return;
-    this.setData({ text: item.text, err: '', info: null });
+    this.setData({ text: item.text, shortId: item.shortId || '', err: '', info: null });
     wx.showToast({ title: '已取回，可复制', icon: 'none' });
   },
 
   onClear() {
     wx.removeStorageSync(KEY);
-    this.setData({ text: '', info: null, err: '', recent: [] });
+    this.setData({ text: '', shortId: '', info: null, err: '', recent: [] });
     wx.showToast({ title: '已清空', icon: 'none' });
   },
 
   onShareAppMessage() {
-    // 分享 path 不携带整段口令：微信对 path 长度有限制，整段存档会被截断。
-    // 这里只带一枚「有帖待传」的提示，真实口令仍走剪贴板 / 会话粘贴。
+    // 分享 path 仍不携带整段口令（几千字符会被截断），但可以带六位短号。
+    // 短号只是取件码：对方点开卡片看到它，去「传帖台」兑换整帖；本页不联网。
+    let sid = '';
+    try { sid = normalizeShortId(this.data.shortId); } catch { /* 没填或格式不对就不带 */ }
     const has = !!(this.data.text || '').trim();
     return {
-      title: has ? '三国策 · 有军令帖待传，接一旬' : '三国策 · 军令帖',
-      path: '/pages/index/index',
+      title: sid ? `三国策 · 军令帖 ${sid}` : (has ? '三国策 · 有军令帖待传，接一旬' : '三国策 · 军令帖'),
+      path: `/pages/index/index${sid ? `?sid=${sid}` : ''}`,
     };
   },
 });

@@ -725,6 +725,40 @@ ok(existsSync(join(root, 'miniprogram/app.json')) &&
   '轻量小程序验证版文件或后台说明缺失');
 ok(existsSync(join(root, 'docs/全境两章纪事底本.md')) &&
    /已补入/.test(qDoc), '两章底本没把「新野叶不在城表」改成已闭环');
+
+// ── 军令帖短号中转：文件齐全 / RLS / key 护栏 / 端侧不联网 ───────────────
+for (const p of ['src/ticket-store.js', 'supabase/schema.sql', 'bridge.html',
+  'miniprogram/utils/relay.js', 'tests/ticket-store.test.mjs',
+  'docs/军令帖短号中转说明.md']) {
+  ok(existsSync(join(root, p)), `短号中转缺文件 ${p}`);
+}
+const storeSrc = readFileSync(join(root, 'src/ticket-store.js'), 'utf8');
+const sqlSrc = readFileSync(join(root, 'supabase/schema.sql'), 'utf8');
+const bridgeSrc = readFileSync(join(root, 'bridge.html'), 'utf8');
+const relaySrc = readFileSync(join(root, 'miniprogram/utils/relay.js'), 'utf8');
+const mpPageSrc = readFileSync(join(root, 'miniprogram/pages/index/index.js'), 'utf8');
+ok(/export function assertPublicKey/.test(storeSrc) &&
+   /export async function putTicket/.test(storeSrc) && /export async function takeTicket/.test(storeSrc),
+   '短号中转层缺 key 护栏或存取动作');
+ok(/enable row level security/.test(sqlSrc) &&
+   /grant select, insert, delete on public\.tickets to anon/.test(sqlSrc) &&
+   !/grant update/.test(sqlSrc), '建表脚本 RLS / grant 口径被改');
+for (const p of ['tickets_anon_insert', 'tickets_anon_select', 'tickets_anon_delete']) {
+  ok(sqlSrc.includes(p), `建表脚本缺 RLS 策略 ${p}`);
+}
+ok(/src\/version\.js/.test(bridgeSrc) && !bridgeSrc.includes('src/main.js'),
+   '传帖台要么写死版本、要么加载了游戏逻辑');
+ok(!/AKID|ghp_|sb_secret|SUPABASE_SERVICE/.test(bridgeSrc + storeSrc),
+   '源码里出现凭证字面量');
+for (const banned of ['wx.request', 'wx.connectSocket', 'https://', 'http://']) {
+  ok(!relaySrc.includes(banned) && !mpPageSrc.includes(banned),
+     `小程序端出现「${banned}」，会引入备案域名`);
+}
+ok(/\?sid=/.test(mpPageSrc) && !/path:[^\n]*text/.test(mpPageSrc),
+   '分享卡片要么没带短号、要么又塞了整帖');
+ok(/短号中转|传帖台/.test(readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8')),
+   '小程序后台说明没同步短号中转口径');
+
 useMap('guandu');
 
 if (problems.length) {
