@@ -568,7 +568,10 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       const my = (a0[1] + b0[1]) / 2 + Math.cos(i * 2.11 + o.id) * TP * .22;
       // 淡纸衬：托住队列，不被密林/城郭吃掉；越近越实
       ctx.strokeStyle = `rgba(236,228,206,${(.10 + .44 * u * u).toFixed(3)})`;
-      ctx.lineWidth = TP * (.55 + 1.35 * u);
+      // 淡纸衬也必须按倍率补偿：此前是世界坐标宽度，×2.2 下被拉成一整块
+      // 浅色大盘子，把队列和落点墨池全糊掉。除 camera.scale 后屏幕粗细恒定，
+      // ×1 时除 1 完全不变，不破坏已认可的默认态。
+      ctx.lineWidth = TP * (.55 + 1.35 * u) / camera.scale;
       ctx.beginPath(); ctx.moveTo(a0[0], a0[1]);
       ctx.quadraticCurveTo(mx, my, b0[0], b0[1]); ctx.stroke();
       // 墨痕：浓淡与宽度都随距离衰减，队首那一段最重
@@ -588,6 +591,53 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
         const px = tail.x + Math.cos(ang) * rr, py = tail.y + Math.sin(ang) * rr * .7;
         ctx.beginPath(); ctx.moveTo(px, py);
         ctx.lineTo(px + Math.cos(ang) * 2.6, py + Math.sin(ang) * 2.2); ctx.stroke();
+      }
+    }
+    // 墨战第八轮：「凝墨为池，笔落成兵」——只借落笔这一瞬的视觉。
+    // 兵力始终由策略层军令从城外开进，这里不生成单位、不写 state / 快照 / 重放。
+    // 第一版用势力色的实心大盘，实拍糊成一个浅色圆贴纸，又踩回「几何」；
+    // 改成纯墨的不闭合笔洼 + 池心一点浓墨 + 三笔散锋，读成笔尖按下又提起。
+    // 与城内小地图「战殁墨化消散」正好成对：生与灭都是墨。
+    if (t > .84) {
+      const land = pointOnPath(path, 1);
+      const k = Math.min(1, (t - .84) / .16);
+      const R = TP * (.18 + .34 * k);
+      const sd = Math.abs(Number(o.id) || 0) * .13 + .7;
+      const ink = 'rgba(28,38,31,';
+      // 不闭合的墨洼：7 笔短弧围成，不是标准圆 / 椭圆 / 实心色块
+      for (let q = 0; q < 7; q++) {
+        const a0 = q / 7 * Math.PI * 2 + sd, a1 = a0 + .72;
+        const wob = 1 + Math.sin(q * 2.7 + sd) * .30, r0 = R * wob;
+        ctx.strokeStyle = ink + (.10 + .30 * k).toFixed(3) + ')';
+        ctx.lineWidth = (1.1 + 2.3 * k) / camera.scale;
+        ctx.beginPath();
+        ctx.moveTo(land.x + Math.cos(a0) * r0, land.y + Math.sin(a0) * r0 * .82);
+        ctx.quadraticCurveTo(
+          land.x + Math.cos((a0 + a1) / 2) * r0 * 1.18,
+          land.y + Math.sin((a0 + a1) / 2) * r0 * .96,
+          land.x + Math.cos(a1) * r0, land.y + Math.sin(a1) * r0 * .82);
+        ctx.stroke();
+      }
+      // 池心一点浓墨：笔尖按下的那一按
+      ctx.fillStyle = ink + (.16 + .40 * k).toFixed(3) + ')';
+      ctx.beginPath();
+      for (let q = 0; q < 9; q++) {
+        const ang = q / 9 * Math.PI * 2, wob = 1 + Math.sin(q * 3.1 + sd) * .36;
+        const rr = R * (.22 + .10 * k) * wob;
+        const px = land.x + Math.cos(ang) * rr, py = land.y + Math.sin(ang) * rr * .8;
+        if (q) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+      }
+      ctx.closePath(); ctx.fill();
+      // 落笔散锋：三笔由池心向外，越近越短
+      ctx.strokeStyle = ink + (.16 + .34 * k).toFixed(3) + ')';
+      ctx.lineWidth = (1 + 1.4 * k) / camera.scale;
+      for (let i = 0; i < 3; i++) {
+        const ang = i * 2.09 + sd, rr = R * (.55 + i * .12);
+        ctx.beginPath();
+        ctx.moveTo(land.x + Math.cos(ang) * rr, land.y + Math.sin(ang) * rr * .8);
+        ctx.lineTo(land.x + Math.cos(ang) * (rr + 5 + 4 * k),
+                   land.y + Math.sin(ang) * (rr + 5 + 4 * k) * .8);
+        ctx.stroke();
       }
     }
     // 队列：5 人错开，尺寸放大到一格多；左右步由 turn 确定性给出
