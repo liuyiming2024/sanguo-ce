@@ -349,18 +349,14 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
 .arcLv{position:absolute;top:11px;right:11px;width:20px;height:20px;display:flex;
   align-items:center;justify-content:center;font-size:10px;letter-spacing:0;
   border:1px solid var(--gold2);border-radius:2px;color:var(--gold);background:var(--goldTint)}
-/* 画布按 1400×1100 图幅本来的比例走：此前 height:min(62vh,560px) 让
-   1318×558 的超宽容器去装 1.27:1 的图，按高度 contain 后左右各空出约 300px
-   死黑，注记也被 base≈0.5 压小。改成 aspect-ratio 后地图铺满、字回到设计值。
-   典籍页本就是长滚动页，画布变高不会挤掉下面的说明与返回按钮。 */
-#atlasCanvas{display:block;width:100%;height:auto;aspect-ratio:1400/1100;margin:0 0 14px;
-  border:1px solid var(--line2);border-radius:2px;background:#151a15;
+#atlasCanvas{display:block;width:100%;height:min(62vh,560px);margin:0 0 14px;
+  border:1px solid var(--line2);border-radius:2px;background:#0e1310;
   touch-action:none;cursor:grab}
 #atlasCanvas:active{cursor:grabbing}
 @media (max-width:720px){
   .arcList{grid-template-columns:1fr}
   .arcPre{font-size:13px;line-height:2.05}
-  #atlasCanvas{aspect-ratio:1400/1100}
+  #atlasCanvas{height:52vh}
 }
 .readBody{font-size:13px;line-height:1.95;color:var(--paper2);padding:14px 16px;
   border:1px solid var(--line2);background:var(--cardBg);border-radius:2px;white-space:pre-wrap}

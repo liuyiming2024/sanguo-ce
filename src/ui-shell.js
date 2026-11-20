@@ -739,11 +739,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, c.width, c.height);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // 画布被拖出图幅时读成摊在案上的暗绢，不是一块死黑（与 demos 装裱一致）
-      const mount = ctx.createLinearGradient(0, 0, c.width / dpr, c.height / dpr);
-      mount.addColorStop(0, '#22271f'); mount.addColorStop(.5, '#171d17');
-      mount.addColorStop(1, '#0f1410');
-      ctx.fillStyle = mount; ctx.fillRect(0, 0, c.width / dpr, c.height / dpr);
+      ctx.fillStyle = '#0e1310'; ctx.fillRect(0, 0, c.width / dpr, c.height / dpr);
       ctx.save();
       ctx.translate(cw / 2 + px, ch / 2 + py);
       ctx.scale(zoom * base, zoom * base);
