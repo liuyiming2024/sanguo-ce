@@ -561,6 +561,22 @@ export function createCityView(canvas, { cfg, campaign, getCityId, playerFaction
         ctx.restore();
       }
 
+      // 技能释放：浮一枚墨字（对照墨战「文字将士 / 汉字兵种」）。
+      // 纯视觉，不改机制：取技能名首字，随动画上浮淡出；不进 state / 快照 / 重放。
+      if (anim && anim.skill) {
+        const sp = Math.max(0, Math.min(1, (sec - anim.t0) / (anim.dur || .9)));
+        const ch = (GENERAL_SKILL_LABEL[anim.skill] ?? '')[0];
+        if (ch) {
+          ctx.save();
+          ctx.globalAlpha = (1 - sp) * .88;
+          ctx.fillStyle = skillCol || rgba(GOLD, .9);
+          ctx.font = `${Math.round(L.cell * 1.5)}px "WenQuanYi Micro Hei", serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText(ch, x, y - L.cell * (1.1 + sp * 1.5));
+          ctx.restore();
+        }
+      }
+
       // 霸体：锋矢突阵期间一圈断续短弧，读得出「免控」
       if (cmd.guardUntil > sec) {
         ctx.save(); ctx.strokeStyle = 'rgba(200,168,106,.72)'; ctx.lineWidth = 1.1;

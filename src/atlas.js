@@ -527,6 +527,10 @@ function makeBg(zb){
   // 地表笔触：不等距扫描游走，笔型 / 密度 / 方向全由连续场决定
   // k = 1/zb：逻辑坐标里笔更小更密，合成时 ×zoom 放大回屏幕原尺寸 —— 放大不会把笔拉粗
   const k=1/zb;
+  /* 放大档才生效的笔势分化：×1 时 spread=0，像素与已认可的默认态完全一致；
+     ×2/×3 时逐笔加中频旋涡与高频偏转，破掉「一层同向短弧纹样」。
+     与 demos 全境舆图保持同一套笔法。 */
+  const spread=clamp((zb-1)/2,0,1);
   let y=8, ri=0;
   while(y<H-8){
     let x=-18+rnd(y*.37)*32;
@@ -539,14 +543,20 @@ function makeBg(zb){
       if(rnd(x*.031+y*.017) > 0.30+0.68*dens){ x+=step*.7; continue; }
       // 方向不只跟随低频风场：叠两项高频扰动，避免整片区域同向排成斜纹布。
       const ang=r.wind+(n-.5)*1.05+(rnd(x*.019+y*.023)-.5)*1.5
-               +(rnd(x*.41+y*.37)-.5)*1.25,
+               +(rnd(x*.41+y*.37)-.5)*1.25
+               +(fbm(lon*4.3,lat*5.1,seed*.017)-.5)*1.1*spread
+               // 逐笔独立的高频偏转：中频场在局部仍连续，相邻笔会同向，
+               // 只有逐笔给角才能真正破掉「一层同向短弧纹样」。
+               +(rnd(x*1.73+y*2.31+spread*13)-.5)*2.4*spread,
             ca=Math.cos(ang), sa=Math.sin(ang);
       const rot=(dx,dy)=>[x+dx*ca*k-dy*sa*k, y+dx*sa*k+dy*ca*k];
       // 针叶 / 灌丛各有自己的方向策略，不共用同一个风向角
       const rotA=(dx,dy,a)=>{const c=Math.cos(a),s=Math.sin(a);
         return [x+dx*c*k-dy*s*k, y+dx*s*k+dy*c*k];};
       // 笔型按场权重概率混合：过渡带里两套笔交错，不出现硬切线
-      const pick=rnd(x*.053+y*.021+n*3.1);
+      const pick=clamp(rnd(x*.053+y*.021+n*3.1)
+                       +(fbm(lon*3.1,lat*3.7,seed*.023)-.5)*.20*spread
+                       +(rnd(x*1.91+y*1.17+7)-.5)*.40*spread,0,1);
       const wDesert=r.desert*0.86, wLing=r.lingnan*0.60, wSouth=r.south*0.92;
       /* 三类补充地貌各用独立概率，不挤占原有南北笔法的权重：
          全境默认只在它们各自的连续高值区换笔，其余区域笔法一字不变。 */
@@ -607,23 +617,31 @@ function makeBg(zb){
         const c = n>.55 ? 'rgba(56,76,62,.58)' : 'rgba(126,100,64,.50)';
         const p = rnd(x*.041+y*.029+n*5.7);
         if(p < wNeedle){
-          // 针叶：放射状，每根自取一角，不沿统一风向
-          for(let t=0;t<3;t++){
-            const aa=ang+(t-1)*(.42+rnd(x*.31+t)*.34)+(rnd(x*.57+t*9)-.5)*.9;
+          // 针叶：放射状，每根自取一角；放大档笔数与偏角都随点变化，不再三根同款
+          const nN=3+Math.floor(rnd(x*.71+y*.43+spread*7)*2*spread+.5);
+          for(let q=0;q<nN;q++){
+            const aa=ang+(q-(nN-1)/2)*(.42+rnd(x*.31+q)*.34)
+                     +(rnd(x*.57+q*9)-.5)*(.9+1.5*spread);
             brush(g,[rotA(-L*.15,0,aa),rotA(0,-1,aa),rotA(L*.85,-.5,aa)],1.05*k,.10*k,c,.50);
           }
         } else if(p < wNeedle+wShrub){
-          // 灌丛：横走偏角，三四笔错开，方向各自偏一点
+          // 灌丛：横走偏角，三四笔错开；放大档每笔再各偏一点
           const ba=ang+1.15+(rnd(x*.29+y*.13)-.5)*1.1;
-          for(let t=0;t<3;t++){
-            const d=t*2.1-2.1, l=L*(.55+rnd(x*.23+t*5)*.35);
-            brush(g,[rotA(-l,d,ba),rotA(0,d-.6,ba),rotA(l*.9,d+.3,ba)],1.25*k,.12*k,c,.50);
+          const nS=3+Math.floor(rnd(x*.47+y*.61+spread*5)*2*spread+.5);
+          for(let q=0;q<nS;q++){
+            const d=q*2.1-(nS-1)*1.05, l=L*(.55+rnd(x*.23+q*5)*.35);
+            const bq=ba+(rnd(x*.37+q*3.7)-.5)*1.3*spread;
+            brush(g,[rotA(-l,d,bq),rotA(0,d-.6,bq),rotA(l*.9,d+.3,bq)],1.25*k,.12*k,c,.50);
           }
         } else {
           // 阔叶 / 荒田：短粗一主一副，仍保持战后稀疏断续
           const dy=Math.sin(ang)*2;
           brush(g,[rot(-L,dy),rot(0,dy-1.4),rot(L*.82,dy+.5)],1.6*k,.12*k,c,.52);
           if(n>.72) brush(g,[rot(-2,3),rot(0,0),rot(3,-3)],1.0*k,.1*k,'rgba(50,70,56,.5)',.44);
+          // 放大档补一笔反向短锋，把整片同向的读感打散
+          if(spread>.01 && rnd(x*.83+y*.29)>.45)
+            brush(g,[rot(-L*.5,-dy),rot(0,-dy+1.6),rot(L*.45,-dy-.6)],
+                  1.1*k,.1*k,'rgba(96,86,62,.44)',.36+.10*spread);
         }
       }
       x+=step;
