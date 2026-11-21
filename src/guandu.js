@@ -5,6 +5,12 @@
  *   2) 引入 MIT 笔触原语（src/ink-stroke.js，见 demos/third-party/ATTRIBUTION.md）；
  *   3) 按 map-data.js 的游戏图幅算出裁切矩形，保证与 144×108 逻辑格精确对齐。
  * 确定性：seed 固定、无墙钟、无 Math.random、无位图。
+ *
+ * 上游笔触原语：MIT License, Copyright (c) 2018 Lingdong Huang
+ *   · LingDong-/shan-shui-inf · LingDong-/nonflowers
+ *   许可全文 demos/third-party/LICENSE-*.txt，随本文件一并分发。
+ *   游戏内玩家可见署名页：系统 → 素材致谢 · 开源许可（src/ui-shell.js pageCredits）。
+ *   本文件其余地物生成逻辑为本仓库自撰，不主张上游版权。
  */
 import { InkStroke } from './ink-stroke.js';
 import { LON_MIN as G_LON_MIN, LON_MAX as G_LON_MAX,

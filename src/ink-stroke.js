@@ -7,8 +7,10 @@
  *   · LingDong-/shan-shui-inf  index.html   函数 stroke() / poly() / loopNoise()
  *   · LingDong-/nonflowers     main.js     函数 tubify() / stroke() / polygon()
  *
- * 许可证全文：同目录 LICENSE-shan-shui-inf.txt / LICENSE-nonflowers.txt
- * 来源与改动清单：同目录 ATTRIBUTION.md
+ * 许可证全文：demos/third-party/LICENSE-shan-shui-inf.txt
+ *              demos/third-party/LICENSE-nonflowers.txt
+ * 来源与改动清单：demos/third-party/ATTRIBUTION.md
+ * 游戏内玩家可见的署名页：系统 → 素材致谢 · 开源许可（src/ui-shell.js pageCredits）
  *
  * 改写内容（不改动原许可证义务）：
  *   1. 去掉 DOM / 全局 CTX 依赖，改为显式传入 CanvasRenderingContext2D；

@@ -305,6 +305,36 @@ try {
   check('联机边界写明「无预算可做 / 不可做」', await page.evaluate(() =>
     window.__sanguo.state.syncReport.includes('无预算可做') &&
     window.__sanguo.state.syncReport.includes('做不了')));
+
+  // ── 率土-like 本轮：三席存档 / 旬计簿 / 素材致谢 / 终局页 ──────────
+  const sysTxt = await page.locator('#screen').innerText();
+  check('系统页含三席存档与旬计簿 / 致谢入口',
+    sysTxt.includes('三席存档') && sysTxt.includes('旬计簿') && sysTxt.includes('素材致谢'));
+  await page.evaluate(() => window.__sanguo.shell.navigate('ledger'));
+  const ledTxt = await page.locator('#screen').innerText();
+  check('旬计簿显示本旬收支与敌方决策权重',
+    ledTxt.includes('本旬军粮') && ledTxt.includes('诸军旬计') && ledTxt.includes('袭粮') &&
+    await page.evaluate(() => !!window.__sanguo.xunLedger().byFaction.cao));
+  await page.evaluate(() => window.__sanguo.shell.navigate('credits'));
+  const creTxt = await page.locator('#screen').innerText();
+  check('游戏内致谢页保留原作者声明与 MIT 许可全文',
+    creTxt.includes('Copyright (c) 2018 Lingdong Huang') &&
+    creTxt.includes('THE SOFTWARE IS PROVIDED "AS IS"') &&
+    await page.locator('.creditsLicense').isVisible());
+  await page.evaluate(() => window.__sanguo.shell.navigate('outcome'));
+  check('开局不误判终局，终局页给出本局摘要', await page.evaluate(() =>
+    window.__sanguo.checkOutcome().over === false &&
+    document.getElementById('screen').innerText.includes('本局')));
+  check('三席存档可存 / 可读 / 可删，互不覆盖自动档', await page.evaluate(() => {
+    const w = window.__sanguo;
+    w.actions.saveSlot(1);
+    const l = w.listSlots();
+    const r = w.readSlot(1);
+    const ok = l[0].meta?.turn === w.state.turn && r.ok === true && l[1].empty === true;
+    w.actions.deleteSlot(1);
+    return ok && w.listSlots()[0].empty === true;
+  }));
+  await page.evaluate(() => window.__sanguo.shell.navigate('system'));
   await nav('interior');   // 保持 screen 打开，后续逐层断言才有元素
 
   check('每层都有 × 与返回',
@@ -1205,6 +1235,17 @@ try {
 
   check('攻城战无 JS 运行时报错', bErrs.length === 0, bErrs.slice(0, 2).join(' | '));
   await bp.close();
+
+  // 放在所有既有断言之后：推进一旬不影响前面的回合相关断言。
+  check('推一旬后军粮账真的入账，产 / 耗 / 净三数齐备', await page.evaluate(() => {
+    const w = window.__sanguo;
+    w.doTurn();
+    const a = w.state.commissary?.cao;
+    const l = w.xunLedger().byFaction.cao;
+    return !!a && Number.isFinite(a.lastIncome) && a.lastIncome > 0 &&
+      a.lastUpkeep > 0 && Number.isFinite(a.lastNet) &&
+      l.garrison > 0 && w.checkOutcome().over === false;
+  }));
 
   check('无 JS 运行时报错', errors.length === 0, errors.slice(0, 2).join(' | '));
 } finally {

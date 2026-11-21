@@ -37,6 +37,7 @@ export function serializeGame({ cfg, state, rng, snapshot, ui }) {
     cities: state.cities,
     resources: state.resources,
     yield: state.yield,
+    commissary: state.commissary ?? {},
     orders: state.orders,
     mailbox: state.mailbox,
     forces: state.forces,
@@ -90,7 +91,7 @@ export function deserializeGame(cfg, raw) {
     t.cost = cost;
     t.y = { wood: w, stone: s, iron: ir, grain: g };
   }
-  const keys = ['resources', 'yield', 'orders', 'mailbox',
+  const keys = ['resources', 'yield', 'commissary', 'orders', 'mailbox',
     'forces', 'intel', 'forts', 'battles', 'stats',
     'facilities', 'armies', 'copper', 'settings', 'reports', 'claimedTasks',
     'chapter', 'storyBaseline', 'storyFlags', 'storyChoices', 'chapterHistory', 'storyMails',

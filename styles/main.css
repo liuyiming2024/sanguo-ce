@@ -413,6 +413,15 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
 #helpPanel ul{font-size:12px;color:var(--paper2);line-height:1.9;padding-left:20px;margin:0 0 14px}
 #helpPanel .x{top:10px;right:10px;width:40px;height:40px;line-height:36px}
 
+/* 素材致谢：许可全文用等宽小字整段留白，不作卡片、不裁断 */
+.creditsLicense{white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;
+  font-size:11px;line-height:1.65;color:var(--dimDeep);background:rgba(0,0,0,.035);
+  border:1px solid var(--line);border-radius:2px;padding:14px 16px;margin:0 0 14px;overflow-x:auto}
+#screen[data-tone="paper"] .creditsLicense{color:#3b382c;background:rgba(255,255,255,.34)}
+/* 三席存档：每席自带一组小按钮，不挤成一行 */
+#slotPanels .cmdGroup{display:flex;flex-wrap:wrap;gap:6px}
+#slotPanels .cmdGroup button{width:auto;min-height:32px;margin:0;padding:5px 12px;font-size:12px}
+
 /* 开局选择 */
 #mainMenu{position:absolute;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
   background:radial-gradient(ellipse at 50% 34%,rgba(60,66,50,.55),transparent 62%),

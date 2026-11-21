@@ -35,6 +35,12 @@ import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
 } from './persist.js';
 import { formationSummary } from './formation.js';
+import { xunLedger, shortageReport } from './economy.js';
+import { checkOutcome } from './outcome.js';
+import {
+  listSlots, saveSlot as writeSlot, readSlot, restoreBackup,
+  deleteSlot as removeSlot, backupSlot,
+} from './save-slots.js';
 import { VERSION } from './version.js';
 
 const $ = (id) => document.getElementById(id);
@@ -51,6 +57,7 @@ let auto = true, accTurn = 0, last = 0, started = false, dirty = true;
 let lastPortraitReady = false;
 let selection = null, selectedCity = null, toastTimer = null, saveTick = 0;
 let lastBattleOutcome = null;
+let outcomeShown = false;
 let reports = [];
 
 const heroById = (id) => uiData?.heroes.find((h) => h.id === id) ?? null;
@@ -165,6 +172,24 @@ function loadGame() {
   if (!raw) { toast('没有找到存档'); return false; }
   const r = deserializeGame(cfg, raw);
   if (!r) { toast('存档版本不兼容'); return false; }
+  return applyLoaded(r, '已继续上一局');
+}
+
+/** 三席读档：坏档不删原文，能回退备份就提示，绝不静默吞掉。 */
+function loadSlot(i) {
+  const r = readSlot(i);
+  if (!r.ok) {
+    if (r.corrupt && r.backupUsable) toast(`第 ${i} 席损坏：可在系统页点「回退备份」`);
+    else toast(r.reason ?? '读取失败');
+    return false;
+  }
+  const d = deserializeGame(cfg, r.raw);
+  if (!d) { toast('该席版本不兼容'); return false; }
+  return applyLoaded(d, `已读第 ${i} 席`);
+}
+
+/** 读档共用装配：状态、rng、快照、渲染器、界面一次对齐。 */
+function applyLoaded(r, label) {
   state = r.state;
   rng = rngFromSnapshot(r.rngSnapshot ?? { state: 0, calls: 0 });
   snapshot = r.snapshot ?? null;
@@ -199,7 +224,8 @@ function loadGame() {
   refreshUI();
   markDirty();
   tutUI?.resumeOrStart({ toast });
-  toast(`已继续上一局 · ${dateLabel(state)}`);
+  outcomeShown = false;
+  toast(`${label} · ${dateLabel(state)}`);
   log(`读取存档：${dateLabel(state)}，领地 ${state.terrain.tiles.filter((t) => t.owner === state.playerFaction).length} 格`);
   return true;
 }
@@ -398,7 +424,23 @@ function doTurn() {
     else if (e.type === 'withdraw') log(`撤兵 ${e.count} 回营`);
     else if (e.type === 'aiClaim' || e.type === 'aiMarch') log(`${fn || '敌方'} 下令`);
   }
+  // 旬循环代价：断粮战报只在真发生时推一条，不每旬刷屏。
+  const famine = shortageReport(state);
+  if (famine && !reports.some((r) => r.turn === state.turn && r.title === famine.title)) {
+    pushReport(famine);
+  }
   refreshUI();
+  // 终局：停自动推进，只弹一次，给「读档 / 新开一局」两条路，不偷偷重开。
+  const outcome = checkOutcome(state);
+  if (outcome.over && !outcomeShown) {
+    outcomeShown = true;
+    auto = false;
+    $('autoBtn').setAttribute('aria-pressed', 'false');
+    $('autoBtn').textContent = '停';
+    pushReport({ title: outcome.title, tag: '终局', red: outcome.kind === 'defeat',
+      sub: dateLabel(state, 'short'), body: outcome.body });
+    shell?.navigate('outcome');
+  }
   // 章回与军历月份对齐：只在「刚变得可推进」时提示一次，不每旬刷屏。
   const gate = canAdvance(story, state);
   if (gate.ok && !chapterGateWasReady) {
@@ -568,6 +610,20 @@ const actions = {
   loadGame,
   newGame() { clearStorage(); location.reload(); },
   deleteSave() { clearStorage(); toast('存档已删除'); },
+  listSlots,
+  saveSlot(i) {
+    backupSlot(i);
+    const data = serializeGame({ cfg, state, rng, snapshot,
+      ui: { auto, camera: { ...renderer.camera }, battleCityId } });
+    const r = writeSlot(i, data);
+    toast(r.ok ? `已存于第 ${i} 席 · ${formatCalendar(state.turn, cfg.calendar, 'short')}` : r.reason);
+  },
+  loadSlot,
+  restoreSlot(i) {
+    const r = restoreBackup(i);
+    toast(r.ok ? `第 ${i} 席已回退备份` : r.reason);
+  },
+  deleteSlot(i) { removeSlot(i); toast(`第 ${i} 席已清空`); },
   openHelp() { $('helpPanel').hidden = false; },
   getTutorialLabel() {
     if (!tutUI) return '未读';
@@ -1112,6 +1168,9 @@ async function boot() {
     get tutorial() { return tutorialDef; },
     get tutUI() { return tutUI; },
     calendar: formatCalendar,
+    xunLedger: () => xunLedger(state),
+    checkOutcome: () => checkOutcome(state),
+    listSlots, readSlot,
     hashState, stateFingerprint, encodeTicket, decodeTicket,
     createLoopbackTransport, createBroadcastTransport,
     get renderer() { return renderer; },

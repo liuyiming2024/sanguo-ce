@@ -680,6 +680,75 @@ ok(/后台开发用 · 白话 · 不进游戏/.test(qDoc) && /州郡事件台账
   '全境两章白话底本缺总目 / 台账 / 分工');
 useMap('guandu');
 
+// ── 率土-like 旬循环：资源闭环 / AI 对手 / 三席存档 / 终局 / 玩家可见署名 ──
+for (const f of ['src/economy.js', 'src/ai.js', 'src/save-slots.js', 'src/outcome.js',
+  'tests/economy.test.mjs', 'tests/ai.test.mjs', 'tests/save-slots.test.mjs',
+  'tests/outcome.test.mjs']) {
+  ok(existsSync(join(root, f)), `缺少本轮新增文件 ${f}`);
+}
+const econ = readFileSync(join(root, 'src/economy.js'), 'utf8');
+const aiSrc = readFileSync(join(root, 'src/ai.js'), 'utf8');
+const slots = readFileSync(join(root, 'src/save-slots.js'), 'utf8');
+const outc = readFileSync(join(root, 'src/outcome.js'), 'utf8');
+const camp = readFileSync(join(root, 'src/campaign.js'), 'utf8');
+// shellSrc 在 §v0.9.4 已声明，这里直接复用，不重复 readFileSync。
+const mainAll = readFileSync(join(root, 'src/main.js'), 'utf8');
+const inkHead = readFileSync(join(root, 'src/ink-stroke.js'), 'utf8');
+const guanduHead = readFileSync(join(root, 'src/guandu.js'), 'utf8');
+const cssAll = readFileSync(join(root, 'styles/main.css'), 'utf8');
+
+// 旧版致命 bug 不许回潮：每城各加一次全势力产量、AI 每两旬只两招。
+ok(!/c\.grain\s*\+=\s*\(own\?\.grain/.test(camp),
+  '城仓又把全势力总产量整份记了一遍，断粮 debuff 会永远不触发');
+ok(!/state\.turn % 2 !== 0/.test(camp), 'AI 又退回「每两旬一次、只有铺路/出征」');
+ok(/settleXun\(state, yieldByOwner\)/.test(camp) && /import .*economy\.js/.test(camp),
+  'advanceTurn 没接旬结算');
+ok(/planAiTurn\(state, f, rng\)/.test(camp) && /import .*ai\.js/.test(camp),
+  'AI 决策没接进 advanceTurn');
+ok(/export function settleXun/.test(econ) && /export function canAffordTroops/.test(econ) &&
+   /yieldByOwner\?\.\[fid\]\?\.grain/.test(econ), '旬结算缺产量分摊或发令约束');
+ok(/export const AI_WEIGHTS/.test(aiSrc) &&
+   ['expand', 'defend', 'raid', 'march'].every((k) => aiSrc.includes(`${k}:`)),
+   'AI 四类权重分桶不全');
+// 剥掉行注释再扫：文件头「零 DOM / 墙钟 / Math.random」是宣言，不是真调用。
+const aiCode = aiSrc.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+ok(/export function planAiTurn/.test(aiSrc) && !/Math\.random|Date\.|localStorage|document\./.test(aiCode),
+   'AI 层引入了墙钟 / 随机 / DOM，重放会分叉');
+ok(/export const SLOT_COUNT = 3/.test(slots) && /export function restoreBackup/.test(slots) &&
+   /export function backupSlot/.test(slots), '三席存档 / 坏档回退缺件');
+ok(/export function checkOutcome/.test(outc) && /outcomeShown/.test(mainAll) &&
+   /checkOutcome\(state\)/.test(mainAll), '终局判定没接进旬末');
+ok(/listSlots/.test(mainAll) && /loadSlot/.test(mainAll) && /saveSlot/.test(mainAll),
+   '三席存档没接进装配层');
+ok(/commissary/.test(readFileSync(join(root, 'src/persist.js'), 'utf8')),
+   '军粮账没进存档，读档后旬计簿会跳变');
+
+// MIT 署名：源码头 + 玩家可见页 + 许可全文，三处缺一不可。
+ok(/Copyright \(c\) 2018 Lingdong Huang/.test(inkHead) &&
+   /demos\/third-party\/LICENSE-/.test(inkHead), 'ink-stroke.js 头上游声明或许可路径');
+ok(/Copyright \(c\) 2018 Lingdong Huang/.test(guanduHead) &&
+   /pageCredits/.test(guanduHead), 'guandu.js 头缺上游声明或致谢页锚点');
+ok(/function pageCredits/.test(shellSrc) && /Copyright \(c\) 2018 Lingdong Huang/.test(shellSrc) &&
+   /THE SOFTWARE IS PROVIDED "AS IS"/.test(shellSrc), '游戏内致谢页缺原作者声明或许可全文');
+ok(/data-act="credits"/.test(shellSrc) && /case 'credits'/.test(shellSrc),
+   '致谢页没有可点入口或事件分发');
+ok(/\.creditsLicense/.test(cssAll), '许可全文没有可读样式');
+for (const [p, label] of [['src/economy.js', '旬结算'], ['src/ai.js', 'AI'],
+  ['src/save-slots.js', '三席存档'], ['src/outcome.js', '终局']]) {
+  const t = readFileSync(join(root, p), 'utf8');
+  ok(!/['"]0\.9\.\d['"]/.test(t), `${label} 写了版本字面量，版本唯一源被破坏`);
+}
+// 明文护栏：便签正文 / 项目 ref / 任何 token 形状不许进源码。
+// 片段拼接而非整串字面，护栏文件自身也不会被推送脚本的明文扫描误拒。
+const BAD_SECRETS = [
+  ['2012', 'ming0421lym'], ['duqpvya', 'fertiaohabrnz'],
+  ['webnote', '.cc/p/'], ['gh', 'p_'], ['PGPASSWORD: ', '2012'],
+].map((parts) => parts.join(''));
+const scannedSrc = econ + aiSrc + slots + outc + camp + shellSrc + mainAll + inkHead + guanduHead;
+for (const bad of BAD_SECRETS) {
+  ok(!scannedSrc.includes(bad), `源码出现明文 ${bad.slice(0, 4)}…`);
+}
+
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);

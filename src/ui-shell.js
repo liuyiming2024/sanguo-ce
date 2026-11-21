@@ -6,6 +6,9 @@ import { CITIES, cityById } from './map-data.js';
 import { createAtlas } from './atlas.js';
 import { dateLabel } from './campaign.js';
 import { formatCalendar } from './calendar.js';
+import { xunLedger, COMMISSARY } from './economy.js';
+import { AI_WEIGHTS } from './ai.js';
+import { checkOutcome, outcomeSummary } from './outcome.js';
 import {
   currentChapter, chapterIndex, chapterById, goalProgress, canAdvance,
   chapterHeadline, allMails,
@@ -71,6 +74,9 @@ const TITLE = {
   archive: ['典籍总揽', '建安五年 · 官渡行台藏书'],
   atlasView: ['十三州全境舆图', '西止玉门 · 东含乐浪 · 南含日南'],
   help: ['玩法', ''],
+  ledger: ['旬计簿', '一旬之入、之出、之净'],
+  credits: ['素材致谢', '开源许可与第三方笔触原语'],
+  outcome: ['终局', ''],
 };
 
 /** 升级消耗：页面展示与扣费共用同一公式，避免两处算出不同数字。 */
@@ -82,7 +88,7 @@ export function facilityCost(f, lv) {
 // 文治页反纸：内政 / 政令 / 任务 / 邮件 / 同盟 / 天下 / 系统 / 玩法。
 // 武将、战法、部队、出征、战报仍走墨底，一深一浅才有翻页节奏。
 const PAPER_ROUTES = new Set(['interior', 'facility', 'story', 'tasks', 'mail', 'mailRead',
-  'alliance', 'world', 'system', 'help', 'archive', 'atlasView']);
+  'alliance', 'world', 'system', 'help', 'archive', 'atlasView', 'ledger', 'credits', 'outcome']);
 
 export function createShell({ cfg, uiData, story, historica, actions, getState, getReports, onRoute }) {
   const screen = document.getElementById('screen');
@@ -584,8 +590,8 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       <p class="hintLine">授简是本机界面状态，不进局面、不进命令日志、不进军令帖；遮罩不挡指针，每一简都可手动跳过。当前：${esc(actions.getTutorialLabel?.() ?? '未读')}。</p>
       <button class="tutReplay" type="button" data-act="tutorialReplay">重 看 行 台 授 简</button>
 
-      ${sec('存档', '手机切走 / 锁屏 / 刷新后仍是这一局')}
-      <p class="hintLine">按「保存」写入本机；下次打开主菜单会出现「继续上一局」。</p>
+      ${sec('本机自动档', '手机切走 / 锁屏 / 刷新后仍是这一局')}
+      <p class="hintLine">按「保存」写入本机；下次打开主菜单会出现「继续上一局」。此档与下面三席互不影响。</p>
       <div class="cmdGroup" style="max-width:420px">
         <button data-act="save">保存进度</button>
         <button data-act="load">读取进度</button>
@@ -593,6 +599,32 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
         <button data-act="delsave">删除存档</button>
       </div>
       <p class="readBody" style="margin-top:12px">当前局面：${dateLabel(s, 'full')}\n己方 ${esc((s.cfg.factions.find((f) => f.id === pf()) ?? {}).name ?? '')} · 领地 ${fmt(landCount())} 格 · 在途命令 ${s.orders.length} 道\n城池 ${ownCities().length} 座 · 事件记录 ${getReports().length} 条</p>
+
+      ${sec('三席存档', '甲 · 乙 · 丙　覆盖前另留一份备份')}
+      <p class="hintLine">每席独立存一局；写入时先把上一份可用档另存为备份，读档遇损坏可一键回退。读某席会替换当前局面，先确认自动档已存。</p>
+      <div class="cardList arcList" id="slotPanels">${(actions.listSlots?.() ?? []).map((sl) => {
+        const m = sl.meta;
+        const when = m?.savedAt ? new Date(m.savedAt).toLocaleString('zh-CN',
+          { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+        const desc = sl.corrupt ? '此档损坏或版本不兼容，可回退备份或删除'
+          : sl.empty ? '空席' : `${when} · 第 ${m?.turn ?? '?'} 旬 · ${m?.mapId === 'quanjing' ? '十三州全境' : '官渡本图'} · ${m?.cities ?? '?'} 城${sl.hasBackup ? ' · 有备份' : ''}`;
+        return `<div class="card arcItem"><span class="arcLv">${esc(sl.label)}</span>
+          <h3>第 ${sl.i} 席</h3><div class="desc" style="color:${sl.corrupt ? 'var(--red)' : 'inherit'}">${esc(desc)}</div>
+          <div class="meta">${sl.empty ? '' : `${fmt(sl.bytes / 1024)} KB`}</div>
+          <div class="cmdGroup" style="margin-top:8px">
+            <button type="button" data-act="slotSave" data-id="${sl.i}">存于此席</button>
+            <button type="button" data-act="slotLoad" data-id="${sl.i}" ${sl.empty || sl.corrupt && !sl.hasBackup ? 'disabled' : ''}>读取</button>
+            ${sl.corrupt && sl.hasBackup ? `<button type="button" data-act="slotRestore" data-id="${sl.i}">回退备份</button>` : ''}
+            <button type="button" data-act="slotDelete" data-id="${sl.i}" ${sl.empty ? 'disabled' : ''}>删除</button>
+          </div></div>`;
+      }).join('')}</div>
+
+      ${sec('卷帙', '旬计 · 玩法 · 开源许可')}
+      <div class="cmdGroup" style="max-width:420px">
+        <button type="button" data-act="ledger">旬计簿 · 收支与敌方决策</button>
+        <button type="button" data-act="credits">素材致谢 · 开源许可</button>
+        <button type="button" data-act="help">查看玩法说明</button>
+      </div>
 
       ${sec('军令帖 · 无服务器异步对演', '零预算可做')}
       <p class="hintLine">不设服务器也能两人对演：导出本局口令（存档 + 带序号的命令日志）交给对方，对方导入后接着下命令，再把口令传回。逻辑时间只有年号月日对应的 turn，没有墙钟；RNG 状态随命令入日志，两端序列不分叉。</p>
@@ -603,8 +635,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
         <button type="button" data-act="verifyReplay">校验确定性重放</button>
         <button type="button" data-act="syncInfo">联机边界说明</button>
       </div>
-      <div class="syncNote">${esc(s.syncReport ?? `命令日志 ${s.commandLog?.entries?.length ?? 0} 条 · actor 三态 human / ai / remote · 状态指纹可直接比对`)}</div>
-      <button class="bigBtn ghost" data-act="help">查看玩法说明</button>`;
+      <div class="syncNote">${esc(s.syncReport ?? `命令日志 ${s.commandLog?.entries?.length ?? 0} 条 · actor 三态 human / ai / remote · 状态指纹可直接比对`)}</div>`;
   }
 
   /** 典籍总揽：文言总纲 + 六门全文，一页可总览，不藏细目考据。 */
@@ -653,6 +684,97 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     <button class="bigBtn ghost" data-act="back">返回</button>`;
   }
 
+  /** 旬计簿：把「征兵还是屯田」的代价摆到明面上，每旬一页流水。 */
+  function pageLedger() {
+    const s = state();
+    const l = xunLedger(s);
+    const own = l.byFaction[pf()];
+    const rows = Object.entries(l.byFaction).map(([fid, v]) => `
+      <div class="card arcItem"><span class="arcLv">${esc(v.name)}</span>
+        <h3>${fid === pf() ? '本军' : '他军'} · ${v.cities} 城</h3>
+        <div class="desc">产 ${fmt(v.income)}　耗 ${fmt(v.upkeep)}　净 <b style="color:${v.lastNet < 0 ? 'var(--red)' : 'inherit'}">${v.lastNet}</b></div>
+        <div class="meta">驻军 ${fmt(v.garrison)} · 在途 ${fmt(v.field)} · 断粮 ${v.starving} 城 · 周转 ${fmt(v.reserve)}</div>
+      </div>`).join('');
+    const lock = own?.locked
+      ? `<p class="hintLine" style="color:var(--red)">军粮连续告罄，征发暂止。屯田增产、撤兵减耗，或待新粮入仓。</p>`
+      : `<p class="hintLine">产粮按各城所辖地块分摊，驻军每兵每旬耗 ${COMMISSARY.garrisonUpkeep}、在途每兵 ${COMMISSARY.fieldUpkeep}；势力库存另按 ${(COMMISSARY.rationRate * 100).toFixed(0)}% 承担配给。</p>`;
+    const ai = `<p class="readBody" style="margin-top:12px">敌方每旬一策，权重固定而目标由同 seed 的随机序列择定：扩地 ${(AI_WEIGHTS.expand * 100).toFixed(0)}% · 守城 ${(AI_WEIGHTS.defend * 100).toFixed(0)}% · 袭粮 ${(AI_WEIGHTS.raid * 100).toFixed(0)}% · 出征 ${(AI_WEIGHTS.march * 100).toFixed(0)}%。可预测，但有变数；所有军令仍入同一道命令日志，隔旬快进与盯着打逐条一致。</p>`;
+    return `${sec('本旬军粮', `${dateLabel(s, 'full')} · 第 ${s.turn} 旬`)}
+      ${statGrid([
+        ['产粮', fmt(own?.income), ''], ['耗粮', fmt(own?.upkeep), ''],
+        ['净额', String(own?.lastNet ?? 0), ''], ['断粮城', fmt(own?.starving), ''],
+        ['驻军', fmt(own?.garrison), ''], ['在途', fmt(own?.field), ''],
+      ])}
+      ${lock}
+      ${sec('诸军旬计', '同序列重放，账目必然同值')}
+      <div class="cardList arcList">${rows}</div>
+      ${ai}
+      <button class="bigBtn ghost" type="button" data-act="back">返回</button>`;
+  }
+
+  /** 素材致谢：MIT 要求「所有副本或实质性部分保留原版权声明与许可全文」，游戏内必须有玩家可见的一页。 */
+  function pageCredits() {
+    const mit = `MIT License
+
+Copyright (c) 2018 Lingdong Huang
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`;
+    return `<p class="readBody arcPre">本作舆图笔势沿用两件 MIT 上游作品的笔触原语。依许可要求，于此完整保留原作者版权声明与许可全文；仓库 <code>demos/third-party/</code> 另存两份 LICENSE 原文与改动清单。</p>
+      ${sec('引入来源', 'Copyright (c) 2018 Lingdong Huang')}
+      <div class="cardList arcList">
+        <div class="card arcItem"><span class="arcLv">一</span><h3>LingDong- / shan-shui-inf</h3>
+          <div class="desc">沿用 stroke() 沿点列按法向左右推宽度后一次填充、poly() 填充方式、loopNoise 宽度扰动思路；落地为 src/ink-stroke.js 的 ribbon() / densify()。</div>
+          <div class="meta">MIT · index.html</div></div>
+        <div class="card arcItem"><span class="arcLv">二</span><h3>LingDong- / nonflowers</h3>
+          <div class="desc">沿用 tubify() 法向偏移与首尾封口、stroke() 默认宽度函数 sin(xπ)·Noise.noise(x·10)、polygon()；落地为 ribbon() / profile()。</div>
+          <div class="meta">MIT · main.js</div></div>
+      </div>
+      ${sec('许可全文', '两份 LICENSE 同文，此处并录')}
+      <pre class="creditsLicense">${esc(mit)}</pre>
+      ${sec('改动与自撰', 'MIT 允许 modify，如实列出')}
+      <p class="readBody">改动：去掉全局 CTX / DOM / SVG 依赖，改显式传 CanvasRenderingContext2D；折返法向改由前后点差分直取；新增等弧长重采样、笔压曲线与飞白；输出从 SVG 字符串改 Canvas 路径。自撰：hardRibbon / hardProfile / doubleOutline / flatWash，以及官渡舆图全部地物生成逻辑（山列、河泽、城郭、村落、塔寺、桥舟、田畴、注记、界格），不主张上游版权。</p>
+      <p class="readBody" style="margin-top:10px">若单独复制 <code>src/ink-stroke.js</code>，须连同两份 LICENSE 一起带走。本仓库自身未声明整体许可证；他人再分发本仓库整体时，随包带上该目录即可。</p>
+      <button class="bigBtn ghost" type="button" data-act="back">返回</button>`;
+  }
+
+  /** 终局：不偷偷重开，给「读档 / 新开一局」两条路。 */
+  function pageOutcome() {
+    const s = state();
+    const o = checkOutcome(s);
+    const sum = outcomeSummary(s);
+    return `<div class="scrollEnd" style="margin-top:18px">
+        <div class="endSeal">${o.kind === 'victory' ? '定' : '终'}</div>
+        <h3>${esc(o.title)}</h3>
+        <p>${esc(o.body)}</p>
+        <div class="endLine"></div>
+      </div>
+      ${sec('本局', `${dateLabel(s, 'full')}`)}
+      ${statGrid([['己方城池', fmt(sum.own), ''], ['敌方城池', fmt(sum.hostile), ''],
+        ['断粮城', fmt(sum.starving), ''], ['经历旬数', fmt(s.turn), '']])}
+      <p class="hintLine">自动推进已停。读档回到存档那一旬；新开一局覆写本机自动档，三席存档不受影响。</p>
+      <div class="cmdGroup" style="max-width:420px">
+        <button type="button" data-act="load">读取本机自动档</button>
+        <button type="button" data-act="slotPanels">查看三席存档</button>
+        <button type="button" data-act="newgame">新开一局</button>
+      </div>`;
+  }
+
   const PAGES = {
     interior: pageInterior, facility: pageFacility, heroes: pageHeroes, hero: pageHero,
     tactics: pageTactics, tactic: pageTactic, army: pageArmy, heroPick: pageHeroPick,
@@ -661,6 +783,7 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
     chapterRead: pageChapterRead, tasks: dailyTasks,
     alliance: pageAlliance, world: pageWorld, system: pageSystem, help: pageHelp,
     archive: pageArchive, atlasView: pageAtlasView,
+    ledger: pageLedger, credits: pageCredits, outcome: pageOutcome,
   };
 
   // ── 渲染 ──────────────────────────────────────────────────────────────
@@ -906,6 +1029,14 @@ ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       case 'syncInfo': actions.syncInfo(); render(); break;
       case 'help': actions.openHelp(); break;
       case 'archive': navigate('archive'); break;
+      case 'ledger': navigate('ledger'); break;
+      case 'credits': navigate('credits'); break;
+      case 'outcome': navigate('outcome'); break;
+      case 'slotPanels': navigate('system'); break;
+      case 'slotSave': actions.saveSlot(Number(id)); render(); break;
+      case 'slotLoad': actions.loadSlot(Number(id)); break;
+      case 'slotRestore': actions.restoreSlot(Number(id)); render(); break;
+      case 'slotDelete': actions.deleteSlot(Number(id)); render(); break;
       case 'arcCat': {
         const key = String(id ?? '').replace(/[^a-z0-9_-]/gi, '');
         const el2 = key ? screen.querySelector(`#arc-${key}`) : null;

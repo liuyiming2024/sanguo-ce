@@ -10,6 +10,8 @@ import {
 } from './pathfind.js';
 import { generalFor, facilityLevel } from './generals.js';
 import { cityObstacles, nearestFree } from './siege-grid.js';
+import { settleXun, canAffordTroops } from './economy.js';
+import { planAiTurn } from './ai.js';
 
 export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } = {}) {
   const terrain = createTerrain(cfg);
@@ -151,6 +153,10 @@ export function issueOrder(state, spec) {
   if (!src) return { ok: false, reason: '出发城不存在' };
   if (src.owner !== faction) return { ok: false, reason: '该城不归此势力' };
   if (!cfg.orders.types.includes(type)) return { ok: false, reason: `未知命令 ${type}` };
+  // 旬循环真实约束：军粮账连续告罄时锁征发，屯田 / 撤兵 / 侦察仍放行。
+  // 纯逻辑层，不引用 rng；同一命令序列重放结果一致。
+  const afford = canAffordTroops(state, faction, type);
+  if (!afford.ok) return { ok: false, reason: afford.reason };
   if (state.orders.filter((o) => o.faction === faction).length >=
       cfg.orders.maxConcurrentPerFaction) {
     return { ok: false, reason: '在途命令已达上限' };
@@ -423,15 +429,14 @@ export function advanceTurn(state, rng) {
   });
   if (rng?.snapshot) state.rngCalls = rng.snapshot().calls;
   const yieldByOwner = collectResources(state);   // 同时把流量累加进库存
+  // 旬结算：产量按城分摊、驻军与在途按旬耗粮、不足即断粮（掉军心 / 逃兵）。
+  // 旧版每城都加全势力总产量，等于把全境产粮记 12 遍，断粮 debuff 永不触发。
+  settleXun(state, yieldByOwner);   // 写 commissary / 各城 starving；界面另用 xunLedger 派生
 
   for (const c of Object.values(state.cities)) {
-    const own = yieldByOwner[c.owner];
     const cap = troopCap(state, c.id);
     const growth = Math.round(c.pop * (c.besieged ? 0.0004 : 0.0011));
     c.pop = Math.max(1000, c.pop + growth);
-    c.grain += (own?.grain ?? 0) * (c.besieged ? 0.45 : 1);
-    c.grain -= c.garrison * cfg.hidden.grainUpkeepPerUnitTurn;
-    c.grain = Math.max(0, c.grain);
     if (!c.besieged && c.garrison < cap) {
       c.garrison += Math.min(cap - c.garrison,
         Math.max(1, Math.round(c.pop * cfg.city.garrisonRecruitPerTurn)));
@@ -440,8 +445,8 @@ export function advanceTurn(state, rng) {
     c.fatigue = Math.max(0, c.fatigue - cfg.hidden.fatigueRecoverPerTurn);
     c.morale = Math.min(cfg.hidden.moraleMax,
       c.morale + cfg.hidden.moraleDriftPerSec * cfg.calendar.secPerTurn);
-    if (c.grain < c.garrison) c.morale = Math.max(0, c.morale - 1.4);
-    if (c.besieged) c.morale = Math.max(0, c.morale - 0.8);
+    if (c.starving || c.grain < c.garrison) c.morale = Math.max(cfg.hidden.moraleMin, c.morale - 1.4);
+    if (c.besieged) c.morale = Math.max(cfg.hidden.moraleMin, c.morale - 0.8);
   }
 
   const arrived = state.orders.filter((o) => o.arriveTurn <= state.turn);
@@ -542,42 +547,19 @@ export function advanceTurn(state, rng) {
     }
   }
 
-  // AI：每 2 回合做一次，优先占相邻空地铺路，其次派兵打最近敌城。确定性。
+  // AI：每旬一策，权重分桶（扩地 / 守城 / 袭粮 / 出征），纯逻辑层 src/ai.js。
+  // planAiTurn 只出 spec，落库仍走 issueOrder → 同一条命令日志，重放不分叉。
   for (const f of cfg.factions) {
-    if (!f.ai || state.turn % 2 !== 0) continue;
-    const ownCities = Object.values(state.cities).filter((c) => c.owner === f.id);
-    if (!ownCities.length) continue;
-    const from = rng.pick(ownCities);
-    if (rng.chance(0.45)) {
-      // 铺路：找一块与己方领地相邻的无主可通行格
-      const { tiles } = state.terrain;
-      const cands = tiles.filter((t) => !t.owner && t.cost < 90 &&
-        hasAdjacentTerritory(state.terrain, f.id, t.c, t.r));
-      if (cands.length) {
-        const pick = rng.pick(cands.slice(0, 400));
-        const r = issueOrder(state, {
-          faction: f.id, from: from.id, type: 'claim',
-          tile: { c: pick.c, r: pick.r }, units: { daodun: 300 },
-        });
-        if (r.ok) { state.stats.aiOrders++; events.push({ type: 'aiClaim', faction: f.id }); }
-        continue;
-      }
+    if (!f.ai || !rng) continue;
+    for (const p of planAiTurn(state, f, rng)) {
+      const r = issueOrder(state, p.spec);
+      if (!r.ok) continue;
+      state.stats.aiOrders++;
+      (state.stats.aiByKind ??= {})[p.kind] = (state.stats.aiByKind[p.kind] ?? 0) + 1;
+      const kind = p.kind === 'expand' || (p.kind === 'raid' && p.spec.type === 'claim')
+        ? 'aiClaim' : 'aiMarch';
+      events.push({ type: kind, faction: f.id, aiKind: p.kind });
     }
-    const enemy = Object.values(state.cities)
-      .filter((c) => c.owner !== f.id)
-      .sort((a, b) => {
-        const ca = cityById(a.id), cb = cityById(b.id), cf = cityById(from.id);
-        return Math.hypot(ca.lon - cf.lon, ca.lat - cf.lat)
-             - Math.hypot(cb.lon - cf.lon, cb.lat - cf.lat);
-      })[0];
-    if (!enemy) continue;
-    const n = Math.min(1200 + rng.int(900), Math.floor(from.garrison * 0.3));
-    if (n < 100) continue;
-    const r = issueOrder(state, {
-      faction: f.id, from: from.id, to: enemy.id,
-      units: { daodun: Math.round(n * 0.6), gongnu: Math.round(n * 0.4) }, type: 'march',
-    });
-    if (r.ok) { state.stats.aiOrders++; events.push({ type: 'aiMarch', faction: f.id }); }
   }
 
   return events;
