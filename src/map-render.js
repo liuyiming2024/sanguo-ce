@@ -98,6 +98,11 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
   const g = off.getContext('2d');
 
   const camera = { x: 0, y: 0, scale: 1 };
+  // atlas / quanjing 档的注记烘焙在位图里，运行时挪不动；生成期已先避让，
+  // 这里把它们的盒映射成主地图世界坐标，让等级角标让位于字。
+  let bakedBoxes = [];
+  // 运行时注记（gongbi / jiehua / quanjing 档）避让后的盒，交给 drawLevels
+  let annotationBoxes = [];
   let style = styleOpt === 'quanjing' ? 'quanjing'
     : styleOpt === 'jiehua' ? 'jiehua' : styleOpt === 'gongbi' ? 'gongbi' : 'atlas';
   let selection = null, circle = null, reachable = [], orders = [], cityOwners = {};
@@ -346,6 +351,13 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     // 源矩形按经纬度窗口算出，与 terrain.tiles 的格位天然对齐。
     g.drawImage(a.bg, sx, sy, sw, sh, 0, 0, W, H);
     g.drawImage(a.feat, sx, sy, sw, sh, 0, 0, W, H);
+    // 位图注记盒：guandu 逻辑坐标 → 主地图世界坐标（与上面 drawImage 同源变换）
+    const L = a.cropLogical;
+    if (L && a.nameBoxes?.length) {
+      const mx = gx => (gx - L.x0) / (L.x1 - L.x0) * W;
+      const my = gy => (gy - L.y0) / (L.y1 - L.y0) * H;
+      bakedBoxes = a.nameBoxes.map(b => [mx(b[0]), my(b[1]), mx(b[2]), my(b[3])]);
+    } else bakedBoxes = [];
   }
   /** 全境图：对面的十三州舆图 bg+fg 两份按同一线性投影铺满整幅。
       atlas 的 93–126E / 15–43N 与全境 bounds 完全一致，project() 逐点对齐。 */
@@ -355,6 +367,7 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     if (a.fg) g.drawImage(a.fg, 0, 0, W, H);
   }
   function buildBase() {
+    bakedBoxes = [];                    // 切档重算，别留上一档的注记盒
     // 每次重建前把离屏上下文恢复到同一基线：lineCap / alpha / dash 等状态
     // 会被两种画法互相留下，否则 gongbi→jiehua→gongbi 无法逐像素复原。
     g.setTransform(1, 0, 0, 1, 0, 0);
@@ -705,44 +718,73 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
   }
 
   /** 信息层：世界坐标定位，但字号/线宽按 1/scale 换算 → 永远是固定屏幕像素。 */
+  /** 注记自动避让：与典籍页 atlas.js 同一口径（撞了先挪 → 锚点不挪 →
+      低优先级微缩再试 → 仍不行才跳过），只是这里全部在世界坐标里算。
+      包围盒按屏幕字号 / camera.scale 换算，所以缩放时避让力度一致。
+      都城 / 郡治是锚绝不挪；县邑、关津、山水题识才让位。 */
   function drawAnnotations(ctx) {
     const k = 1 / camera.scale;
-    const cityFont = 13 * k, noteFont = 11 * k, smallFont = 9 * k;
+    const noteFont = 11 * k, smallFont = 9 * k;
     ctx.textBaseline = 'top';
     ctx.lineJoin = 'round';
     const th = theme(style);
+    const placed = [];
+    const PAD = 2.4 * k;                       // 呼吸空间，别让字贴成一团
+    const CAND = [[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1],[0,-2],[0,2]];
+    const hit = b => placed.some(q => b[0]<q[2] && b[2]>q[0] && b[1]<q[3] && b[3]>q[1]);
+    /** x,y 为注记左上（世界坐标）；返回是否真的画了 */
+    function place(o) {
+      const movable = o.prio >= 2;
+      const stepX = o.w * .62 + 5 * k, stepY = o.h * .55 + 5 * k;
+      for (const round of [0, 1]) {
+        if (round && !movable) break;
+        const sc = round ? .82 : 1, bw = o.w * sc, bh = o.h * sc;
+        for (const [ux, uy] of (movable ? CAND : [[0,0]])) {
+          const dx = ux * stepX * sc, dy = uy * stepY * sc;
+          const b = [o.x+dx-PAD, o.y+dy-PAD, o.x+dx+bw+PAD, o.y+dy+bh+PAD];
+          if (hit(b)) continue;
+          placed.push(b); o.draw(dx, dy, sc); return true;
+        }
+      }
+      return false;
+    }
 
-    // 城名：竖排压在城郭右侧，带描边；不是居中大字，也不是圆圈里一个汉字
+    // 城名：竖排压在城郭右侧，带描边 + 势力色小方章 + 等级字。
+    // 都城 / 郡治 prio 0/1 不挪；县邑/营垒 prio 2 可让位可微缩。
     for (const city of CITIES) {
       const info = terrain.cityTiles[city.id];
       const size = (info.rad * 2 + 1) * TP;
       const x0 = (info.c - info.rad) * TP, y0 = (info.r - info.rad) * TP;
-      const owner = cityOwners[city.id] ?? city.owner;
-      const f = cfg.factions.find((v) => v.id === owner);
       const lx = x0 + size + TP * 0.55, ly = y0 + 2;
-      // 读图层级：都城 > 郡治 > 县邑/营垒。只差字号与明度，不加新颜色或纹样。
       const rankFont = city.rank === 1 ? 17 : city.rank === 2 ? 14 : 12;
       const cf = rankFont * k;
+      const n = [...city.name].length;
+      const w = cf + 18 * k, h = n * cf * 1.12 + 10 * k;
       const ink = city.rank === 1 ? th.gold : city.rank === 2 ? th.text : rgba(th.text, 0.82);
-      ctx.font = `600 ${cf}px "WenQuanYi Micro Hei", serif`;
-      [...city.name].forEach((ch, i) => {
-        const yy = ly + i * cf * 1.12;
-        ctx.strokeStyle = rgba(th.stroke, 0.95); ctx.lineWidth = (city.rank === 1 ? 3.2 : 2.6) * k;
-        ctx.strokeText(ch, lx, yy);
-        ctx.fillStyle = ink;
-        ctx.fillText(ch, lx, yy);
-      });
-      // 势力色小方章 + 等级
-      const foot = ly + city.name.length * cf * 1.12;
-      ctx.fillStyle = f?.color ?? '#8899aa';
-      ctx.fillRect(lx, foot + 3 * k, (city.rank === 1 ? 13 : 9) * k, 3 * k);
-      ctx.font = `${smallFont}px "WenQuanYi Micro Hei", serif`;
-      ctx.fillStyle = th.dim;
-      ctx.fillText(city.rank === 1 ? '都' : city.rank === 2 ? '郡' : city.rank === 3 ? '县' : '垒',
-        lx + (city.rank === 1 ? 16 : 12) * k, foot);
+      const owner = cityOwners[city.id] ?? city.owner;
+      const f = cfg.factions.find((v) => v.id === owner);
+      place({ x: lx, y: ly, w, h, prio: city.rank === 1 ? 0 : city.rank === 2 ? 1 : 2,
+        draw(dx, dy, sc) {
+          const cfs = cf * sc, X = lx + dx, Y = ly + dy;
+          ctx.font = `600 ${cfs}px "WenQuanYi Micro Hei", serif`;
+          [...city.name].forEach((ch, i) => {
+            const yy = Y + i * cfs * 1.12;
+            ctx.strokeStyle = rgba(th.stroke, 0.95);
+            ctx.lineWidth = (city.rank === 1 ? 3.2 : 2.6) * k * sc;
+            ctx.strokeText(ch, X, yy);
+            ctx.fillStyle = ink; ctx.fillText(ch, X, yy);
+          });
+          const foot = Y + n * cfs * 1.12;
+          ctx.fillStyle = f?.color ?? '#8899aa';
+          ctx.fillRect(X, foot + 3 * k * sc, (city.rank === 1 ? 13 : 9) * k * sc, 3 * k * sc);
+          ctx.font = `${smallFont * sc}px "WenQuanYi Micro Hei", serif`;
+          ctx.fillStyle = th.dim;
+          ctx.fillText(city.rank === 1 ? '都' : city.rank === 2 ? '郡' : city.rank === 3 ? '县' : '垒',
+            X + (city.rank === 1 ? 16 : 12) * k * sc, foot);
+        } });
     }
 
-    // 关隘 / 津渡：符号 + 名称，符号尺寸固定屏幕像素
+    // 关隘 / 津渡：符号是地物先画（不参与避让），名称入队让位。
     for (const p of PASSES) {
       const q = geoToTile(p.lon, p.lat, terrain.cols, terrain.rows);
       const x = (q.c + 0.5) * TP, y = (q.r + 0.5) * TP;
@@ -750,7 +792,6 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
       ctx.fillStyle = col; ctx.strokeStyle = rgba(th.stroke, 0.9); ctx.lineWidth = 1.2 * k;
       ctx.beginPath();
       if (p.kind === 'ford') {
-        // 津渡浅滩：一笔不规则浅弧，不是正圆
         const R = 4 * k;
         ctx.moveTo(x - R, y + R * .3);
         ctx.quadraticCurveTo(x, y - R * .85, x + R, y + R * .22);
@@ -761,22 +802,30 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
         ctx.lineTo(x - 4.5 * k, y + 4 * k); ctx.closePath();
       }
       ctx.fill(); ctx.stroke();
-      ctx.font = `600 ${smallFont}px "WenQuanYi Micro Hei", serif`;
-      ctx.strokeStyle = rgba(th.stroke, 0.95); ctx.lineWidth = 2.4 * k;
-      ctx.strokeText(p.name, x + 8 * k, y - 5 * k);
-      ctx.fillStyle = col;
-      ctx.fillText(p.name, x + 8 * k, y - 5 * k);
+      const tx = x + 8 * k, ty = y - 5 * k;
+      place({ x: tx, y: ty, w: p.name.length * smallFont * 0.98, h: smallFont * 1.4, prio: 3,
+        draw(dx, dy, sc) {
+          ctx.font = `600 ${smallFont * sc}px "WenQuanYi Micro Hei", serif`;
+          ctx.strokeStyle = rgba(th.stroke, 0.95); ctx.lineWidth = 2.4 * k * sc;
+          ctx.strokeText(p.name, tx + dx, ty + dy);
+          ctx.fillStyle = col; ctx.fillText(p.name, tx + dx, ty + dy);
+        } });
     }
 
-    // 地理注记：山名 / 水名 / 泽名，沿锚点小字排布
+    // 地理注记：山名 / 水名 / 泽名，沿锚点小字排布；带小角度旋转，
+    // 包围盒按轴对齐略放大，别让旋转后的字压到别的注记上。
     const note = (text, lon, lat, color, rot = 0) => {
       const p = project(lon, lat, W, H);
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(rot);
-      ctx.font = `italic ${noteFont}px "WenQuanYi Micro Hei", serif`;
-      ctx.strokeStyle = rgba(th.stroke, 0.92); ctx.lineWidth = 2.4 * k;
-      ctx.strokeText(text, 0, 0);
-      ctx.fillStyle = color; ctx.fillText(text, 0, 0);
-      ctx.restore();
+      const w = text.length * noteFont * 1.02 + 4 * k, h = noteFont * 1.55 + 3 * k;
+      place({ x: p.x, y: p.y, w, h, prio: 4,
+        draw(dx, dy, sc) {
+          ctx.save(); ctx.translate(p.x + dx, p.y + dy); ctx.rotate(rot);
+          ctx.font = `italic ${noteFont * sc}px "WenQuanYi Micro Hei", serif`;
+          ctx.strokeStyle = rgba(th.stroke, 0.92); ctx.lineWidth = 2.4 * k * sc;
+          ctx.strokeText(text, 0, 0);
+          ctx.fillStyle = color; ctx.fillText(text, 0, 0);
+          ctx.restore();
+        } });
     };
     for (const rg of RIDGES) {
       const mid = rg.pts[Math.floor(rg.pts.length / 2)];
@@ -789,11 +838,14 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     for (const lk of LAKES) note(lk.name, lk.lon, lk.lat, rgba(th.lake, 0.92), 0);
     note('黄 河', 113.72, 35.02, rgba(th.huanghe, 0.95), -0.15);
     note('官 渡', 113.93, 34.48, rgba(th.gold, 0.95), 0);
+    annotationBoxes = placed;
   }
 
   /** 土地等级角标：只在放大到能看清时画，字号固定屏幕像素。 */
-  function drawLevels(ctx) {
+  function drawLevels(ctx, placed = []) {
     // 数字角标是最强的「沙盘仪表」信号；只在大幅放大后才极淡出现。
+    // 此前每格都画，×2.4 下满屏 5/6/7 把注记全糊掉。现在隔格抽稀，
+    // 且落在任何注记包围盒里的直接跳过：仪表不该压在字上。
     if (camera.scale < 1.6) return;
     const th = theme(style);
     ctx.font = '8px sans-serif';
@@ -801,10 +853,14 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     ctx.fillStyle = rgba(th.text, style !== 'jiehua' ? 0.30 : 0.8);
     ctx.strokeStyle = rgba(th.stroke, style !== 'jiehua' ? 0.5 : 0.8);
     ctx.lineWidth = 2 / camera.scale;
-    const k = 1 / camera.scale;
+    const boxes = bakedBoxes.length ? placed.concat(bakedBoxes) : placed;
+    const wk = 9 / camera.scale;                      // 角标屏幕宽换算成世界单位
+    const inBox = (x, y) => boxes.some(q => x + wk > q[0] && x < q[2] && y + wk > q[1] && y < q[3]);
     for (const t of terrain.tiles) {
       if (t.level < 5 || t.cityId || t.type === T.RIVER) continue;
+      if (((t.c + t.r) & 3) !== 0) continue;          // 四格取一，仪表不再铺满
       const x = t.c * TP + 2, y = t.r * TP + 2;
+      if (inBox(x, y)) continue;
       ctx.strokeText(String(t.level), x, y);
       ctx.fillText(String(t.level), x, y);
     }
@@ -873,7 +929,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
     // atlas 模式的城名 / 关津 / 山水题识已画在对面地物层里，再画一遍会重影；
     // 旧画法仍走屏幕空间注记。
     if (style !== 'atlas') drawAnnotations(ctx);
-    drawLevels(ctx);
+    else annotationBoxes = [];
+    drawLevels(ctx, annotationBoxes);
 
     if (reachable.length) {
       const th = theme(style);

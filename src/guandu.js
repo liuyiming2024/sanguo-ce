@@ -148,6 +148,9 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
   const FW=241, FH=177, DX=W/(FW-1), DY=H/(FH-1);
   let FIELD=null, WET=null, OPEN=null, SAND=null;
   let AXES=[], WATER_AXES=[], CITY_PTS=[], LAKE_PTS=[], SAND_PTS=[];
+  /* 位图层注记包围盒（guandu 逻辑坐标）：vertical() 统一收集，供主地图
+     drawLevels 的等级角标避让。位图注记没法在运行时挪，但生成时可以先让位。 */
+  let NAME_BOXES=[], NAME_PLACED=[];
 
   function segDist2(x,y,P){
     let best=1e12;
@@ -311,15 +314,50 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     return z;
   }
 
-  // ── 竖排小字 ──────────────────────────────────────────────────────────
-  function vertical(text,x,y,size,col,alpha,sp) {
-    const step=size*(sp||1.12);
+  // ── 竖排小字（带生成期自动避让） ─────────────────────────────────────
+  /* 位图层的城名 / 题识 / 地标名原来各自固定坐标，放大后互相叠、也压住
+     运行时叠加的等级角标。这里统一做四层避让：撞了先挪 → 大字题识不挪 →
+     小字微缩一档再试 → 仍不行才回原位（绝不跳过：很多注记是「先描边、
+     再 vertical 填色」两遍配对，跳过会只剩空心字）。
+     盒同时导出给主地图，让仪表数字让位于字。 */
+  function vertical(text,x,y,size,col,alpha,sp,halo) {
+    const step0=size*(sp||1.12);
+    const w=size*1.12, h=text.length*step0;
+    const anchor=size>=14;                 // 题识大字是锚，不挪
+    const PAD=1.6;
+    const CAND=[[0,0],[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1],
+                [0,-2],[0,2],[-2,0],[2,0]];
+    const hit=b=>NAME_PLACED.some(q=>b[0]<q[2]&&b[2]>q[0]&&b[1]<q[3]&&b[3]>q[1]);
+    let dx=0,dy=0,sc=1,sx=x,sy=y,st=step0,sz=size,found=false;
+    outer: for(const round of [0,1]){
+      if(round){ if(anchor) break; sc=.82; sz=size*sc; st=step0*sc; }
+      const bw=w*sc, bh=h*sc;
+      for(const [ux,uy] of (anchor?[[0,0]]:CAND)){
+        dx=ux*(bw*.62+3)*sc; dy=uy*(bh*.42+3)*sc;
+        const b=[x-bw/2-PAD+dx, y-PAD+dy, x+bw/2+PAD+dx, y+bh+PAD+dy];
+        if(hit(b)) continue;
+        NAME_PLACED.push(b); sx=x+dx; sy=y+dy; found=true; break outer;
+      }
+    }
+    // 十三处都放不下：回原位照画（描边/填色必须配对，不能只剩空心字）
+    if(!found){ dx=0; dy=0; sc=1; sz=size; st=step0; sx=x; sy=y; }
+    const bw=w*sc, bh=h*sc;
+    NAME_BOXES.push([sx-bw/2-2, sy-2, sx+bw/2+2, sy+bh+2]);
     ctx.save();
-    ctx.font=`${size}px "WenQuanYi Micro Hei","Noto Serif CJK SC",serif`;
+    ctx.font=`${sz}px "WenQuanYi Micro Hei","Noto Serif CJK SC",serif`;
     ctx.textAlign='center'; ctx.textBaseline='top';
+    // 描边与填色必须在同一次布局里画完：此前调用方先 fixed 坐标描边、
+    // 再由 vertical 避让挪位填色，实拍出现「空心描边 + 实心字」错位鬼影。
+    if(halo){
+      ctx.lineWidth=(halo.width||2.4)*sc; ctx.lineJoin='round';
+      ctx.strokeStyle=halo.color;
+      if(halo.alpha!==undefined) ctx.globalAlpha=halo.alpha;
+      for(let i=0;i<text.length;i++) ctx.strokeText(text[i],sx,sy+i*st);
+      ctx.globalAlpha=1;
+    }
     for (let i=0;i<text.length;i++) {
       ctx.fillStyle=rgba(col,alpha);
-      ctx.fillText(text[i],x,y+i*step);
+      ctx.fillText(text[i],sx,sy+i*st);
     }
     ctx.restore();
   }
@@ -846,12 +884,9 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     const tx=40, ty=48, big='汉末州郡地形图', bs=20, bp=bs*1.34;
 
     // 左上：深林底，浅字 + 墨描边
-    ctx.save();
-    ctx.font=`${bs}px ${font}`; ctx.textAlign='center'; ctx.textBaseline='top';
-    ctx.lineWidth=3; ctx.lineJoin='round'; ctx.strokeStyle='rgba(18,30,25,.66)';
-    for(let i=0;i<big.length;i++) ctx.strokeText(big[i],tx,ty+i*bp);
-    ctx.restore();
-    vertical(big,tx,ty,bs,'#f2ead4',.94,1.34);
+    // 描边交给 vertical 一并画，位置才跟避让后的填色对齐
+    vertical(big,tx,ty,bs,'#f2ead4',.94,1.34,
+      {color:'rgba(18,30,25,.66)',width:3});
     vertical('建安五年庚辰 · 西至洛阳东至大野 · 空中俯瞰',
       tx+30,ty+6,10,'#f0e9d5',.76,1.24);
 
@@ -948,18 +983,12 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
      也不复制同一图章。用 h1() 取确定性变化，不推进 seed —— 既有绘制序列不动。 */
   /* 主景竖注：带纸白描边，密林背景上读得出；字级比城名略大，但不抢城郭。
      只给 sceneDetails 用，不改动既有 vertical() 的任何调用。 */
+  /* 五处主景题识原来自己描边+填色、不进 vertical，因此不参与避让，
+     README 里那句「左侧仍略密，古舆图本有叠压」说的就是它们。现在统一
+     走 vertical 的布局与盒收集，描边 alpha 也由 halo 带过去。 */
   function sceneLabel(text,x,y,size,col,alpha){
-    const step=size*1.12;
-    ctx.save();
-    ctx.font=`${size}px "WenQuanYi Micro Hei","Noto Serif CJK SC",serif`;
-    ctx.textAlign='center'; ctx.textBaseline='top';
-    ctx.lineWidth=2.4; ctx.lineJoin='round'; ctx.strokeStyle='#ece4ce';
-    for(let i=0;i<text.length;i++){
-      const yy=y+i*step;
-      ctx.globalAlpha=alpha*.80; ctx.strokeText(text[i],x,yy);
-      ctx.globalAlpha=alpha;     ctx.fillStyle=col; ctx.fillText(text[i],x,yy);
-    }
-    ctx.restore();
+    vertical(text,x,y,size,col,alpha,undefined,
+      {color:'#ece4ce',width:2.4,alpha:alpha*.80});
   }
   function sceneDetails(){
     // ① 雒阳灵台：不规则夯土高台，边线抖动不闭合；环柏绕台
@@ -1228,13 +1257,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
     const fs=rank===1?15:rank===2?13:rank===3?11:10;
     const deep=field(x,y)>.52;
     const ink=deep?'#f3ecd8':'#33352c', halo=deep?'rgba(22,36,30,.68)':'rgba(244,236,214,.66)';
-    ctx.save();
-    ctx.font=`${fs}px "WenQuanYi Micro Hei","Noto Serif CJK SC",serif`;
-    ctx.textAlign='center'; ctx.textBaseline='top';
-    ctx.lineWidth=2.4; ctx.strokeStyle=halo; ctx.lineJoin='round';
-    for(let i=0;i<name.length;i++) ctx.strokeText(name[i],R+10,T-2+i*(fs*1.12));
-    ctx.restore();
-    vertical(name,R+10,T-2,fs,ink,.96);
+    vertical(name,R+10,T-2,fs,ink,.96,undefined,{color:halo,width:2.4});
     const by=T+name.length*(fs*1.12)+3, bs=rank===1?10:8;
     ctx.fillStyle=rgba('#9c332b',.94); seal(R+6,by,bs,bs,R*.11+by*.07); ctx.fill();
     ctx.fillStyle=rgba('#f2e6d1',.95);
@@ -1373,6 +1396,7 @@ const { rgba, resample, frames, ribbon, hardRibbon } = InkStroke;
   function renderLayers(){
     seed = baseSeed;                       // 固定起点，重建幂等
     RIVER_GEO.length=0; LAKE_GEO.length=0;
+    NAME_BOXES.length=0; NAME_PLACED.length=0;
 
     ctx = bgCtx;
     ctx.setTransform(SS,0,0,SS,0,0);
@@ -1425,5 +1449,8 @@ export function renderGuanduLayers(opts = {}) {
     bg, feat, W, H, SS, PAD,
     // 源矩形已含 SS 倍率，调用方直接 drawImage(bg, sx,sy,sw,sh, 0,0, W,H)
     crop: { sx: x0 * SS, sy: y0 * SS, sw: (x1 - x0) * SS, sh: (y1 - y0) * SS },
+    cropLogical: { x0, y0, x1, y1 },
+    // 生成期避让后的注记盒（guandu 逻辑坐标），供主地图仪表角标让位
+    nameBoxes: NAME_BOXES.slice(),
   };
 }
