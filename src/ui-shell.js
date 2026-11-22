@@ -874,8 +874,10 @@ SOFTWARE.`;
     function paint() {
       saveState();
       // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹。
-      // 重渲是秒级开销，滚轮连续缩放会跨好几个整数档，全部延后到停手 180ms
-      // 后只做一次；期间用上一档即时合成，跟手性不受影响。
+      // 重渲是秒级开销，滚轮连续缩放会跨好几个整数档，延后到停手 180ms
+      // 后只做一次。上一轮「期间用上一档即时合成」会把低位图拉大，正是糊的
+      // 根源 —— 用户明确「坚决不要糊」，改成未就绪就保留上一帧的清晰画面，
+      // 不重绘、不拉伸；新档就绪后一次性切过去。代价是跨档瞬间短暂停顿。
       if (a.setTier) {
         const target = a.tierOf(zoom);
         if (target !== a.tier) {
@@ -883,6 +885,7 @@ SOFTWARE.`;
           tierDebounce = setTimeout(() => {
             if (a.tierOf(atlasState.zoom ?? 1) === target) { a.setTier(target); paint(); }
           }, 180);
+          return;
         } else clearTimeout(tierDebounce);
       }
       // 先按设备像素清屏，再用整数 CSS 尺寸铺底：cw/ch 可能是小数，
