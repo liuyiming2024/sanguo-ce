@@ -7,7 +7,18 @@
     </view>
   </view>
 
-  <view class="note">只验三件事：冷启动建局、推一旬、切后台回来逐字段一致。战报是文本，没有地图、没有 Canvas、没有结算层。</view>
+  <view class="note">只验三件事：冷启动建局、推一旬、切后台回来逐字段一致。战报是文本；下面这幅格网是逻辑层数据降采样出来的色块，零 PNG、零 Canvas。</view>
+
+  <view wx:if="{{mini}}" class="miniBox">
+    <view class="ct">零 位 图 格 网 · {{mini.cols}}×{{mini.rows}}</view>
+    <view class="mini">
+      <view wx:for="{{mini.cells}}" wx:key="k" class="cell"
+            style="width:{{cellW}}%;background:{{item.color}}">
+        <view wx:if="{{item.city}}" class="cityDot"></view>
+      </view>
+    </view>
+    <view class="tip">青绿＝司空府 · 绛＝河北 · 赭＝客势；淡色为山河地貌，墨点为城。由 terrain.tiles 确定性降采样，不读任何位图。</view>
+  </view>
 
   <view wx:if="{{summary}}" class="card">
     <view class="ct">局 面</view>

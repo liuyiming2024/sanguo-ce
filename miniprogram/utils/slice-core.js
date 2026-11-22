@@ -11,10 +11,16 @@ import { hashState } from '../logic/src/sync.js';
 import { checkOutcome } from '../logic/src/outcome.js';
 import { xunLedger } from '../logic/src/economy.js';
 import { configurePlatform, wxStorageDriver, storage as platformStorage } from '../logic/src/platform/index.js';
+import { miniMapView, miniMapDrawOps } from '../logic/src/platform/mini-map.js';
 import { CAMPAIGN } from '../logic/config/campaign.js';
 
 export const SLICE_KEY = SAVE_KEY;
 export const SLICE_VERSION = CAMPAIGN.meta.version;
+
+/** P4 程序化回退：零位图格网。页面用 miniMap 铺 WXML 色块，
+ *  将来接 wxCanvas 时把 miniMapOps 的 fillRect 指令喂给 ctx 即可，数据层不用改。 */
+export const miniMap = (state, opts) => miniMapView(state, opts);
+export const miniMapOps = (state, opts) => miniMapDrawOps(state, opts);
 
 /** 宿主注入：小程序传 wx，Node 测试传自己的 storage mock + 固定 now。 */
 export function installHost({ wx, storage, now } = {}) {

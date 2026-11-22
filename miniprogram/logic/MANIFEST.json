@@ -7,6 +7,7 @@
     "src/save-slots.js",
     "src/outcome.js",
     "src/platform/index.js",
+    "src/platform/mini-map.js",
     "src/version.js"
   ],
   "version": "0.9.4",
@@ -71,6 +72,10 @@
     {
       "path": "src/platform/input.js",
       "sha256": "7395841bad66717e16ec24be72fccf58810c49a9e815eb896f39fa3641aeb688"
+    },
+    {
+      "path": "src/platform/mini-map.js",
+      "sha256": "5d16ef67df6b9cbcc24a46813ea63a7eca0dccd21dd3b525657bea9797134dbd"
     },
     {
       "path": "src/platform/storage.js",

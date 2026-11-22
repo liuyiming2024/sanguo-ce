@@ -24,7 +24,8 @@ const sha = (b) => createHash('sha256').update(b).digest('hex');
 // 小程序「最小可玩切片」需要的入口；闭包会自动带出全部依赖。
 const ENTRIES = [
   'src/campaign.js', 'src/persist.js', 'src/save-slots.js',
-  'src/outcome.js', 'src/platform/index.js', 'src/version.js',
+  'src/outcome.js', 'src/platform/index.js', 'src/platform/mini-map.js',
+  'src/version.js',
 ];
 
 // 渲染 / 装配 / 素材层绝不能被闭包带进小程序包：皮必须重写，引擎原样搬。

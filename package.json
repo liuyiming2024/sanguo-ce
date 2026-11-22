@@ -9,6 +9,8 @@
     "smoke": "node scripts/smoke.mjs",
     "sync:mp": "node scripts/sync-miniprogram.mjs",
     "longrun": "node scripts/longrun.mjs",
-    "strategy": "node scripts/strategy-sim.mjs"
+    "strategy": "node scripts/strategy-sim.mjs",
+    "bundle": "node scripts/check-mp-bundle.mjs",
+    "logic:slice": "node scripts/logic-slice.mjs"
   }
 }

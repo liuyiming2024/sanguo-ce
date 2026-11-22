@@ -2,7 +2,7 @@
 // 零 PNG、零 Canvas、零地图渲染、零结算层；页面只做注入与 setData，
 // 所有局面逻辑在 utils/slice-core.js（可在 Node 里整条跑，见 tests/miniprogram-slice.test.mjs）。
 import {
-  bootSlice, pushTurn, hideSlice, showSlice, sliceSummary, SLICE_VERSION,
+  bootSlice, pushTurn, hideSlice, showSlice, sliceSummary, miniMap, SLICE_VERSION,
 } from '../../utils/slice-core.js';
 import { storage as platformStorage } from '../../logic/src/platform/index.js';
 
@@ -14,11 +14,20 @@ Page({
     lifecycle: '冷启动',
     hash: '',
     err: '',
+    mini: null,
+    cellW: 100 / 18,
+  },
+
+  _refreshMini() {
+    if (!this._slice) return;
+    const m = miniMap(this._slice.state);
+    this.setData({ mini: m, cellW: 100 / m.cols });
   },
 
   onLoad() {
     this._slice = bootSlice();
     this._hidden = false;
+    this._refreshMini();
     this.setData({
       summary: sliceSummary(this._slice.state),
       hash: this._slice.hash,
@@ -34,6 +43,7 @@ Page({
       const next = [...r.lines, ...this.data.lines].slice(0, 24);
       if (!r.lines.length) next.unshift(`第 ${r.turn} 旬 · 无大事`);
       this.setData({ summary: r.summary, hash: r.summary.hash, lines: next, err: '' });
+      this._refreshMini();
       if (r.outcome.over) {
         wx.showToast({ title: r.outcome.title, icon: 'none' });
       }
@@ -62,6 +72,7 @@ Page({
     }
     this._slice = { state: r.state, rng: r.rng, cfg: r.cfg };
     this._hidden = false;
+    this._refreshMini();
     this.setData({
       summary: r.summary,
       hash: r.hash,
@@ -78,6 +89,7 @@ Page({
     if (!r.ok) { this.setData({ err: r.reason, lifecycle: '读档失败' }); return; }
     this._slice = { state: r.state, rng: r.rng, cfg: r.cfg };
     this._hidden = false;
+    this._refreshMini();
     this.setData({
       summary: r.summary, hash: r.hash, err: '',
       lifecycle: `读档 · 第 ${r.turn} 旬`,
@@ -87,6 +99,7 @@ Page({
   onNew() {
     this._slice = bootSlice();
     this._hidden = false;
+    this._refreshMini();
     this.setData({
       summary: sliceSummary(this._slice.state),
       hash: this._slice.hash,

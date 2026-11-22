@@ -940,6 +940,54 @@ ok(/§十|最小可玩切片|src\/platform\//.test(miniDoc), '小程序后台说
 ok(/最小可玩切片|sync:mp/.test(readme), 'README 没补小程序适配段');
 
 
+
+// ── P4 包体核算 / 零位图格网 / B6 存档表示差异 ─────────────────────────
+const miniMapSrc = join(root, 'src/platform/mini-map.js');
+const miniMapText = existsSync(miniMapSrc) ? readFileSync(miniMapSrc, 'utf8') : '';
+const sliceWxml = readFileSync(join(root, 'miniprogram/pages/slice/index.wxml'), 'utf8');
+const sliceJs2 = readFileSync(join(root, 'miniprogram/pages/slice/index.js'), 'utf8');
+const bundleScript = join(root, 'scripts/check-mp-bundle.mjs');
+const bundleTest = join(root, 'tests/mp-bundle.test.mjs');
+const sliceDoc = readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8');
+const manifestPath = join(root, 'miniprogram/logic/MANIFEST.json');
+
+ok(existsSync(miniMapSrc), 'src/platform/mini-map.js 缺失：零位图格网没数据层');
+for (const bad of ['document.', 'window.', 'wx.', 'getContext', 'new Image', 'Math.random', 'Date.now']) {
+  ok(!miniMapText.includes(bad), `绘制指令层 mini-map.js 出现宿主 API ${bad}`);
+}
+for (const fn of ['miniMapCells', 'miniMapDrawOps', 'miniMapView', 'MINI_MAP']) {
+  ok(new RegExp(`export (?:function|const) ${fn}\\b`).test(miniMapText), `mini-map.js 缺导出 ${fn}`);
+}
+ok(/terrainPalette/.test(miniMapText) && /terrainTie/.test(miniMapText),
+  '无主格没按地貌给淡色，零位图格网会整幅纸白');
+if (existsSync(manifestPath)) {
+  const mf = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  ok(mf.files.some((f) => f.path === 'src/platform/mini-map.js'),
+    '镜像 MANIFEST 没带 mini-map.js：跑 npm run sync:mp');
+  ok(mf.files.length >= 24, `镜像文件数回退到 ${mf.files.length}`);
+} else ok(false, '缺 miniprogram/logic/MANIFEST.json');
+ok(/wx:for="\{\{mini\.cells\}\}"/.test(sliceWxml) &&
+   /_refreshMini\(\)/.test(sliceJs2), '切片页没消费零位图格网');
+for (const bad of ['<canvas', '<image', 'getContext', 'drawImage']) {
+  ok(!sliceWxml.includes(bad) && !sliceJs2.includes(bad), `切片页 P4 后出现渲染宿主 API ${bad}`);
+}
+ok(existsSync(bundleScript) && existsSync(bundleTest), '包体核算脚本或 P4 回归单测缺失');
+try {
+  const out = execFileSync(process.execPath, [bundleScript, '--check'], { encoding: 'utf8' });
+  ok(/包体核算通过/.test(out), '包体核算 --check 没通过');
+} catch { ok(false, '包体核算护栏失败：npm run bundle 看明细'); }
+// P4 硬结论：运行时 sheet 4 张、舆图无位图引用、底稿不进包。
+const portrait2 = readFileSync(join(root, 'src/portrait.js'), 'utf8');
+ok((portrait2.match(/load\('[^']+\.png'/g) ?? []).length === 4, '运行时 sheet 清单变了');
+const atlas2 = readFileSync(join(root, 'src/guandu.js'), 'utf8')
+  + readFileSync(join(root, 'src/atlas.js'), 'utf8');
+ok((atlas2.match(/\.(png|jpe?g|webp)\b/gi) ?? []).length === 0,
+  '舆图渲染层出现位图文件引用，「舆图是程序化代码」结论失效');
+ok(/§十一|P4|包体核算/.test(sliceDoc), '小程序后台说明没补 P4 台账');
+ok(/bundle/.test(readme) && /包体核算|P4/.test(readme), 'README 没补 P4 与 bundle 入口');
+ok(existsSync(join(root, 'scripts/logic-slice.mjs')), '对面推的 logic-slice.mjs 被弄丢了');
+
+
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);
