@@ -405,7 +405,25 @@ function refreshBattleUI() {
 
 // ── 回合推进 ────────────────────────────────────────────────────────────
 function doTurn() {
-  const evs = advanceTurn(state, rng);
+  // 玩家正在子界面里打的那一场，简算必须跳过，绝不把手里正打的仗抢走。
+  const activeBattleId = session?.cityId
+    ? (state.cities[session.cityId]?.battleId ?? null) : null;
+  const evs = advanceTurn(state, rng, { activeBattleId });
+  // 无人接战的简算结果是「城池易主 / 却敌」这种大事，必须单独先播报，
+  // 不能被下面 evs.slice(0, 6) 把事件截掉。
+  for (const e of evs.filter((x) => x.type === 'autoResolve')) {
+    const nm = cityById(e.city)?.name ?? e.city;
+    const af = cfg.factions.find((f) => f.id === e.attacker)?.name ?? e.attacker;
+    const df = cfg.factions.find((f) => f.id === e.defender)?.name ?? e.defender;
+    log(`${nm} ${e.won ? '城破' : '却敌'}`);
+    pushReport({
+      title: e.won ? `${nm} 城破 · 归 ${af}` : `${nm} 却敌 · ${df} 拒守`,
+      tag: '战报', red: e.won,
+      sub: formatCalendar(state.turn, cfg.calendar, 'short'),
+      body: `${af} 攻 ${df}。${e.won ? `城破，存兵 ${e.survivors} 入城。` : '守军击退来犯，大营退散。'}`
+        + '此系无人接战的军情简算，非逐帧攻城；玩家亲率的战斗仍进子界面手打。',
+    });
+  }
   // 章回军情按旬陆续到：跳旬 / 自动推进会一次补齐中间漏掉的，去重靠 dispatchedIds。
   const due = dueDispatches(story, state);
   if (due.length) {

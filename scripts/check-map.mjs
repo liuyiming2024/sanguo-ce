@@ -807,6 +807,69 @@ ok(/supabase\/[\s\S]{0,40}零预算联机地基/.test(readme),
   'README 缺如实边界「supabase/ 是零预算联机地基」');
 ok(/本机存档.*两条线|两条线，别混读/.test(readme), 'README 没写清三席存档与 supabase 两条线');
 
+
+// ── 边界再处理：战线推进 / 断粮减产 / 不碰双时钟 ────────────────────────
+const fieldPath = join(root, 'src/field-resolve.js');
+const fieldSrc = existsSync(fieldPath) ? readFileSync(fieldPath, 'utf8') : '';
+const mainAll2 = readFileSync(join(root, 'src/main.js'), 'utf8');
+const strategyPath = join(root, 'scripts/strategy-sim.mjs');
+const fieldTestPath = join(root, 'tests/field-resolve.test.mjs');
+const xunDoc2 = readFileSync(join(root, 'docs/率土式旬循环与AI对手落地说明.md'), 'utf8');
+const mainDoc2 = readFileSync(join(root, 'docs/建安五年官渡舆图史料汇总.md'), 'utf8');
+
+ok(fieldSrc.length > 0, 'src/field-resolve.js 缺失：AI 滞留战斗又会永久挂着');
+ok(/export function resolveDormantBattles/.test(fieldSrc) &&
+   /export function fieldStrength/.test(fieldSrc) &&
+   /export const AUTO_RESOLVE/.test(fieldSrc), '简算层导出缺件');
+// 核心护栏：简算层绝不许 import 战斗层，双时钟 / siege-combat 必须零改动。
+ok(!/from '\.\/battle-session\.js'|from '\.\/siege-combat\.js'|from '\.\/siege-grid\.js'/.test(fieldSrc),
+  'field-resolve.js 引用了战斗层，双时钟会被撬开');
+ok(/graceTurns:\s*4/.test(fieldSrc) && /onlyAiAttacker:\s*true/.test(fieldSrc),
+  'grace 窗口或「玩家战斗永不自动结算」被改掉');
+ok(/opts\.resolveBattle/.test(fieldSrc) && /activeBattleId/.test(fieldSrc),
+  'resolveBattle 注入或 activeBattleId 跳过缺失');
+ok(/createRng\(\(state\.rngSeed/.test(fieldSrc) && /_rng/.test(fieldSrc),
+  '简算用了主 rng，会打乱 AI 决策序列与 rngCalls');
+ok(/appendCommand\(state\.commandLog/.test(fieldSrc) && /'autoResolve'/.test(fieldSrc),
+  '简算没进命令日志，重放不可追溯');
+ok(/camp\s*=\s*\(ff\.camp/.test(fieldSrc) || /\.filter\(\(u\) => u\.faction !== b\.attacker\)/.test(fieldSrc),
+  '简算后没清大营残部，长局 forces.camp 会无限堆积');
+
+// campaign.js：接了简算、注入 resolveBattle、断粮减产真的接进 collectResources。
+ok(/resolveDormantBattles\(state, rng/.test(camp) && /resolveBattle,/.test(camp),
+  'advanceTurn 没接无人值守简算或没注入 resolveBattle');
+ok(/export function advanceTurn\(state, rng, opts = \{\}\)/.test(camp),
+  'advanceTurn 没接 opts.activeBattleId');
+ok(/starvingCities\.has\(t\.cityId\)/.test(camp) && /famineK/.test(camp),
+  '断粮减产没接进 collectResources，缺粮只剩掉军心一层代价');
+ok(/starvingYield/.test(econ) && /0\.6/.test(econ), 'COMMISSARY.starvingYield 缺失');
+
+// AI：局部饥荒不该让全局罢兵（旧版 any() 让 400 旬后战线冻结）。
+ok(!/ownCities\.some\(\(c\) => c\.starving\)/.test(aiSrc),
+  'AI 断粮判定退回「任一城饿就全局停战」，长局战线会再冻');
+ok(/Math\.ceil\(ownCities\.length \/ 3\)/.test(aiSrc), 'AI 断粮比例判定缺失');
+
+// 装配层：跳过玩家正在打的仗、把城破/却敌单独播报（不能被 slice(0,6) 截掉）。
+ok(/activeBattleId\s*=\s*session\?\.cityId/.test(mainAll2) &&
+   /advanceTurn\(state, rng, \{ activeBattleId \}\)/.test(mainAll2),
+  'main.js 没传 activeBattleId，玩家的仗会被抢走');
+ok(/evs\.filter\(\(x\) => x\.type === 'autoResolve'\)/.test(mainAll2),
+  'main.js 没单独播报简算战报');
+
+// 观测与回归：脚本、单测、白话底本、台账都要在。
+ok(existsSync(strategyPath) && existsSync(fieldTestPath), '策略对演或简算回归单测缺失');
+ok(/首次易主旬|firstFlip/.test(longrunSrc) && /autoResolve/.test(longrunSrc),
+  'longrun.mjs 没观测战线推进');
+ok(/§十一|十一、边界再处理/.test(xunDoc2), '旬循环白话底本缺 §十一');
+ok(/边界再处理核对/.test(mainDoc2) && /战线推进 \/ 策略对演/.test(mainDoc2),
+  '史料主文档 §16 没登本轮台账');
+ok(/战线推进（本轮边界再处理）/.test(readme) && /没有自然终局/.test(readme),
+  'README 没改掉「城数纹丝不动 / 无自然终局」的旧边界');
+ok(!/不驱动 AI 攻城自动结算/.test(readme), 'README 还写着旧版「不驱动自动结算」');
+ok(/217 单测/.test(readme) && /strategy-sim\.mjs/.test(readme),
+  'README 当前实数或策略对演入口没更新');
+
+
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);

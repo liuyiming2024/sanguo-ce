@@ -10,8 +10,9 @@ import {
 } from './pathfind.js';
 import { generalFor, facilityLevel } from './generals.js';
 import { cityObstacles, nearestFree } from './siege-grid.js';
-import { settleXun, canAffordTroops } from './economy.js';
+import { settleXun, canAffordTroops, COMMISSARY } from './economy.js';
 import { planAiTurn } from './ai.js';
+import { resolveDormantBattles } from './field-resolve.js';
 
 export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } = {}) {
   const terrain = createTerrain(cfg);
@@ -384,15 +385,22 @@ export function cityOverview(state, cityId) {
   };
 }
 
-/** 地块产出聚合：只统计已占领格，围城中的城池产量减半。 */
+/** 地块产出聚合：只统计已占领格；围城减半、断粮城所辖地块再打折。 */
 export function collectResources(state, { apply = true } = {}) {
   const out = {};
   for (const f of state.cfg.factions) out[f.id] = { wood: 0, stone: 0, iron: 0, grain: 0, tiles: 0 };
+  // 断粮减产：上一旬 settleXun 判出的 starving 城，本旬所辖地块按 starvingYield 计。
+  // 这是「缺粮」的第二层代价 —— 不只掉军心，还让产粮下滑，长局净额可能由正转负。
+  // 滞后一旬是刻意的：本旬先按上旬结论算产，再结算本旬饥荒，因果不颠倒。
+  const starvingCities = new Set(Object.values(state.cities)
+    .filter((c) => c.starving).map((c) => c.id));
+  const famineK = COMMISSARY.starvingYield ?? 0.6;
   for (const t of state.terrain.tiles) {
     if (!t.owner || !out[t.owner]) continue;
     const o = out[t.owner];
     o.tiles++;
-    for (const k of ['wood', 'stone', 'iron', 'grain']) o[k] += t.y[k] ?? 0;
+    const k = starvingCities.has(t.cityId) ? famineK : 1;
+    for (const key of ['wood', 'stone', 'iron', 'grain']) o[key] += (t.y[key] ?? 0) * k;
   }
   for (const [fid, o] of Object.entries(out)) {
     for (const k of ['wood', 'stone', 'iron', 'grain']) o[k] = Math.round(o[k] * 10) / 10;
@@ -425,8 +433,12 @@ export function collectResources(state, { apply = true } = {}) {
   return out;
 }
 
-/** 一个回合：地块产出 → 城池恢复 → 在途结算 → AI。完全不关心战斗是否可见。 */
-export function advanceTurn(state, rng) {
+/**
+ * 一个回合：地块产出 → 城池恢复 → 在途结算 → AI → 无人值守战斗简算。
+ * 完全不关心战斗是否可见。opts.activeBattleId 由装配层传入（玩家正在子界面里
+ * 打的那一场），简算会跳过它，绝不把玩家手里的仗抢走。
+ */
+export function advanceTurn(state, rng, opts = {}) {
   const { cfg } = state;
   const events = [];
   state.turn++;
@@ -574,6 +586,14 @@ export function advanceTurn(state, rng) {
       events.push({ type: kind, faction: f.id, aiKind: p.kind });
     }
   }
+
+  // 无人值守战斗简算：只处理「AI 发起、玩家没在子界面里、滞留满 grace 旬」的战斗。
+  // 长局实测教训：没有这一层，AI 的 march 抵达后只开 battleId 就永远挂着，
+  // 200 旬城数纹丝不动、无自然终局；玩家自己发起的仗仍全部走子界面逐帧打。
+  events.push(...resolveDormantBattles(state, rng, {
+    activeBattleId: opts.activeBattleId ?? null,
+    resolveBattle,
+  }));
 
   return events;
 }

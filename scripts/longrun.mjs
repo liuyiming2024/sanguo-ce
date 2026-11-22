@@ -36,15 +36,28 @@ for (const seed of SEEDS) {
   const rng = createRng(seed);
   collectResources(s, { apply: false });
   const rows = [snap(s)];
-  let firstStarve = -1, firstOutcome = -1, zeroStockTurns = 0, lastAi = 0, rejectedDelta = 0;
+  let firstStarve = -1, firstOutcome = -1, zeroStockTurns = 0, lastAi = 0;
+  let firstFlip = -1, flips = 0, autoWon = 0, autoLost = 0;
+  let owners = Object.fromEntries(Object.entries(s.cities).map(([id, c]) => [id, c.owner]));
   for (let i = 1; i <= TURNS; i++) {
-    advanceTurn(s, rng);
+    const evs = advanceTurn(s, rng);
+    for (const e of evs) {
+      if (e.type !== 'autoResolve') continue;
+      if (e.won) autoWon++; else autoLost++;
+    }
+    // 逐城比 owner，累计易主次数；这是「战线是否真的推进」的唯一硬指标。
+    for (const [id, c] of Object.entries(s.cities)) {
+      if (owners[id] !== c.owner) {
+        flips++;
+        if (firstFlip < 0) firstFlip = i;
+        owners[id] = c.owner;
+      }
+    }
     if (s.resources[s.playerFaction].grain <= 0) zeroStockTurns++;
     const o = checkOutcome(s);
     if (firstOutcome < 0 && o.over) firstOutcome = i;
     const starving = Object.values(s.cities).filter((c) => c.owner === s.playerFaction && c.starving).length;
     if (firstStarve < 0 && starving > 0) firstStarve = i;
-    rejectedDelta = (s.stats.aiRejected ?? 0) - (rows[rows.length - 1].aiRejected ?? 0);
     if (i % STEP === 0 || i === 1) rows.push(snap(s));
     lastAi = s.stats.aiOrders;
   }
@@ -60,4 +73,5 @@ for (const seed of SEEDS) {
       String(r.battles).padStart(7), r.outcome);
   }
   console.log(`首次断粮旬=${firstStarve} 首次终局旬=${firstOutcome} 库存见底旬数=${zeroStockTurns}/${TURNS} AI落令=${lastAi}`);
+  console.log(`首次易主旬=${firstFlip} 累计易主=${flips} 简算破城=${autoWon} 简算却敌=${autoLost} 开战/收束=${last.battles}/${last.closed} 末局=${last.own}:${last.enemy}`);
 }

@@ -66,8 +66,13 @@ export function planAiTurn(state, faction, rng, weights = AI_WEIGHTS) {
 
   // 断粮时不再硬征兵 / 硬出征：那两道命令必被 canAffordTroops 拒，
   // AI 会一旬旬空转（长局里 aiRejected 飙到几百）。改走「找粮 / 减耗」。
-  const starving = ownCities.some((c) => c.starving) ||
-    (state.commissary?.[faction.id]?.starvingCities ?? 0) > 0;
+  //
+  // 口径修正（长局 500 旬实测）：旧版「任一城饿就全势力停战」，配上断粮减产后
+  // 两路 AI 各有一两座饿城，于是 400 旬后双方集体救荒、战线彻底冻结。
+  // 现在按「饿城比例 ≥ 1/3」判：局部饥荒不该让全局罢兵，饿城多的才收手。
+  const hungry = ownCities.filter((c) => c.starving).length;
+  const reported = state.commissary?.[faction.id]?.starvingCities ?? 0;
+  const starving = Math.max(hungry, reported) >= Math.max(1, Math.ceil(ownCities.length / 3));
   if (starving) return planRelief(state, faction, from, rng);
 
   if (kind === 'raid') {

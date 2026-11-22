@@ -17,10 +17,11 @@
 
 | 命令 | 最近一次实测 | 说明 |
 | --- | --- | --- |
-| `npm test` | **208 单测 / 28 文件全过** | `node --test tests/*.mjs`；含 `tests/longrun.test.mjs` 的 120 旬 × 2 seed 对演 |
-| `npm run check` | 静态自检全绿 | 地图 / 连通性 / 指纹 / 章回 / 旬循环 / 署名 / 明文护栏 |
+| `npm test` | **217 单测 / 29 文件全过** | `node --test tests/*.mjs`；含 `tests/longrun.test.mjs` 120 旬 × 2 seed、`tests/field-resolve.test.mjs` 9 项简算回归 |
+| `npm run check` | 静态自检全绿 | 地图 / 连通性 / 指纹 / 章回 / 旬循环 / 简算 / 署名 / 明文护栏 |
 | `npm run smoke` | **163 项真 Chromium 烟测全过** | 含旬计簿、素材致谢、三席存档、终局页、推一旬入账 |
-| `node scripts/longrun.mjs` | 200 旬 × 5 seed | 纯逻辑长局对演，不进 CI 断言，只作平衡观察 |
+| `node scripts/longrun.mjs` | 200 旬 × 5 seed | 纯逻辑长局对演；新增首次易主旬 / 累计易主 / 简算破城·却敌观测，不进 CI 断言 |
+| `node scripts/strategy-sim.mjs` | 200 旬 × 2 seed × 4 策略 | idle / recruit / claim / mixed 策略对演，补「系数未真人试玩」这块边界 |
 
 ## 当前结构补记（v0.9.4 之后已落地）
 
@@ -28,6 +29,7 @@
 - **玩家可见署名（B1/B2 已闭环）**：系统页「素材致谢 · 开源许可」完整保留 `MIT License / Copyright (c) 2018 Lingdong Huang` 与两份 LICENSE 全文；`src/ink-stroke.js` / `src/guandu.js` 头部声明、`demos/third-party/ATTRIBUTION.md` 与两份 LICENSE 逐字复核过。
 - **典籍与舆图**：`src/atlas.js`（三级注记分级 / 中原详图开关）、`config/historica.json`（文言六门）、游戏内「典籍总揽」纸页，自 v0.9.4 起在库；白话考据留 `docs/`。
 - **传帖台**：`src/ticket-store.js` + `supabase/schema.sql` + 独立 `bridge.html`，与本机存档是两条线。
+- **战线推进（本轮边界再处理）**：`src/field-resolve.js` 对「AI 发起、玩家没在子界面里、滞留满 4 旬」的攻城做纯逻辑简算，仍走既有 `resolveBattle()` 回写，不碰 `battle-session.js` / `siege-combat.js`；玩家亲率的仗永不自动结算。`collectResources()` 给断粮城所辖地块减产（×0.6），AI 断粮判定从「任一城饿就全局停战」改成「饿城 ≥ 1/3」。长局实测 9:3 → 7:5 / 6:6 / 4:8，净额由 +333 收窄到 −68，库存不再单调涨。白话全本见 `docs/率土式旬循环与AI对手落地说明.md` §十一。
 
 ## 全境两章：同一套玩法，多铺一张图
 
@@ -727,8 +729,9 @@ src/map-data.js            真实经纬度锚点：城池、汉末黄河、支�
 src/terrain.js             144×108 确定性栅格生成 + 派生等级/产出/代价/归属
 src/pathfind.js            8 向 A*、连地判定、可出征格、占领、全图连通自检
 src/campaign.js            纯逻辑策略层：回合、地块产出、在途命令、AI、战斗终局回写
-src/economy.js             一旬结算：产量分摊 / 驻军与在途耗粮 / 断粮 / 发令约束
-src/ai.js                  AI 四类权重决策：只出 spec，落库仍走 issueOrder
+src/economy.js             一旬结算：产量分摊 / 驻军与在途耗粮 / 断粮 / 发令约束 / 断粮减产系数
+src/field-resolve.js       AI 滞留战斗简算：独立派生随机流，结果走 resolveBattle 回写
+src/ai.js                  AI 四类权重决策：只出 spec，落库仍走 issueOrder；断粮按饿城比例救荒
 src/save-slots.js          甲乙丙三席存档 + 覆盖前备份 + 坏档回退
 src/outcome.js             终局三态只读判定（不进指纹）
 src/battle-session.js      双时钟会话：快照 / 离开停跑 / 同算法快进 / 邮箱按步回放
@@ -741,18 +744,20 @@ src/ticket-store.js        军令帖六位短号：put / get / del 可插拔 sto
 src/main.js                装配层：唯一引用 DOM / rAF 的地方
 scripts/check-map.mjs      配置/地形/连通性/导航/指纹/旬循环/署名静态自检
 scripts/smoke.mjs           真 Chromium 页面可达性烟测
-scripts/longrun.mjs        纯逻辑长局对演（200 旬 × 多 seed，不进 CI 断言）
-tests/                     28 个 node:test 单测文件（含长局回归）
+scripts/longrun.mjs        纯逻辑长局对演（含易主 / 简算观测，不进 CI 断言）
+scripts/strategy-sim.mjs   四策略 × 多 seed 对演（补「未真人试玩」边界）
+tests/                     29 个 node:test 单测文件（含长局 / 简算回归）
 supabase/schema.sql        零预算联机地基（与本机存档两条线，别混读）
 ```
 
 ## 运行
 
 ```bash
-npm test          # 以当期输出为准（最近一次 208/208，见顶部「当前验证实数」）
-npm run check     # 地图/连通性/导航/指纹/旬循环/署名静态自检，失败真退出
+npm test          # 以当期输出为准（最近一次 217/217，见顶部「当前验证实数」）
+npm run check     # 地图/连通性/导航/指纹/旬循环/简算/署名静态自检，失败真退出
 npm run smoke     # 起本地服务 + 真 Chromium 烟测（最近一次 163/163）
-node scripts/longrun.mjs   # 可选：200 旬纯逻辑长局对演
+node scripts/longrun.mjs       # 可选：200 旬纯逻辑长局对演
+node scripts/strategy-sim.mjs  # 可选：四策略对演
 ```
 
 纯静态站点，无构建步骤；`index.html` 用 `` 给 ESM 与 CSS 打缓存指纹。
@@ -770,8 +775,14 @@ node scripts/longrun.mjs   # 可选：200 旬纯逻辑长局对演
 - **纯静态 Pages 无构建链**：入口 HTML + `main.js` 靠 `VERSION` 加戳，其余靠短缓存 +
   升级时一次 `Ctrl+Shift+R`。这是能做到的边界，不是遗漏。
 - **`supabase/` 是「零预算联机地基」**，和本机三席存档是两条线，别混读。
-- **长局平衡未试玩**：0.035 / 0.07 / 1.0 这组系数由 200 旬 × 5 seed 对演定标，
-  未做人工 100 旬以上对局；AI 无同盟 / 外交 / 多目标协同，只到「可预测但有变数」。
+- **长局系数未由真人试玩定稿**：0.035 / 0.07 / 1.0 / 0.6 这组由 200 旬 × 5 seed
+  长局对演 + 4 策略 × 2 seed 对演定标，证明「玩家作为 / 不作为」走出不同曲线，
+  但仍未做真人连续 100 旬以上对局；AI 无同盟 / 外交 / 多目标协同，只到「可预测但有变数」。
+- **不动作时没有自然终局**：无人值守战斗简算让战线真的推进（200 旬 9:3 → 7:5 / 6:6 / 4:8，
+  500 旬到 3:9），但玩家什么都不做时 AI 会因局部饥荒收敛，不会自动把玩家全灭；
+  终局三态由 `src/outcome.js` 判定、在构造场景与主动对局中可达，不是长局必然结局。
+- **简算是策略层军情，不是逐帧攻城**：复用士气 / 疲劳 / 阵型 / 断粮四系数与 ±15% 扰动，
+  不产生 mailbox / atSec、不进战斗层快照；玩家亲率的战斗仍全部进子界面手打。
 
 - **旧 `stick-war` 横版战斗仍未挂为本库子模块**。本库攻城战是自己的纯逻辑层，
   没有复用旧横版代码；接入时只保留伤害 / 状态 / 箭矢 / 投射物 / 确定性 RNG，
@@ -799,8 +810,9 @@ node scripts/longrun.mjs   # 可选：200 旬纯逻辑长局对演
 - **地块产出按领地逐格累加**，没有名望上限、领地上限与土地开发计略。
 - **粮草 debuff 只到阵营级**：城内单位共享一方粮草档位，没有逐队辎重、
   截粮道、火攻烧仓等更细的后勤玩法；档位是 5 级短档，不是连续数值。
-  策略层另有**城仓断粮**（`src/economy.js`），但只掉军心 / 逃兵 / 锁征发，
-  不驱动 AI 攻城自动结算；长局 200 旬实测城数纹丝不动，见旬循环说明 §八。
+  策略层另有**城仓断粮**（`src/economy.js`）：掉军心 / 逃兵 / 锁征发，并按 `starvingYield`
+  给所辖地块减产；AI 滞留战斗另由 `src/field-resolve.js` 简算回写，所以长局城数会变、
+  领地与产量随战线收缩。逐帧攻城仍在子界面，见旬循环说明 §十一。
 
 ## 参考口径
 
