@@ -840,7 +840,9 @@ SOFTWARE.`;
   // mountAtlas() 随之重跑。视图状态放在实例外，重建后接着用户已选的档位，
   // 否则刚点完「中原详图」被一次 render 冲回全境，实测表现为按钮点了没反应。
   const atlasState = { zoom: null, px: 0, py: 0, focus: 'all', detail: false };
+  let tierDebounce = 0;
   function mountAtlas() {
+    clearTimeout(tierDebounce);
     const c = screen.querySelector('#atlasCanvas');
     if (!c) return;
     const a = createAtlas({});                 // 全境默认图幅 93–126E / 15–43N
@@ -871,8 +873,18 @@ SOFTWARE.`;
     }
     function paint() {
       saveState();
-      // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹
-      if (a.setTier) a.setTier(a.tierOf(zoom));
+      // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹。
+      // 重渲是秒级开销，滚轮连续缩放会跨好几个整数档，全部延后到停手 180ms
+      // 后只做一次；期间用上一档即时合成，跟手性不受影响。
+      if (a.setTier) {
+        const target = a.tierOf(zoom);
+        if (target !== a.tier) {
+          clearTimeout(tierDebounce);
+          tierDebounce = setTimeout(() => {
+            if (a.tierOf(atlasState.zoom ?? 1) === target) { a.setTier(target); paint(); }
+          }, 180);
+        } else clearTimeout(tierDebounce);
+      }
       // 先按设备像素清屏，再用整数 CSS 尺寸铺底：cw/ch 可能是小数，
       // 直接 fillRect 会在最后一行留下半透明边，多次 paint 会累积成不复原的脏像素。
       ctx.setTransform(1, 0, 0, 1, 0, 0);

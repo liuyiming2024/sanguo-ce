@@ -189,7 +189,9 @@ function inkNote(g,txt,x,y){
 /* 注记分级绘制：屏幕固定字号，只按档微调字级；位置随图变换 */
 function drawLabels(g, view){
   // fontScale：小画布（典籍页）把字按 base 压小时补回设计字号；demos 不传保持 1。
-  const k=clamp(0.90+0.10*view.zoom,0.90,1.18)*(view.fontScale||1);
+  // 高倍率字级阶梯：地物放大 4 倍而字仍 10px 会淡到读不出
+  const z=view.zoom||1;
+  const k=clamp(0.90+0.10*z,0.90,1.18)*(z>=3?1.25:z>=2?1.12:1)*(view.fontScale||1);
   const F = FOCUS[view.focus] ? view.focus : (view.detail ? 'zhongyuan' : focus);
   const V = FOCUS[F];
   const L2=view.zoom>=V.l2, L3=view.zoom>=V.l3;
@@ -428,14 +430,17 @@ const LANDMARKS={
    离屏图超采样 S 倍保证清晰；合成后屏幕笔宽 ≈ 原尺寸，不会被拉成鱼鳞斜纹。 */
 function makeBg(zb){
   zb = zb||1;
-  const S = clamp(Math.ceil(zb),1,3);
+  // 离屏超采样封顶 4（见 demos 同处说明）：tier 可到 6，S 到 4 折中内存
+  const S = clamp(Math.ceil(zb),1,4);
   const c=mk(); c.width=W*S; c.height=H*S;
   const g=c.getContext('2d');
   g.scale(S,S);
   // 纸底
   g.fillStyle='#e9e3d1'; g.fillRect(0,0,W,H);
   // 连续场底罩：低分辨率生成后平滑放大，无台阶
-  const FW=350*S, FH=275*S, im=g.createImageData(FW,FH);
+  // 低频连续场底罩不跟 S 涨：固定 1050×825，避免高倍率跨档重渲时
+  // 反复计算数百万次 fieldColor；笔层仍由离屏超采样保证清晰。
+  const FW=1050, FH=825, im=g.createImageData(FW,FH);
   for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
     const lon=LON0+i/FW*(LON1-LON0), lat=LAT1-j/FH*(LAT1-LAT0);
     const [r,gg,b,reg]=fieldColor(lon,lat);
@@ -1094,8 +1099,8 @@ function drawInkDetail(g, view){
   // 地物层绘制时把注记收集进 labels；重复调用先清空，避免累积。
   labels.length = 0;
   // 背景按倍率分档重渲：跨整数档才重算，滚轮 / 拖动仍只做合成
-  const tierOf = z => clamp(Math.round(z),1,3);
-  let tier = clamp(Math.round(opts.tier ?? 1),1,3);
+  const tierOf = z => clamp(Math.round(z),1,6);
+  let tier = clamp(Math.round(opts.tier ?? 1),1,6);
   let bg = makeBg(tier);
   let fg = opts.fg === false ? null : makeFg(focus);
   const api = {
@@ -1105,7 +1110,7 @@ function drawInkDetail(g, view){
     tierOf,
     get tier(){ return tier; },
     setTier(t){
-      const nt = clamp(Math.round(t),1,3);
+      const nt = clamp(Math.round(t),1,6);
       if(nt !== tier){ tier = nt; bg = makeBg(tier); api.bg = bg; }
       return bg;
     },

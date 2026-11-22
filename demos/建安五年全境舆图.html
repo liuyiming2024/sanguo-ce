@@ -294,7 +294,9 @@ function layoutLabels(o){
 
 /* 注记分级绘制：屏幕固定字号，位置随图变换，布局与导出共用 layoutLabels */
 function drawLabels(){
-  const k=clamp(0.90+0.10*zoom,0.90,1.18);
+  /* 屏幕固定字号，但高倍率要给一档阶梯：×4.2 画面里地物放大 4 倍、
+     字仍 10px 就淡到读不出（实拍可见）。非线性放大，只给两小档。 */
+  const k=clamp(0.90+0.10*zoom,0.90,1.18)*(zoom>=3?1.25:zoom>=2?1.12:1);
   const V=FOCUS[focus], L2=zoom>=V.l2, L3=zoom>=V.l3;
   const sc=(mx,my)=>[W/2+panX+(mx-W/2)*zoom, H/2+panY+(my-H/2)*zoom];
   for(const it of layoutLabels({k,sc,L2,L3,focus})){
@@ -483,7 +485,11 @@ const LANDMARKS={
    离屏图超采样 S 倍保证清晰；合成后屏幕笔宽 ≈ 原尺寸，不会被拉成鱼鳞斜纹。 */
 function makeBg(zb, rec){
   zb = zb||1;
-  const S = clamp(Math.ceil(zb),1,3);
+  /* 离屏超采样分辨率：此前封顶 3，而 zoom 上限是 6 → ×4.2 以上把 3×
+     离屏图硬拉 1.4~2 倍，笔触变粗发糊（实拍可见）。提到 4 折中：
+     S=6 会占约 220MB 离屏内存，Chromium 高倍率下会 OOM；S=4 约 126MB，
+     且笔长仍按 1/zb 继续缩细，屏幕上的笔不会变粗。 */
+  const S = clamp(Math.ceil(zb),1,4);
   let c=null, g;
   // rec 为 SVG 录制器：同一套笔函数把每一笔录成 <path>，而不是烘进位图。
   if(rec){ g=rec; }
@@ -494,7 +500,10 @@ function makeBg(zb, rec){
   // 连续场底罩：低分辨率生成后平滑放大，无台阶。
   // SVG 导出时由 buildSvg 生成矢量色块网格 + 高斯滤镜代替，不走 ImageData。
   if(!rec){
-  const FW=350*S, FH=275*S, im=g.createImageData(FW,FH);
+  /* 底罩是低频连续场 + 平滑放大，跟着 S 涨到 4 会算 346 万次 fieldColor，
+     ×4.2 跨档重渲实测 7.8s，滚动缩放会卡。分辨率固定 1050×825（原 S=3 档）
+     视觉无差别，笔层仍由 S=4 的离屏保证清晰。 */
+  const FW=1050, FH=825, im=g.createImageData(FW,FH);
   for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
     const lon=LON0+i/FW*(LON1-LON0), lat=LAT1-j/FH*(LAT1-LAT0);
     const [r,gg,b,reg]=fieldColor(lon,lat);
@@ -1343,7 +1352,7 @@ function buildSvg(){
   O.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   O.push(`<title>建安五年全境舆图 · 全量矢量</title>`);
   O.push(`<desc>全量矢量（非骨架）：纸底 / 连续场底罩 / 全部地貌笔触 / 水系 / 州界 / 城邑 / 题识 / 格网 / 注记，均为 path·rect·text 矢量指令，无位图。注记含 L3 县邑共 ${items.length} 处，已按十三方向自动避让。若单独打开只看到一串孤立地名而无地貌，那是早期「矢量骨架」旧快照，不是本文件。州界为示意，纵横不拘实距。</desc>`);
-  O.push(`<metadata id="build">{"round":11,"full":true,"avoid":true,"labels":${items.length},"paths":${nPath},"note":"非骨架"}</metadata>`);
+  O.push(`<metadata id="build">{"round":12,"full":true,"avoid":true,"tiers":6,"labels":${items.length},"paths":${nPath},"note":"非骨架"}</metadata>`);
   O.push(`<defs><filter id="washBlur" x="-4%" y="-4%" width="108%" height="108%"><feGaussianBlur stdDeviation="8.0"/></filter></defs>`);
   O.push(`<rect id="paper" width="${W}" height="${H}" fill="#e9e3d1"/>`);
   O.push(svgWash());
@@ -1390,16 +1399,27 @@ document.getElementById('exportSvg').addEventListener('click', ()=>{
 
 /* 背景按倍率分档重渲：只在跨档时重算，滚轮/拖动仍即时合成 */
 let bgTier = 1;
-const tierOf = z => clamp(Math.round(z),1,3);
+/* 按倍率连续分档到 6：此前封顶 3，×4/×5/×6 全部复用 tier=3 的笔，
+   放大后就是一层粗短弧。tier 只管笔密度/笔长，离屏分辨率由 makeBg 的 S 管。 */
+const tierOf = z => clamp(Math.round(z),1,6);
 function rebuild(t){
   bgTier = t||1;
   bg = makeBg(bgTier);
   fg = makeFg(focus);
   composite();
 }
+/* 跨档重渲约 4~5s（离屏 4× + 上万条笔）。此前每次跨整数档都同步重算，
+   滚轮连续放大 1→2→3→4 会连卡三四次。改成防抖：连续缩放期间一律用
+   上一档的图即时合成（略糊但跟手），停手 180ms 后才重渲一次到目标档。 */
+let bgDebounce = 0;
 function ensureBgTier(){
   const t=tierOf(zoom);
-  if(t!==bgTier){ bg=makeBg(t); bgTier=t; }
+  if(t===bgTier){ if(bgDebounce){ clearTimeout(bgDebounce); bgDebounce=0; } return; }
+  if(bgDebounce) clearTimeout(bgDebounce);
+  bgDebounce=setTimeout(()=>{
+    bgDebounce=0;
+    if(tierOf(zoom)===t && t!==bgTier){ bg=makeBg(t); bgTier=t; composite(); }
+  },180);
 }
 
 /* ---------- 交互 ---------- */
