@@ -35,7 +35,7 @@ import {
   serializeGame, deserializeGame, saveToStorage, readFromStorage, clearStorage,
 } from './persist.js';
 import { formationSummary } from './formation.js';
-import { xunLedger, shortageReport } from './economy.js';
+import { xunLedger, shortageReport, COMMISSARY } from './economy.js';
 import { checkOutcome } from './outcome.js';
 import {
   listSlots, saveSlot as writeSlot, readSlot, restoreBackup,
@@ -117,6 +117,9 @@ function newCampaign(factionId = story.meta.faction) {
     { slots: [null, null, null], stamina: 100 },
   ];
   s.copper = 1200;
+  // 开局给一旬周转粮：否则库存 0 时连「占领此地（粮 15）」都发不出去，
+  // 玩家必须干等第一旬自动推进才有动作，体验上像卡住。
+  s.resources[factionId].grain = COMMISSARY.startReserve;
   s.settings = { idleStop: true, snap: true };
   s.claimedTasks = [];
   // 开篇章的入场纪事：advanceChapter 只处理推进到下一回，开篇这一回在此注入一次。

@@ -144,10 +144,10 @@
     "fatiguePerMarchTurn": 8,
     "fatigueRecoverPerTurn": 3,
     "grainPerPopTurn": 0.9,
-    "grainUpkeepPerUnitTurn": 0.12,
+    "grainUpkeepPerUnitTurn": 0.035,
     "alertStart": 55,
     "formationStart": 80,
-    "_note": "士气 / 疲劳 / 粮草 / 警觉 / 阵型完整度：均不直接显示，只通过溃散、被擒、征兵上限、行军速度间接生效。"
+    "_note": "士气 / 疲劳 / 粮草 / 警觉 / 阵型完整度：均不直接显示，只通过溃散、被擒、征兵上限、行军速度间接生效。grainUpkeepPerUnitTurn 为「每兵每旬口粮」：与领地旬产粮同量级，常态略盈，征兵 / 出征才把账推成赤字，断粮 debuff 才真会触发。"
   },
   "city": {
     "wallStart": 100,

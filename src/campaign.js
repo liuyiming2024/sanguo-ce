@@ -16,11 +16,17 @@ import { planAiTurn } from './ai.js';
 export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } = {}) {
   const terrain = createTerrain(cfg);
   const cities = {};
+  const upkeep = cfg.hidden.grainUpkeepPerUnitTurn;
+  const fullTurns = cfg.condition?.hunger?.fullTurns ?? 30;
   for (const c of CITIES) {
+    // 城仓 = 这批守军吃满 fullTurns 旬的口粮，而不是按人口 ×2.4 拍脑袋。
+    // 长局实测：旧口径给许都 22 万粮，200 旬都耗不完，断粮 debuff 永远不触发；
+    // 新口径与 condition.js 的「存粮可支撑旬数 / 30 旬」逐字对齐，开局约满仓。
+    const garrison = Math.round(c.pop * cfg.city.popToTroopRatio);
     cities[c.id] = {
       id: c.id, owner: c.owner, pop: c.pop, wall: c.wall,
-      garrison: Math.round(c.pop * cfg.city.popToTroopRatio),
-      grain: Math.round(c.pop * 2.4),
+      garrison,
+      grain: Math.round(garrison * upkeep * fullTurns),
       morale: cfg.hidden.moraleStart,
       fatigue: 0, alert: cfg.hidden.alertStart, formation: cfg.hidden.formationStart,
       commander: { name: `${c.name}守将`, faction: c.owner, state: 'inOffice', capturedBy: null },
@@ -65,7 +71,7 @@ export function createCampaign(cfg, { playerFaction = 'cao', seed = 20261114 } =
     battles: {},
     stats: {
       turns: 0, ordersIssued: 0, arrivals: 0, tilesClaimed: 0,
-      battlesOpened: 0, battlesClosed: 0, recruits: 0, aiOrders: 0,
+      battlesOpened: 0, battlesClosed: 0, recruits: 0, aiOrders: 0, aiRejected: 0,
       scouts: 0, develops: 0, forts: 0, cancelled: 0, deployed: 0,
       byType: {},
     },
@@ -165,7 +171,9 @@ export function issueOrder(state, spec) {
 
   // ── 即时指令：征兵 ───────────────────────────────────────────────────
   if (type === 'recruit') {
-    const cost = Math.round(total * 3);
+    // 征兵消耗 = 这批新兵 6 旬口粮（与每兵每旬耗粮同源），不再用旧口径的 total*3。
+    // 旧口径要「人口 2.4 倍」的巨仓才付得起，新口径下一次 500 兵就吃掉近两成仓。
+    const cost = Math.round(total * cfg.hidden.grainUpkeepPerUnitTurn * 6);
     if (src.grain < cost) return { ok: false, reason: '粮草不足' };
     src.grain -= cost;
     src.garrison += total;
@@ -553,7 +561,12 @@ export function advanceTurn(state, rng) {
     if (!f.ai || !rng) continue;
     for (const p of planAiTurn(state, f, rng)) {
       const r = issueOrder(state, p.spec);
-      if (!r.ok) continue;
+      if (!r.ok) {
+        // 断粮 / 粮不足 / 并发满：AI 这一旬白想了一策。计数进 stats，长局可观测，
+        // 也让「AI 断粮时空转」不再是个看不见的黑洞。
+        state.stats.aiRejected = (state.stats.aiRejected ?? 0) + 1;
+        continue;
+      }
       state.stats.aiOrders++;
       (state.stats.aiByKind ??= {})[p.kind] = (state.stats.aiByKind[p.kind] ?? 0) + 1;
       const kind = p.kind === 'expand' || (p.kind === 'raid' && p.spec.type === 'claim')

@@ -749,6 +749,64 @@ for (const bad of BAD_SECRETS) {
   ok(!scannedSrc.includes(bad), `源码出现明文 ${bad.slice(0, 4)}…`);
 }
 
+// ── C1 兑现度：长局对演后的二次定标，不许回潮到「200 旬零断粮」 ────────
+const cfgJson = readFileSync(join(root, 'config/campaign.json'), 'utf8');
+const condSrc = readFileSync(join(root, 'src/condition.js'), 'utf8');
+const readme = readFileSync(join(root, 'README.md'), 'utf8');
+const xunDoc = readFileSync(join(root, 'docs/率土式旬循环与AI对手落地说明.md'), 'utf8');
+const longrunSrc = readFileSync(join(root, 'scripts/longrun.mjs'), 'utf8');
+
+// 旧口径三件套：人口巨仓 / total*3 征兵 / 虚拟储备另起一本账。
+ok(!/c\.pop \* 2\.4|pop \* 2\.4/.test(camp), '城仓又退回「人口 ×2.4」的巨仓，断粮永不触发');
+ok(!/const cost = Math\.round\(total \* 3\)/.test(camp), '征兵成本又退回 total*3，与旬耗粮脱钩');
+ok(!/acct\.grain = Math\.round/.test(econ) && !/reserve: Math\.round\(acct\.grain/.test(econ),
+  '旬计簿又另起一本虚拟储备账，200 旬会跌到 −34 万');
+ok(!/rationRate: 0\.22/.test(econ) && /rationRate: 1\.0/.test(econ),
+  '势力库存配给比例不是整份，库存与净额会对不上');
+ok(/state\.resources\?\.\[fid\]\?\.grain/.test(econ), '旬计簿 reserve 没读真实库存');
+ok(/garrison \* upkeep \* fullTurns/.test(camp) &&
+   /cfg\.condition\?\.hunger\?\.fullTurns/.test(camp) &&
+   /condition\.hunger\.fullTurns/.test(condSrc),
+  '城仓初值没与 condition.js 的「存粮可支撑旬数 / fullTurns」同源');
+const upkeepVal = JSON.parse(cfgJson).hidden.grainUpkeepPerUnitTurn;
+ok(upkeepVal > 0 && upkeepVal < 0.1,
+  `每兵旬耗粮 ${upkeepVal} 与领地旬产粮不同量级，长局要么恒撑要么恒饿`);
+ok(/cfg\.hidden\.grainUpkeepPerUnitTurn \* 6/.test(camp), '征兵成本没与每兵旬耗粮同源');
+ok(/starvingCities > 0 \?/.test(econ), '断粮旬数又改回看总净额，局部饿城会被全局余粮放过');
+
+// AI：目标评分 + 断粮救荒，不许退回「闭眼撞坚城 / 断粮硬征兵」。
+ok(/export function targetScore/.test(aiSrc) && /export const AI_TARGET/.test(aiSrc) &&
+   /garrisonDiv|wallDiv|granaryRaidBonus/.test(aiSrc), 'AI 目标评分缺件');
+ok(/function planRelief/.test(aiSrc) && /relief: true/.test(aiSrc) &&
+   /if \(starving\) return planRelief/.test(aiSrc), 'AI 断粮救荒分支缺失');
+ok(/aiRejected/.test(camp), 'AI 被拒命令没进 stats，长局空转又看不见了');
+ok(existsSync(join(root, 'scripts/longrun.mjs')) &&
+   existsSync(join(root, 'tests/longrun.test.mjs')), '长局对演脚本或回归单测缺失');
+ok(/firstStarve/.test(longrunSrc) && /aiRejected/.test(longrunSrc),
+  '长局脚本没观测首次断粮旬 / AI 被拒数');
+ok(/§十|长局对演/.test(xunDoc), '旬循环白话底本缺长局对演与二次定标台账');
+
+// B3 / D 段：README 当前锚点、零随机限定、边界按快照读。
+ok(/## 当前验证实数（锚点）/.test(readme) && /当时快照，不是错/.test(readme),
+  'README 缺「当前验证实数」锚点，旧数会被当成现状');
+ok(/npm test\s+# 以当期输出为准/.test(readme), 'README 运行段仍写死 121 个单测');
+ok(/策略 \/ 战斗层零位图、零墙钟、零随机/.test(readme) &&
+   /全库严格零 Math\.random.*不成立/.test(readme),
+  'README 没把「零随机」收紧到策略 / 战斗层');
+ok(/当前结构补记/.test(readme) && /src\/economy\.js/.test(readme) &&
+   /src\/atlas\.js/.test(readme) && /config\/historica\.json/.test(readme),
+  'README 当前结构没补 v0.9.4 典籍与 C1 模块');
+for (const b of ['8 张离散帧最近邻量化', '刚体旋转投影',
+  '纯静态 Pages 无构建链']) {
+  ok(readme.includes(b), `README 缺如实边界「${b}」`);
+}
+// 这两条在 README 里带行内代码反引号，按「关键片段同段出现」判，不用整串字面量。
+ok(/build_units\.py[\s\S]{0,40}几何派生/.test(readme),
+  'README 缺如实边界「步态是 build_units.py 几何派生」');
+ok(/supabase\/[\s\S]{0,40}零预算联机地基/.test(readme),
+  'README 缺如实边界「supabase/ 是零预算联机地基」');
+ok(/本机存档.*两条线|两条线，别混读/.test(readme), 'README 没写清三席存档与 supabase 两条线');
+
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);

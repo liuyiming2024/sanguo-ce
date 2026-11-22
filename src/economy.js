@@ -15,11 +15,11 @@
 
 export const COMMISSARY = {
   garrisonUpkeep: 0.12,   // 与 cfg.hidden.grainUpkeepPerUnitTurn 同源
-  fieldUpkeep: 0.18,      // 在途部队比驻军更耗粮
+  fieldUpkeep: 0.07,      // 在途部队约为驻军两倍口粮
   starvationGrace: 2,     // 连续断粮几旬后军心崩、开始逃兵
-  startReserve: 600,      // 开局周转粮（只作记，不锁征发）
+  startReserve: 600,      // 开局周转粮（势力库存初值，由装配层注入）
   routRate: 0.015,        // 断粮每旬逃兵比例
-  rationRate: 0.22,       // 势力库存按旬承担驻军/在途耗粮的比例
+  rationRate: 1.0,        // 势力库存按旬承担全部驻军/在途耗粮：库存 = 产 − 耗的累积
 };
 
 /** 懒初始化：旧存档没有这本账，读进来第一旬自动补上，不改其它字段。 */
@@ -91,25 +91,27 @@ export function settleXun(state, yieldByOwner) {
       }
     });
 
-    // ③ 势力军粮账：与城仓同源同量，供旬计簿展示。
-    // 注意：这本账只作「流量 / 净额」记，不用虚拟储备去锁征发 ——
-    // 开局产粮 944 / 耗粮 2095，任何从零起算的虚拟账都会立刻负数，
-    // 把正常征兵出征全锁死。真实约束交给「城仓是否断粮」。
+    // ③ 势力军粮账：只记「本旬流量 / 净额 / 断粮旬数」，不另起一本虚拟储备。
+    // 长局实测教训：旧版把每旬净额累加成 reserve，200 旬跌到 −34 万，
+    // 而势力库存反而涨到 8 万 —— 两个数字互不相干，玩家看了只会更糊涂。
+    // 现在 reserve 直接读 state.resources[fid].grain（顶栏「粮」那本账），
+    // 它与 collectResources 的入账、发令扣费、配给扣粮是同一份，逐字可对。
     const acct = commissaryOf(state, fid);
     const net = Math.round((income - garrisonUpkeep - fieldUpkeep) * 10) / 10;
-    acct.grain = Math.round((acct.grain + net) * 10) / 10;
     acct.lastIncome = Math.round(income * 10) / 10;
     acct.lastUpkeep = Math.round((garrisonUpkeep + fieldUpkeep) * 10) / 10;
     acct.lastNet = net;
     acct.lastTurn = state.turn;
     const starvingCities = ownCities.filter((c) => c.starving).length;
     acct.starvingCities = starvingCities;
-    acct.shortageTurns = starvingCities > 0 && net < 0
-      ? acct.shortageTurns + 1 : 0;
+    // 断粮只看城仓，不看总净额：大城亏、小城盈时总账仍可能为正，
+    // 但已经在饿肚子的那座城不该因为「全局尚有余粮」被放过。
+    acct.shortageTurns = starvingCities > 0 ? acct.shortageTurns + 1 : 0;
 
     // ④ 势力库存配给：state.resources[fid].grain 才是发令时真正扣的那一本账。
-    // 每旬按驻军耗粮的 rationRate 从库存扣一道，于是「多征兵 → 库存吃紧 → 发不出令」，
-    // 「屯田增产 → 缓解」，「撤兵减耗 → 缓解」。城仓管城池死活，库存管能不能出兵，两本账各司其职。
+    // collectResources 每旬先把全境产粮入账，这里再把驻军/在途耗粮整份扣回去，
+    // 于是库存 = 历旬结余累积。「多征兵 / 多出征 → 由盈转亏 → 发不出令」，
+    // 「屯田增产 / 撤兵减耗 → 回血」。城仓管城池死活，库存管能不能出兵。
     const ration = Math.round((garrisonUpkeep + fieldUpkeep) * COMMISSARY.rationRate * 10) / 10;
     const pool = state.resources?.[fid];
     if (pool) {
@@ -128,7 +130,7 @@ export function settleXun(state, yieldByOwner) {
       garrison, field,
       garrisonUpkeep: Math.round(garrisonUpkeep * 10) / 10,
       fieldUpkeep: Math.round(fieldUpkeep * 10) / 10,
-      net, reserve: Math.round(acct.grain * 10) / 10,
+      net, reserve: Math.round((state.resources?.[fid]?.grain ?? 0) * 10) / 10,
       routed, cities: ownCities.length,
       shortageTurns: acct.shortageTurns,
     };
@@ -150,7 +152,7 @@ export function xunLedger(state) {
     out.byFaction[f.id] = {
       name: f.name, income: acct.lastIncome,
       garrison, field, upkeep: acct.lastUpkeep, lastNet: acct.lastNet,
-      reserve: Math.round(acct.grain * 10) / 10,
+      reserve: Math.round((state.resources?.[f.id]?.grain ?? 0) * 10) / 10,
       shortageTurns: acct.shortageTurns,
       locked: acct.shortageTurns >= COMMISSARY.starvationGrace,
       cities: cities.length,
