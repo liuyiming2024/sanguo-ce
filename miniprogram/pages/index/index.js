@@ -105,6 +105,10 @@ Page({
     wx.showToast({ title: '已清空', icon: 'none' });
   },
 
+  onSlice() {
+    wx.navigateTo({ url: '/pages/slice/index' });
+  },
+
   onShareAppMessage() {
     // 分享 path 仍不携带整段口令（几千字符会被截断），但可以带六位短号。
     // 短号只是取件码：对方点开卡片看到它，去「传帖台」兑换整帖；本页不联网。

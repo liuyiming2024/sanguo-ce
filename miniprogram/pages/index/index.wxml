@@ -49,5 +49,7 @@
     <button class="btn ghost" bindtap="onClear">清 空 本 机</button>
   </view>
 
+  <button class="btn ghost" bindtap="onSlice">打开「最小可玩切片」</button>
+
   <view class="foot">分享卡片只带一句提示，整段口令走剪贴板 · 零外部域名 · 零位图</view>
 </view>

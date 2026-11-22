@@ -1,0 +1,109 @@
+{
+  "generatedBy": "scripts/sync-miniprogram.mjs",
+  "sourceRoot": "../../",
+  "entries": [
+    "src/campaign.js",
+    "src/persist.js",
+    "src/save-slots.js",
+    "src/outcome.js",
+    "src/platform/index.js",
+    "src/version.js"
+  ],
+  "version": "0.9.4",
+  "configSha256": "2a12c80f24a4baf17578279b6987b9dce9d18a21d68d07fc16861bd76cd24690",
+  "files": [
+    {
+      "path": "src/ai.js",
+      "sha256": "9b20be5f4c3dda82829e67306192f04da118b278125adf9abca5719fc7883155"
+    },
+    {
+      "path": "src/calendar.js",
+      "sha256": "c1a60af49d2995cb9c1bcf164d36a14c5c2bc3ae20971e5edc61cc356101cc61"
+    },
+    {
+      "path": "src/campaign.js",
+      "sha256": "af33a9f0901ac317a79c6c99dd6ef1cebeb896bb54d14bc177b2e2c4743a774a"
+    },
+    {
+      "path": "src/condition.js",
+      "sha256": "3bf32765743b7699a3a001b4fe72ac47695d0ec9f3318964d98794548a047143"
+    },
+    {
+      "path": "src/direction.js",
+      "sha256": "abe76ccd701c22f2efb35a9b471a3782962b91bfea793b8d6281ea187bc4dbea"
+    },
+    {
+      "path": "src/economy.js",
+      "sha256": "a63b8a9b6aed85c8dd03895af0111839f5fc5784e30ee189cc63880972ae9118"
+    },
+    {
+      "path": "src/field-resolve.js",
+      "sha256": "057950a65e929c4aa5d7a90b4c0f81dd22fb1d9c94b888574b67d8dded32c698"
+    },
+    {
+      "path": "src/generals.js",
+      "sha256": "c58be023b0fa94f3a4a8a8a99c7fa2d8f705be34f3b8808a2d124e6f0373cee2"
+    },
+    {
+      "path": "src/map-data.js",
+      "sha256": "88095fd79669640b325283ab44f7e271da6b2b0ad1e5bd7da5d7c3fd69aa7b3e"
+    },
+    {
+      "path": "src/outcome.js",
+      "sha256": "647341266001e56d1bb82fe187964e833d55b4250e3affb6846c3df4230f1fca"
+    },
+    {
+      "path": "src/pathfind.js",
+      "sha256": "15410a0add3bc9fa9b183513b5e4dc7a42d2a450aac82aae6d9e65b54d59ce23"
+    },
+    {
+      "path": "src/persist.js",
+      "sha256": "b9d99dd91f920c281e480cf8014bd581a393c05eed9efc2ed1ae28e51f8780d7"
+    },
+    {
+      "path": "src/platform/canvas.js",
+      "sha256": "9216f1e883ef5982fe8d6b6d98904b6049231b5ebfaf45d066e97e278c519b75"
+    },
+    {
+      "path": "src/platform/index.js",
+      "sha256": "4e24ea9fd398ffcbefc3c275f4685c31cc0177a0effe7501a01f215917463ba5"
+    },
+    {
+      "path": "src/platform/input.js",
+      "sha256": "7395841bad66717e16ec24be72fccf58810c49a9e815eb896f39fa3641aeb688"
+    },
+    {
+      "path": "src/platform/storage.js",
+      "sha256": "c4039a0f3fd93a532084a96dd8e7226f14e519fdcda20180449734ac5ca6f228"
+    },
+    {
+      "path": "src/quanjing-data.js",
+      "sha256": "e57a43174adf0fd746e6b5059eb64cbeaa162ea04da0130ad52ff57966a87b73"
+    },
+    {
+      "path": "src/rng.js",
+      "sha256": "016a33623caa2d5bc27504d56ddd0fe7f287ebf6d7225fe982406134a4be682a"
+    },
+    {
+      "path": "src/save-slots.js",
+      "sha256": "737e09a492aa0a2afcdb98f3f8256498e7279fc5965e661e9881259d7c2276ec"
+    },
+    {
+      "path": "src/siege-grid.js",
+      "sha256": "d01d5e7172c8a7a882c0262af8d1639c775fc6bf6f6b941b687836ac0f15adae"
+    },
+    {
+      "path": "src/sync.js",
+      "sha256": "87902e08f974408cdd691def9d5c36740d8a39ce38c76e7ce373577c10d5311e"
+    },
+    {
+      "path": "src/terrain.js",
+      "sha256": "1dfa42c4ad213605457dba270d05deb81aecee4a3a76b5193571f167718376d0"
+    },
+    {
+      "path": "src/version.js",
+      "sha256": "3080e2fcd3a51745d298269e41e11633f1a0304ea02f92d96894d89d8d4efb6d"
+    }
+  ],
+  "configModuleSha256": "9de2f532a205885b7ef441faeee81f846959b573ca77caff9cdbdf50e0bbab49"
+}

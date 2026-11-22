@@ -6,6 +6,7 @@
 // 通常几十到几百格，localStorage 完全装得下，也不会把 36MB 位图塞进去。
 import { createCampaign } from './campaign.js';
 import { createTerrain } from './terrain.js';
+import { storage, now } from './platform/index.js';
 
 export const SAVE_KEY = 'sanguo-ce:save:v1';
 
@@ -29,7 +30,7 @@ export function serializeGame({ cfg, state, rng, snapshot, ui }) {
   return {
     v: 1, version: cfg.meta.version,
     mapId: state.mapId ?? 'guandu',
-    savedAt: Date.now(),
+    savedAt: now(),
     seed: state.rngSeed,
     playerFaction: state.playerFaction,
     turn: state.turn,
@@ -119,19 +120,22 @@ export function deserializeGame(cfg, raw) {
   };
 }
 
-/** 浏览器侧：存 / 读 / 清。任何异常都静默降级为「没有存档」，不影响开局。 */
+/**
+ * 存 / 读 / 清：宿主由 src/platform/ 注入（浏览器 localStorage / 小程序 wx /
+ * Node 内存 Map），本文件不再直接碰任何宿主 API。
+ * 任何异常都静默降级为「没有存档」，绝不影响开局。
+ */
 export function saveToStorage(data) {
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-    return true;
+    return storage().setItem(SAVE_KEY, JSON.stringify(data)) !== false;
   } catch { return false; }
 }
 export function readFromStorage() {
   try {
-    const s = localStorage.getItem(SAVE_KEY);
+    const s = storage().getItem(SAVE_KEY);
     return s ? JSON.parse(s) : null;
   } catch { return null; }
 }
 export function clearStorage() {
-  try { localStorage.removeItem(SAVE_KEY); } catch { /* 忽略 */ }
+  try { storage().removeItem(SAVE_KEY); } catch { /* 忽略 */ }
 }

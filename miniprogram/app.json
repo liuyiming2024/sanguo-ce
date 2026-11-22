@@ -1,5 +1,5 @@
 {
-  "pages": ["pages/index/index"],
+  "pages": ["pages/index/index", "pages/slice/index"],
   "window": {
     "navigationBarBackgroundColor": "#0a0d0c",
     "navigationBarTextStyle": "white",

@@ -47,7 +47,8 @@ test('inspectTicket 只校字段不重放：正常帖、错帖、缺存档都给
 
 test('小程序工程齐全：页面注册、零外部请求、零位图、不搬策略层', () => {
   const app = JSON.parse(read(MP + 'app.json'));
-  assert.deepEqual(app.pages, ['pages/index/index']);
+  // P2 之后多一页「最小可玩切片」；传帖台首页仍是第一页，不能挤掉。
+  assert.deepEqual(app.pages, ['pages/index/index', 'pages/slice/index']);
   for (const p of app.pages) {
     for (const ext of ['.wxml', '.wxss', '.js', '.json']) {
       assert.ok(existsSync(new URL(`../${MP}${p}${ext}`, import.meta.url)), `缺 ${p}${ext}`);
@@ -55,10 +56,13 @@ test('小程序工程齐全：页面注册、零外部请求、零位图、不�
   }
   assert.ok(existsSync(new URL(`../${MP}project.config.json`, import.meta.url)));
   assert.ok(existsSync(new URL(`../${MP}sitemap.json`, import.meta.url)));
+  // 传帖台链路（app / ticket / relay / index 页）仍不许碰策略层与外部请求。
+  // P2 的策略层只允许以「镜像」形式存在于 logic/ 与 pages/slice/，见
+  // tests/miniprogram-slice.test.mjs 单独验。
   const js = [read(MP + 'app.js'), read(MP + 'utils/ticket.js'),
     read(MP + 'utils/relay.js'), read(MP + 'pages/index/index.js')].join('\n');
   for (const banned of ['wx.request', 'wx.connectSocket', 'https://', 'http://', 'drawImage', 'new Image']) {
-    assert.equal(js.includes(banned), false, `小程序端出现「${banned}」，会引入备案域名 / 渲染依赖`);
+    assert.equal(js.includes(banned), false, `传帖台链路出现「${banned}」，会引入备案域名 / 渲染依赖`);
   }
   const wxml = read(MP + 'pages/index/index.wxml');
   assert.equal(wxml.includes('<image'), false, '验证版不该有位图元素');
@@ -73,7 +77,12 @@ test('小程序工程齐全：页面注册、零外部请求、零位图、不�
   assert.equal(all.some((p) => /\.(png|jpe?g|webp|gif|svg)$/i.test(p)), false, '小程序目录出现位图');
   assert.ok(all.length >= 10, `小程序文件过少：${all.length}`);
   assert.equal(js.includes('createCampaign') || js.includes('advanceTurn'), false,
-    '验证版不该搬策略层');
+    '传帖台链路不该碰策略层（策略层只在 logic/ 镜像与切片页里）');
+  // P2 新增：镜像存在且由同步脚本生成，切片页确实接了它。
+  assert.ok(existsSync(new URL(`../${MP}logic/MANIFEST.json`, import.meta.url)),
+    '缺 logic/MANIFEST.json：跑 node scripts/sync-miniprogram.mjs');
+  const slice = read(MP + 'pages/slice/index.js');
+  assert.match(slice, /bootSlice|pushTurn|hideSlice|showSlice/);
 });
 
 test('短号只作纯文本取件码：格式、分享 path、零联网', () => {

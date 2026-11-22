@@ -146,9 +146,36 @@ test('存档版本不兼容时安全返回 null，不抛异常', () => {
   assert.equal(b.state.turn, 0);
 });
 
-test('浏览器存储不可用时静默降级，不影响开局', () => {
-  // Node 环境没有 localStorage；三个函数都不得抛异常
-  assert.equal(typeof saveToStorage({ v: 1 }), 'boolean');
-  assert.equal(readFromStorage(), null);
-  assert.doesNotThrow(() => clearStorage());
+test('宿主存储不可用时静默降级，不影响开局', async () => {
+  // P1 之后宿主由 src/platform/ 注入：显式给一个「三个方法全抛错」的驱动，
+  // 比旧版「Node 里恰好没有 localStorage」更精确，仍验同一条契约。
+  const { configurePlatform, resetPlatform } = await import('../src/platform/index.js');
+  const dead = {
+    name: 'dead',
+    getItem() { throw new Error('不可用'); },
+    setItem() { throw new Error('不可用'); },
+    removeItem() { throw new Error('不可用'); },
+  };
+  configurePlatform({ storage: dead });
+  try {
+    assert.equal(typeof saveToStorage({ v: 1 }), 'boolean');
+    assert.equal(saveToStorage({ v: 1 }), false);
+    assert.equal(readFromStorage(), null);
+    assert.doesNotThrow(() => clearStorage());
+  } finally {
+    resetPlatform();
+  }
+});
+
+test('内存驱动下存档可读写：平台层注入后 Node 也能走完整存读链路', async () => {
+  const { configurePlatform, resetPlatform, memoryDriver } = await import('../src/platform/index.js');
+  configurePlatform({ storage: memoryDriver(), now: () => 1111 });
+  try {
+    assert.equal(saveToStorage({ v: 1, mark: 'slice' }), true);
+    assert.equal(readFromStorage().mark, 'slice');
+    clearStorage();
+    assert.equal(readFromStorage(), null);
+  } finally {
+    resetPlatform();
+  }
 });

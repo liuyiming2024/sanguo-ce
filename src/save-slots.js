@@ -8,7 +8,9 @@
 //  ② 读取时 JSON 解析失败 / 版本不符，不删原文，标 corrupt 交界面处置；
 //  ③ 每席带 meta（存时 / 回合 / 图幅 / 城数），列档不必反序列化整局。
 //
-// 浏览器侧：localStorage 不可用时全部静默降级，绝不影响开局。
+// 宿主侧：存储由 src/platform/ 注入（浏览器 / 小程序 / Node 内存），
+// 不可用时全部静默降级，绝不影响开局。本文件不再直接碰 localStorage。
+import { storage, now } from './platform/index.js';
 
 const PREFIX = 'sanguo-ce:slot:';
 export const SLOT_COUNT = 3;
@@ -32,13 +34,13 @@ export function isUsableSave(raw) {
 }
 
 function safeGet(k) {
-  try { return localStorage.getItem(k); } catch { return null; }
+  try { return storage().getItem(k) ?? null; } catch { return null; }
 }
 function safeSet(k, v) {
-  try { localStorage.setItem(k, v); return true; } catch { return false; }
+  try { return storage().setItem(k, v) !== false; } catch { return false; }
 }
 function safeDel(k) {
-  try { localStorage.removeItem(k); } catch { /* 忽略 */ }
+  try { storage().removeItem(k); } catch { /* 忽略 */ }
 }
 
 export function slotMeta(i) {
@@ -85,7 +87,7 @@ export function saveSlot(i, data) {
   if (!n || !isUsableSave(data)) return { ok: false, reason: '档位或局面不合法' };
   if (!safeSet(key(n), JSON.stringify(data))) return { ok: false, reason: '本机存储不可用' };
   const meta = {
-    savedAt: Date.now(), turn: data.turn, mapId: data.mapId ?? 'guandu',
+    savedAt: now(), turn: data.turn, mapId: data.mapId ?? 'guandu',
     chapter: data.chapter ?? null,
     cities: Object.keys(data.cities ?? {}).length,
     playerFaction: data.playerFaction ?? null,
@@ -104,7 +106,7 @@ export function restoreBackup(i) {
   if (!isUsableSave(raw)) return { ok: false, reason: '备份不可用' };
   if (!safeSet(key(n), JSON.stringify(raw))) return { ok: false, reason: '本机存储不可用' };
   safeSet(metaKey(n), JSON.stringify({
-    savedAt: Date.now(), turn: raw.turn, mapId: raw.mapId ?? 'guandu',
+    savedAt: now(), turn: raw.turn, mapId: raw.mapId ?? 'guandu',
     chapter: raw.chapter ?? null, cities: Object.keys(raw.cities ?? {}).length,
     playerFaction: raw.playerFaction ?? null, restoredFromBackup: true,
   }));

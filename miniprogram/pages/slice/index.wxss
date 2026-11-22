@@ -1,0 +1,20 @@
+.page { min-height: 100vh; padding: 28rpx 30rpx 60rpx; background: #e9e3d1; color: #20211f; box-sizing: border-box; }
+.head { display: flex; align-items: center; gap: 20rpx; padding-bottom: 22rpx; border-bottom: 2rpx solid #a99b7c; }
+.seal { width: 76rpx; height: 76rpx; line-height: 76rpx; text-align: center; background: #8c2f24; color: #f4ecda; font-size: 40rpx; border-radius: 6rpx; }
+.htext { display: flex; flex-direction: column; }
+.title { font-size: 34rpx; letter-spacing: 6rpx; font-weight: 600; }
+.sub { font-size: 22rpx; color: #6d6553; margin-top: 6rpx; }
+.note { font-size: 24rpx; line-height: 1.7; color: #55503f; margin: 22rpx 0 26rpx; }
+.card, .reports { background: #f4ecda; border: 2rpx solid #c9bb98; border-radius: 8rpx; padding: 22rpx; margin-bottom: 24rpx; }
+.ct { font-size: 26rpx; letter-spacing: 6rpx; color: #8c2f24; margin-bottom: 16rpx; }
+.kv { display: flex; justify-content: space-between; font-size: 25rpx; padding: 8rpx 0; border-bottom: 1rpx dashed #d8cdb0; }
+.kv text:first-child { color: #6d6553; }
+.row { display: flex; gap: 16rpx; margin-bottom: 16rpx; }
+.btn { flex: 1; font-size: 26rpx; letter-spacing: 2rpx; background: #f4ecda; color: #20211f; border: 2rpx solid #a99b7c; border-radius: 6rpx; }
+.btn.primary { background: #8c2f24; color: #f4ecda; border-color: #8c2f24; }
+.btn.ghost { background: transparent; }
+.life { font-size: 25rpx; color: #3e5c46; margin: 18rpx 0 8rpx; }
+.mono { font-size: 21rpx; color: #6d6553; word-break: break-all; }
+.err { font-size: 24rpx; color: #8c2f24; margin: 14rpx 0; }
+.line { font-size: 24rpx; line-height: 1.8; color: #3b392f; border-bottom: 1rpx dashed #d8cdb0; padding: 6rpx 0; }
+.foot { font-size: 21rpx; color: #8a8069; margin-top: 34rpx; line-height: 1.7; }

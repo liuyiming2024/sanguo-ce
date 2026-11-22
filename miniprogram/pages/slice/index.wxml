@@ -1,0 +1,42 @@
+<view class="page">
+  <view class="head">
+    <view class="seal">策</view>
+    <view class="htext">
+      <view class="title">最 小 可 玩 切 片</view>
+      <view class="sub">刊本 {{version}} · 零位图 · 仅逻辑层</view>
+    </view>
+  </view>
+
+  <view class="note">只验三件事：冷启动建局、推一旬、切后台回来逐字段一致。战报是文本，没有地图、没有 Canvas、没有结算层。</view>
+
+  <view wx:if="{{summary}}" class="card">
+    <view class="ct">局 面</view>
+    <view class="kv"><text>军历</text><text>第 {{summary.turn}} 旬</text></view>
+    <view class="kv"><text>己城 / 敌城</text><text>{{summary.ownCities}} / {{summary.hostileCities}}</text></view>
+    <view class="kv"><text>领地</text><text>{{summary.land}} 格</text></view>
+    <view class="kv"><text>库存粮</text><text>{{summary.grain}}</text></view>
+    <view class="kv"><text>本旬净额</text><text>{{summary.net}}</text></view>
+    <view class="kv"><text>断粮</text><text>{{summary.starving}} 城</text></view>
+    <view class="kv"><text>开战 / 收束</text><text>{{summary.battles}} / {{summary.closed}}</text></view>
+  </view>
+
+  <view class="row">
+    <button class="btn primary" bindtap="onPush">推 一 旬</button>
+    <button class="btn" bindtap="onRead">读 档</button>
+  </view>
+  <view class="row">
+    <button class="btn ghost" bindtap="onNew">另 开 一 局</button>
+    <button class="btn ghost" bindtap="onBack">回 军 令 帖</button>
+  </view>
+
+  <view class="life">{{lifecycle}}</view>
+  <view wx:if="{{hash}}" class="mono">指纹 {{hash}}</view>
+  <view wx:if="{{err}}" class="err">{{err}}</view>
+
+  <view wx:if="{{lines.length}}" class="reports">
+    <view class="ct">军 情</view>
+    <view wx:for="{{lines}}" wx:key="*this" class="line">{{item}}</view>
+  </view>
+
+  <view class="foot">逻辑层镜像由 sync-miniprogram.mjs 生成 · 宿主由 src/platform/ 注入 · 未接真机</view>
+</view>

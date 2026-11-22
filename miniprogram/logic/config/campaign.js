@@ -1,0 +1,578 @@
+// 由 scripts/sync-miniprogram.mjs 生成，勿手改。
+// 小程序不能直接 import .json，这里把配置包成 ESM 模块；
+// meta.version 与网页版 boot() 一样从 src/version.js 注入，全库仍只有一个版本数字。
+import { VERSION } from '../src/version.js';
+export const CAMPAIGN = {
+  "meta": {
+    "title": "三国策 · 官渡",
+    "subtitle": "建安五年 · 官渡章回 · 工笔青绿设色"
+  },
+  "calendar": {
+    "startYear": 200,
+    "startMonth": 1,
+    "startXun": 1,
+    "xunPerMonth": 3,
+    "secPerTurn": 4,
+    "fastForwardStepSec": 0.016666666666666666,
+    "maxFastForwardSteps": 200000,
+    "_note": "内部 1 回合 = 1 旬（10 日）；显示层映射为年号+农历月+日（初一/十一/廿一），3 旬进一月。建安五年正月开局，与官渡章回史实时序对齐。"
+  },
+  "factions": [
+    {
+      "id": "cao",
+      "name": "曹操",
+      "color": "#6fa8c4",
+      "colorDark": "#2b4d5e",
+      "capital": "许都",
+      "ai": false
+    },
+    {
+      "id": "yuan",
+      "name": "袁绍",
+      "color": "#c9a35a",
+      "colorDark": "#6b5227",
+      "capital": "邺",
+      "ai": true
+    },
+    {
+      "id": "liu",
+      "name": "刘备",
+      "color": "#8fb56d",
+      "colorDark": "#3d5c32",
+      "capital": "汝南",
+      "ai": true
+    }
+  ],
+  "units": {
+    "daodun": {
+      "name": "刀盾兵",
+      "kind": "melee",
+      "support": false,
+      "projectile": null,
+      "hp": 100,
+      "dmg": 12,
+      "range": 18,
+      "speed": 26,
+      "cost": 12
+    },
+    "changqiang": {
+      "name": "长枪兵",
+      "kind": "melee",
+      "support": false,
+      "projectile": null,
+      "hp": 110,
+      "dmg": 14,
+      "range": 30,
+      "speed": 24,
+      "cost": 14
+    },
+    "gongnu": {
+      "name": "弓弩手",
+      "kind": "ranged",
+      "support": false,
+      "projectile": "arrow",
+      "hp": 70,
+      "dmg": 10,
+      "range": 150,
+      "speed": 25,
+      "cost": 16
+    },
+    "chuangnu": {
+      "name": "床弩",
+      "kind": "ranged",
+      "support": false,
+      "projectile": "bolt",
+      "hp": 90,
+      "dmg": 22,
+      "range": 220,
+      "speed": 12,
+      "cost": 28
+    },
+    "paoshi": {
+      "name": "抛石机",
+      "kind": "ranged",
+      "support": false,
+      "projectile": "stone",
+      "hp": 120,
+      "dmg": 30,
+      "range": 260,
+      "speed": 8,
+      "cost": 40
+    },
+    "zhongjia": {
+      "name": "重甲步",
+      "kind": "siege",
+      "support": false,
+      "projectile": null,
+      "hp": 220,
+      "dmg": 16,
+      "range": 20,
+      "speed": 14,
+      "cost": 34
+    },
+    "junshi": {
+      "name": "军师",
+      "kind": "support",
+      "support": true,
+      "projectile": null,
+      "hp": 60,
+      "dmg": 0,
+      "range": 0,
+      "speed": 24,
+      "cost": 30,
+      "skills": [
+        "鼓舞",
+        "疑兵",
+        "火攻"
+      ],
+      "_note": "辅助，不直接伤害；计策只改士气/城防/警觉等隐藏属性，不改物理法则。"
+    },
+    "jiangjun": {
+      "name": "主将",
+      "kind": "hero",
+      "support": false,
+      "projectile": null,
+      "hp": 90,
+      "dmg": 20,
+      "range": 26,
+      "speed": 30,
+      "cost": 0,
+      "_note": "将领是特殊的兵：有格位、会走、会打、会挨打、会阵亡或被擒，倒下直接崩己方士气。"
+    }
+  },
+  "hidden": {
+    "moraleStart": 72,
+    "moraleMin": 0,
+    "moraleMax": 100,
+    "moraleDriftPerSec": 0.05,
+    "fatiguePerMarchTurn": 8,
+    "fatigueRecoverPerTurn": 3,
+    "grainPerPopTurn": 0.9,
+    "grainUpkeepPerUnitTurn": 0.035,
+    "alertStart": 55,
+    "formationStart": 80,
+    "_note": "士气 / 疲劳 / 粮草 / 警觉 / 阵型完整度：均不直接显示，只通过溃散、被擒、征兵上限、行军速度间接生效。grainUpkeepPerUnitTurn 为「每兵每旬口粮」：与领地旬产粮同量级，常态略盈，征兵 / 出征才把账推成赤字，断粮 debuff 才真会触发。"
+  },
+  "city": {
+    "wallStart": 100,
+    "wallRepairPerTurn": 1.2,
+    "popToTroopRatio": 0.06,
+    "garrisonRecruitPerTurn": 0.02,
+    "siegeWallDrainPerSec": 0.06,
+    "moraleRoutThreshold": 28,
+    "commanderCaptureThreshold": 18,
+    "_note": "破城条件走城门/府衙 + 主帅状态机，不用「雕像血量归零」。"
+  },
+  "orders": {
+    "marchKmPerTurn": 42,
+    "minArriveTurn": 1,
+    "maxConcurrentPerFaction": 10,
+    "types": [
+      "claim",
+      "march",
+      "scout",
+      "develop",
+      "buildFort",
+      "transfer",
+      "garrison",
+      "reinforce",
+      "withdraw",
+      "recruit",
+      "fireDirectional",
+      "stratagem"
+    ],
+    "cost": {
+      "scout": {
+        "grain": 20
+      },
+      "develop": {
+        "stone": 40,
+        "grain": 30
+      },
+      "buildFort": {
+        "wood": 60,
+        "stone": 80
+      },
+      "claim": {
+        "grain": 15
+      }
+    },
+    "_note": "大地图指令：占地/出征/侦察/屯田/筑垒/调动/驻守/征兵/增援/撤退/齐射/计策。全部带 arriveTurn。"
+  },
+  "terrain": {
+    "cols": 144,
+    "rows": 108,
+    "tilePx": 24,
+    "seed": 20261114,
+    "noiseOctaves": 5,
+    "riverWidthTiles": 2,
+    "roadWidthTiles": 1,
+    "cityRadiusTiles": 2,
+    "maxLandLevel": 9,
+    "fordCost": 1.8,
+    "mountainPassCost": 2.4,
+    "moveCost": {
+      "plain": 1,
+      "farmland": 0.9,
+      "road": 0.55,
+      "forest": 1.6,
+      "hill": 2.2,
+      "marsh": 2.6,
+      "ford": 1.8,
+      "pass": 2.4,
+      "city": 1.2,
+      "gate": 1,
+      "mountain": 99,
+      "river": 99,
+      "lake": 99,
+      "wall": 99
+    },
+    "yield": {
+      "wood": {
+        "plain": 0.2,
+        "forest": 2.4,
+        "hill": 0.9,
+        "farmland": 0.3
+      },
+      "stone": {
+        "plain": 0.2,
+        "hill": 1.4,
+        "mountain": 2.8,
+        "forest": 0.4
+      },
+      "iron": {
+        "plain": 0.2,
+        "hill": 1.6,
+        "mountain": 2.2,
+        "marsh": 0.5
+      },
+      "grain": {
+        "plain": 0.8,
+        "farmland": 3.2,
+        "marsh": 0.6,
+        "forest": 0.3
+      }
+    },
+    "_note": "144×108 确定性栅格，锚点用真实经纬度（黄河、嵩山/太行、城池、汉末道路、泽薮）。每格有地形/等级/四资源产出/通行代价/归属；连地铺路 + A* 寻路。不是抽象城点连线。",
+    "_tilePxNote": "离屏按 24px/格渲染（3456×2592）；文字/注记/边界改在主画布按屏幕像素绘制，避免缩放后糊成一片。",
+    "_clarityNote": "地貌纹理在离屏，信息层在屏幕空间：城名、山水注记、关隘名、领地边界、选中框、缩略导航永远固定字号。"
+  },
+  "battle": {
+    "fixedStepSec": 0.016666666666666666,
+    "gridCols": 24,
+    "gridRows": 16,
+    "gate": {
+      "col": 0,
+      "row": 8
+    },
+    "yamen": {
+      "col": 19,
+      "row": 8
+    },
+    "_note": "攻城战斗固定步长；格坐标，range 按 pxPerTile 折算。隐藏属性全部只通过溃散/被擒/战损间接生效。 战斗只在玩家把兵派进城里后开打；城外大营由玩家投入，援军按抵达时刻进大营不打断战斗。 主将为真实战斗单位，不再是坐镇府衙的框。",
+    "pxPerTile": 20,
+    "maxBattleSec": 180,
+    "commanderGuardMin": 2,
+    "moraleRoutThreshold": 24,
+    "moraleMax": 100,
+    "projectileSpeed": {
+      "arrow": 9.5,
+      "bolt": 13,
+      "stone": 5.2
+    },
+    "projectileTtlSec": {
+      "arrow": 3.2,
+      "bolt": 3,
+      "stone": 4.5
+    },
+    "meleeCooldownSec": 1.35,
+    "rangedCooldownSec": 2.1,
+    "siegeCooldownSec": 2.8,
+    "stratagemCooldownSec": 6,
+    "hitRadiusTiles": 0.62,
+    "routSpeedTilesPerSec": 2.6,
+    "gateHp": 220,
+    "yamenHp": 300,
+    "wallHp": 260,
+    "dmgMoraleFloor": 0.55,
+    "dmgFatigueDiv": 220,
+    "dmgFormationFloor": 0.78,
+    "moraleLossPerAllyDown": 5.5,
+    "moraleLossPerEnemyReinforce": 3,
+    "moraleGainPerStratagem": 9,
+    "moraleRecoverPerSec": 0.14,
+    "fatiguePerSec": 0.035,
+    "grainDrainPerSec": 0.004,
+    "captureChanceBase": 0.62,
+    "captureLoyaltyDiv": 260,
+    "commanderHp": 90,
+    "commanderExposeRadius": 2.2,
+    "generalSkill": {
+      "_note": "将领技能按五维派生，对照墨战四类卡牌：速攻/干扰/发育/防御。冷却与倍率走配置，不写死在逻辑里。 对照墨战阵法：锋矢阵给前端将领临时霸体、车悬阵每攻击五次后撤休整、连锁流先破防后输出。",
+      "cd": {
+        "fengshi": 10.5,
+        "yibing": 12,
+        "duzhan": 11,
+        "gushou": 9.5,
+        "luanwu": 10
+      },
+      "moraleGain": 12,
+      "guardSec": 4.2,
+      "confuseSec": 1.7,
+      "guardDmgK": 0.45,
+      "lungeTiles": 1.15,
+      "sweepRadius": 1.6,
+      "luanwuHits": 4,
+      "restEvery": 5,
+      "restSec": 0.62,
+      "empoweredDmgK": 1.28,
+      "fengshiGuardSec": 2.2,
+      "empoweredHits": 2
+    },
+    "generalAttack": {
+      "_note": "四种攻击样式轮换，避免将领一直重复同一个动画；序号确定性推进，不引入随机源。",
+      "styles": [
+        {
+          "id": "zhipi",
+          "label": "直劈",
+          "dmg": 1,
+          "cd": 1.35,
+          "targets": 1
+        },
+        {
+          "id": "hengsao",
+          "label": "横扫",
+          "dmg": 0.74,
+          "cd": 1.75,
+          "targets": 3
+        },
+        {
+          "id": "tujin",
+          "label": "突进",
+          "dmg": 1.28,
+          "cd": 2.05,
+          "targets": 1,
+          "lunge": 0.62
+        },
+        {
+          "id": "xuli",
+          "label": "蓄势",
+          "dmg": 1.9,
+          "cd": 2.55,
+          "targets": 1,
+          "windup": 0.34
+        }
+      ]
+    }
+  },
+  "presentation": {
+    "parchment": "#cdc4a7",
+    "parchmentLight": "#ded6bc",
+    "ink": "#2f3a33",
+    "line": "#53604f",
+    "mountain": "#7f9c84",
+    "mountainLight": "#9ab397",
+    "river": "#a6c0bb",
+    "riverLight": "#c6dcd5",
+    "road": "#a4835a",
+    "text": "#26302a",
+    "textDim": "#5c6b5a",
+    "gold": "#8a6b34",
+    "selection": "#a6483a",
+    "camp": "#6b93ad",
+    "_note": "工笔青绿设色：矿物颜料压灰半档；城池小地图取同一色板。",
+    "cityFloor": "#e8dfc6",
+    "cityStreet": "#a4835a",
+    "campTent": "#9aae89"
+  },
+  "cityView": {
+    "cols": 24,
+    "rows": 16,
+    "campRatio": 0.22,
+    "gate": {
+      "col": 0,
+      "row": 8
+    },
+    "yamen": {
+      "col": 19,
+      "row": 8
+    },
+    "unitPx": 20,
+    "deployCostSec": 0.35,
+    "circleMinPx": 14,
+    "dragThresholdPx": 12,
+    "_note": "城池单独界面：固定视口、不拖动，只有调兵。己方部队初始在城内，敌方在城外大营；拖拽把兵从大营投入城内或撤出。",
+    "warehouses": [
+      [
+        6,
+        3
+      ],
+      [
+        6,
+        12
+      ],
+      [
+        14,
+        3
+      ],
+      [
+        14,
+        12
+      ]
+    ],
+    "_obstaclesNote": "府衙 3x3 + 四处仓井 2x2 + 城墙列（城门通道除外）为不可通行格；A* 禁止贴角穿越。"
+  },
+  "generals": {
+    "base": {
+      "command": 62,
+      "force": 58,
+      "intellect": 55,
+      "politics": 54,
+      "loyalty": 70
+    },
+    "perCity": {
+      "xudu": {
+        "name": "荀彧",
+        "command": 78,
+        "force": 32,
+        "intellect": 92,
+        "politics": 96,
+        "loyalty": 94
+      },
+      "ye": {
+        "name": "审配",
+        "command": 74,
+        "force": 55,
+        "intellect": 78,
+        "politics": 80,
+        "loyalty": 88
+      },
+      "guandu": {
+        "name": "淳于琼",
+        "command": 58,
+        "force": 66,
+        "intellect": 38,
+        "politics": 42,
+        "loyalty": 61
+      },
+      "baima": {
+        "name": "颜良",
+        "command": 72,
+        "force": 91,
+        "intellect": 32,
+        "politics": 30,
+        "loyalty": 82
+      },
+      "yanjin": {
+        "name": "文丑",
+        "command": 68,
+        "force": 89,
+        "intellect": 30,
+        "politics": 28,
+        "loyalty": 80
+      }
+    },
+    "effects": {
+      "commandMoraleDiv": 420,
+      "commandTroopCapDiv": 180,
+      "forceMeleeDiv": 300,
+      "intellectRangedDiv": 420,
+      "intellectStratagemDiv": 300,
+      "politicsWallRepairDiv": 260,
+      "loyaltyCaptureDiv": 260
+    },
+    "_note": "统率→士气/带兵上限；武力→近战伤害；智力→远程与计策；政治→城防修复；忠诚→被擒后招降。五维不直接显示数值。"
+  },
+  "facilities": {
+    "effects": {
+      "wallRepairPerLevel": 2.4,
+      "yieldPerLevel": 0.06,
+      "troopCapPerLevel": 14,
+      "gateHpPerLevel": 18,
+      "moralePerLevel": 1.6
+    },
+    "_note": "内政设施等级接进城防修复、产出、征兵上限、城门耐久与初始士气；此前只是展示层。"
+  },
+  "tactics": {
+    "鼓舞": {
+      "morale": 9,
+      "kind": "morale",
+      "_note": "军师计策：只改士气"
+    },
+    "疑兵": {
+      "alert": -14,
+      "kind": "alert",
+      "_note": "降敌警觉，使其更难组织拦截"
+    },
+    "火攻": {
+      "wall": -16,
+      "gate": -10,
+      "kind": "siege",
+      "_note": "削城防与城门耐久，不直接伤人"
+    },
+    "_note": "军师零伤害辅助；计策不改物理法则，也不新增法术/召唤/眩晕。"
+  },
+  "condition": {
+    "grainTiers": [
+      {
+        "min": 70,
+        "label": "充足"
+      },
+      {
+        "min": 40,
+        "label": "尚足"
+      },
+      {
+        "min": 18,
+        "label": "偏紧"
+      },
+      {
+        "min": 6,
+        "label": "将尽"
+      },
+      {
+        "min": 0,
+        "label": "断粮"
+      }
+    ],
+    "debuffTiers": [
+      {
+        "minLoss": 0,
+        "tier": 0,
+        "label": "军情如常",
+        "debuff": ""
+      },
+      {
+        "minLoss": 0.06,
+        "tier": 1,
+        "label": "稍有疲态",
+        "debuff": ""
+      },
+      {
+        "minLoss": 0.12,
+        "tier": 2,
+        "label": "军心动摇",
+        "debuff": "战力约减一两成，行军稍缓"
+      },
+      {
+        "minLoss": 0.32,
+        "tier": 3,
+        "label": "军心大乱",
+        "debuff": "战力约减三成以上，行军迟滞"
+      }
+    ],
+    "showFromTier": 2,
+    "hunger": {
+      "startBelow": 30,
+      "floor": 0.62,
+      "marchFloor": 0.6,
+      "moraleRecoverFloor": 0.3,
+      "fullTurns": 30,
+      "minStart": 8,
+      "_note": "战斗层粮草 0–100 = 存粮可支撑旬数 / 30 旬，攻方用势力库存、守方用城存粮，都按实际兵数扣军粮。"
+    },
+    "_note": "粮草常驻显示大概档位；士气/疲劳/阵型等隐藏属性平时不摊开精确数值，只在严重时浮出模糊 debuff。档位与真实伤害/行军系数同源，文案不含阿拉伯数字。"
+  }
+};
+CAMPAIGN.meta ??= {};
+CAMPAIGN.meta.version = VERSION;

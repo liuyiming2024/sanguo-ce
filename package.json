@@ -6,6 +6,9 @@
   "scripts": {
     "test": "node --test tests/",
     "check": "node scripts/check-map.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "sync:mp": "node scripts/sync-miniprogram.mjs",
+    "longrun": "node scripts/longrun.mjs",
+    "strategy": "node scripts/strategy-sim.mjs"
   }
 }
