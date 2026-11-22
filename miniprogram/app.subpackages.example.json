@@ -1,0 +1,15 @@
+{
+  "_说明": "待启用模板：跑 npm run assets:build 生成 miniprogram/assets/ 后，把下面 subpackages 数组并入 app.json；本文件本身不参与编译。",
+  "subpackages": [
+    {
+      "root": "assets/units-infantry",
+      "name": "infantry",
+      "pages": []
+    },
+    {
+      "root": "assets/units-engine",
+      "name": "engine",
+      "pages": []
+    }
+  ]
+}

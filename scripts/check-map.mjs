@@ -988,6 +988,62 @@ ok(/bundle/.test(readme) && /包体核算|P4/.test(readme), 'README 没补 P4 �
 ok(existsSync(join(root, 'scripts/logic-slice.mjs')), '对面推的 logic-slice.mjs 被弄丢了');
 
 
+
+// ── 画布链路（wxCanvas 真消费）+ 压缩分包方案 ────────────────────────
+const canvasSrc = readFileSync(join(root, 'src/platform/canvas.js'), 'utf8');
+const canvasPage = join(root, 'miniprogram/pages/canvas/index.js');
+const canvasWxml = join(root, 'miniprogram/pages/canvas/index.wxml');
+const appJson2 = JSON.parse(readFileSync(join(root, 'miniprogram/app.json'), 'utf8'));
+const planFile = join(root, 'miniprogram/assets-plan.json');
+const exampleFile = join(root, 'miniprogram/app.subpackages.example.json');
+const assetsScript = join(root, 'scripts/mp-assets.mjs');
+const canvasTest = join(root, 'tests/mp-canvas.test.mjs');
+const sliceDoc2 = readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8');
+
+for (const fn of ['applyDrawOps', 'hostDpr', 'wxCanvas', 'browserCanvas']) {
+  ok(new RegExp(`export function ${fn}\\b`).test(canvasSrc), `canvas.js 缺导出 ${fn}`);
+}
+const ai = canvasSrc.indexOf('export function applyDrawOps');
+const aj = canvasSrc.indexOf('/** 取宿主像素比', ai);
+ok(ai > 0 && aj > ai, 'applyDrawOps 函数体定位失败');
+const aBody = canvasSrc.slice(ai, aj);
+for (const bad of ['document.', 'window.', 'wx.', 'Path2D', 'new Image', 'Date.now', 'Math.random']) {
+  ok(!aBody.includes(bad), `applyDrawOps 出现宿主 API ${bad}`);
+}
+ok(existsSync(canvasPage) && existsSync(canvasWxml), '画布页缺文件');
+const cp = readFileSync(canvasPage, 'utf8'), cw = readFileSync(canvasWxml, 'utf8');
+ok(/logic\/src\/platform\/canvas\.js/.test(cp) && /applyDrawOps\(/.test(cp) &&
+   /wxCanvas\('#mini', wx/.test(cp) && /miniMapOps\(/.test(cp),
+  '画布页没真消费镜像 canvas + 绘制指令');
+ok(/onReady\(\)/.test(cp) && /_fail\(/.test(cp), '画布页缺 onReady 或降级分支');
+ok(/<canvas type="2d" id="mini"/.test(cw) && !/\.(png|jpe?g|webp)\b/i.test(cw),
+  '画布页 canvas 节点或零位图口径不对');
+ok(appJson2.pages.length === 3 && appJson2.pages.includes('pages/canvas/index'),
+  'app.json 没注册画布页');
+ok(appJson2.subpackages === undefined,
+  '真分包需真机 assets:build 后手动启用，不能现在声明空分包');
+ok(/onCanvas\(\)/.test(readFileSync(join(root, 'miniprogram/pages/index/index.js'), 'utf8')),
+  '首页缺画布页入口');
+// 回归基线：切片页仍零 Canvas
+ok(!sliceWxml.includes('<canvas') && !sliceJs2.includes('getContext'),
+  '切片页破了零 Canvas 基线');
+ok(existsSync(assetsScript) && existsSync(planFile) && existsSync(exampleFile) &&
+   existsSync(canvasTest), '分包方案 / 画布回归文件缺失');
+ok(/miniprogram\/assets\//.test(readFileSync(join(root, '.gitignore'), 'utf8')),
+  '.gitignore 没忽略分包产物');
+try {
+  const out = execFileSync(process.execPath, [assetsScript, '--check'], { encoding: 'utf8' });
+  ok(/分包方案一致/.test(out), 'mp-assets.mjs --check 没通过');
+} catch { ok(false, '分包方案护栏失败：npm run assets:plan 看明细'); }
+const plan = JSON.parse(readFileSync(planFile, 'utf8'));
+ok(plan.sheets.length === 4 && plan.subpackages.length >= 2, '分包方案没把 4 张 sheet 拆成 ≥2 组');
+for (const g of plan.subpackages) {
+  ok(g.bytes <= plan.thresholds.wxSub, `分包 ${g.root} 超微信单个分包 2 MB`);
+}
+ok(/§十二|画布格网|assets:build/.test(sliceDoc2), '小程序后台说明没补 §十二');
+ok(/mp-canvas|assets:plan|画布格网/.test(readme), 'README 没补画布链路与分包入口');
+
+
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);

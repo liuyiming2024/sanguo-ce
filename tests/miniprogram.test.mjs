@@ -48,7 +48,7 @@ test('inspectTicket 只校字段不重放：正常帖、错帖、缺存档都给
 test('小程序工程齐全：页面注册、零外部请求、零位图、不搬策略层', () => {
   const app = JSON.parse(read(MP + 'app.json'));
   // P2 之后多一页「最小可玩切片」；传帖台首页仍是第一页，不能挤掉。
-  assert.deepEqual(app.pages, ['pages/index/index', 'pages/slice/index']);
+  assert.deepEqual(app.pages, ['pages/index/index', 'pages/slice/index', 'pages/canvas/index']);
   for (const p of app.pages) {
     for (const ext of ['.wxml', '.wxss', '.js', '.json']) {
       assert.ok(existsSync(new URL(`../${MP}${p}${ext}`, import.meta.url)), `缺 ${p}${ext}`);
@@ -70,11 +70,14 @@ test('小程序工程齐全：页面注册、零外部请求、零位图、不�
   const walk = (rel) => {
     for (const n of readdirSync(new URL(`../${MP}${rel}`, import.meta.url), { withFileTypes: true })) {
       const p = rel + n.name;
+      // subpackages 产物目录由 npm run assets:build 本地生成、.gitignore 不进仓库；
+      // 主包仍必须零位图。分包体积另由 scripts/mp-assets.mjs --check 守着。
+      if (n.isDirectory() && p === 'assets') continue;
       if (n.isDirectory()) walk(p + '/'); else all.push(p);
     }
   };
   walk('');
-  assert.equal(all.some((p) => /\.(png|jpe?g|webp|gif|svg)$/i.test(p)), false, '小程序目录出现位图');
+  assert.equal(all.some((p) => /\.(png|jpe?g|webp|gif|svg)$/i.test(p)), false, '主包出现位图');
   assert.ok(all.length >= 10, `小程序文件过少：${all.length}`);
   assert.equal(js.includes('createCampaign') || js.includes('advanceTurn'), false,
     '传帖台链路不该碰策略层（策略层只在 logic/ 镜像与切片页里）');

@@ -45,13 +45,14 @@
 
 ## 与主工程的关系
 
-| | 网页版 | 传帖台页 | 最小可玩切片 |
-| --- | --- | --- | --- |
-| 策略层（纯逻辑） | 全在 | **不在** | **镜像在** `logic/src/`（24 个 `.js`，含 `platform/mini-map.js`） |
-| 战斗层 / 舆图 / 结算 | 全在 | 不在 | **不在** |
-| 军令帖编解码 | `src/sync.js` | `utils/ticket.js`（同逻辑副本） | 仍通，交叉解码无损 |
-| 存档 | 三席 + 自动档 | 只存近帖 | 本机快照 + `onHide/onShow` 指纹比对 |
-| 分发 | GitHub Pages | 微信开发者工具（未上传） | 同左 |
+| | 网页版 | 传帖台页 | 色块切片页 | 画布页 |
+| --- | --- | --- | --- | --- |
+| 策略层（纯逻辑） | 全在 | **不在** | **镜像在** `logic/src/`（24 个 `.js`） | 同左 |
+| 战斗层 / 舆图 / 结算 | 全在 | 不在 | **不在** | **不在** |
+| 格网皮 | Canvas 2D 舆图 | 无 | WXML 色块（零 Canvas） | `<canvas type="2d">` + 绘制指令 |
+| 军令帖编解码 | `src/sync.js` | `utils/ticket.js`（同逻辑副本） | 仍通 | 仍通 |
+| 存档 | 三席 + 自动档 | 只存近帖 | 本机快照 + `onHide/onShow` | 不持久化 |
+| 分发 | GitHub Pages | 微信开发者工具（未上传） | 同左 | 同左 |
 
 逻辑层镜像由 `scripts/sync-miniprogram.mjs` 从主 `src/` 的 ESM 依赖闭包自动生成，
 **不要手改** `logic/`；改了 `src/` 就跑 `npm run sync:mp`，`npm run check` 会拦住没同步的镜像。
@@ -74,18 +75,41 @@ Node 走内存 `Map`；四个适配点是 storage / 指针归一 / 画布节点 
 有主格按势力着色、无主格按主导地貌给淡色、城池叠墨点。**不读任何 PNG、不用 Canvas**，
 宿主只负责把色块摆出来（将来接 `wxCanvas` 时把 `miniMapOps` 的 `fillRect` 指令喂给 ctx 即可）。
 
-包体核算（`npm run bundle`）的硬结论：首包 0.20 MiB / 0 位图已成立，但运行时真正加载的
+包体核算（`npm run bundle`）的硬结论：首包约 0.21 MiB / 0 位图已成立，但运行时真正加载的
 4 张 sheet 合计 13.32 MiB，其中 3 张**各自**超微信单个分包 2 MB —— 直接声明 `subpackages`
 会失败，必须先压缩 / 降分辨率。只有 `trooper-tiny-sheet`（71 KB）能与逻辑层同进主包。
 另外「按章分包两张舆图」不成立：舆图是 `guandu.js` / `atlas.js` 的程序化离屏画布，
 仓库里没有 `bg+fg` 位图文件。10 张源底稿 JPG 与 48 张单帧 PNG 明确不进包。
+
+## 画布格网（`pages/canvas/`）
+
+同一份 `miniMapOps()` 归一化指令，换一层皮：`wxCanvas('#mini', wx)` 拿 canvas 2d 节点，
+`applyDrawOps(ctx, ops, w, h, {dpr})` 把 `fillRect` / `circle` 画出来。两个函数都在
+`logic/src/platform/canvas.js` 镜像里，纯函数、零宿主 API，Node 里用假 ctx 就能逐条验。
+色块页仍是零 Canvas 的回归基线，两条路径互不干扰；画布页拿不到节点会如实报错并留一条
+回色块页的路，不白屏。
+
+## 压缩分包（待真机启用）
+
+PNG 原样分包会失败（4 张 sheet 13.32 MiB，其中 3 张各自超微信单个分包 2 MB）。实测
+sharp / PIL 转 webp q=80 后合计 **2.59 MiB**，按 `infantry`（1.65）/ `engine`（0.94）分两组
+各 ≤ 2 MB，主包 + 分包 2.80 MiB。`assets-plan.json` 是唯一数字来源，
+`app.subpackages.example.json` 是待启用模板。
+
+```
+npm run assets:build   # 生成 webp 到 miniprogram/assets/（.gitignore，不进仓库）
+# 真机时把 app.subpackages.example.json 的 subpackages 数组并入 app.json
+```
+
+**现在 `app.json` 没有 `subpackages`**：空分包会在开发者工具报错，且 webp 在小程序端的
+解码支持、端侧皮重写读 `.webp` 都没真机验证。详见 `docs/小程序军令帖验证说明.md` §十二。
 
 ## 跑起来
 
 1. 微信开发者工具 → 导入项目 → 选本目录 → 用测试号或自己的 AppID；
 2. 网页版复制一段军令帖，粘进输入框，点「校验」；或点首页按钮进切片页推几旬、看零位图格网；
 3. 改过 `src/` 就先在仓库根跑 `npm run sync:mp`（生成镜像），再跑
-   `npm test` / `npm run check` / `npm run bundle`。
+   `npm test` / `npm run check` / `npm run bundle` / `npm run assets:plan`。
 
 已知边界见 `docs/小程序军令帖验证说明.md` §十、§十一
-（真机、ESM 转译、皮重写、真分包、压缩决策、主包实测均未启动）。
+（真机、ESM 转译、皮重写、真分包、webp 解码、主包实测均未启动）。

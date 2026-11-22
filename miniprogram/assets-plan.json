@@ -1,0 +1,72 @@
+{
+  "generatedBy": "scripts/mp-assets.mjs --measure",
+  "measuredBy": "sharp webp quality=80 effort=6（交叉验证：PIL 10.4.0 q=80 method=6 结果一致）",
+  "thresholds": {
+    "wxMain": 2097152,
+    "wxSub": 2097152,
+    "wxTotal": 20971520,
+    "dyMain": 4194304,
+    "dyTotal": 20971520
+  },
+  "mainPackageBytes": 216688,
+  "sheets": [
+    {
+      "file": "trooper-sheet.png",
+      "frames": 8,
+      "frameW": 560,
+      "frameH": 820,
+      "group": "infantry",
+      "pngBytes": 3625072,
+      "webpBytes": 625768
+    },
+    {
+      "file": "trooper-walk-sheet.png",
+      "frames": 16,
+      "frameW": 560,
+      "frameH": 820,
+      "group": "infantry",
+      "pngBytes": 5133296,
+      "webpBytes": 1105982
+    },
+    {
+      "file": "engine-sheet.png",
+      "frames": 16,
+      "frameW": 560,
+      "frameH": 820,
+      "group": "engine",
+      "pngBytes": 5134204,
+      "webpBytes": 972126
+    },
+    {
+      "file": "trooper-tiny-sheet.png",
+      "frames": 8,
+      "frameW": 72,
+      "frameH": 108,
+      "group": "engine",
+      "pngBytes": 71611,
+      "webpBytes": 14054
+    }
+  ],
+  "subpackages": [
+    {
+      "name": "infantry",
+      "root": "assets/units-infantry",
+      "files": [
+        "trooper-sheet.webp",
+        "trooper-walk-sheet.webp"
+      ],
+      "bytes": 1731750
+    },
+    {
+      "name": "engine",
+      "root": "assets/units-engine",
+      "files": [
+        "engine-sheet.webp",
+        "trooper-tiny-sheet.webp"
+      ],
+      "bytes": 986180
+    }
+  ],
+  "totalWebpBytes": 2717930,
+  "note": "产物默认不进仓库（miniprogram/assets/ 已 gitignore）；真机前跑 --build 生成，再把 app.subpackages.example.json 的片段并入 app.json。webp 在小程序端的解码支持未真机验证。"
+}

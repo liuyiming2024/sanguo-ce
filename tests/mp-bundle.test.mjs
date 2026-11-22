@@ -117,14 +117,26 @@ test('miniprogram/ 首包内任何一个文件都不是位图', () => {
     const out = [];
     for (const n of readdirSync(join(root, d), { withFileTypes: true })) {
       const p = `${d}/${n.name}`;
-      if (n.isDirectory()) out.push(...walk(p));
-      else out.push(p);
+      if (n.isDirectory()) {
+        if (p === 'miniprogram/assets') continue;   // subpackages 产物，不计主包
+        out.push(...walk(p));
+      } else out.push(p);
     }
     return out;
   };
   const files = walk('miniprogram');
   assert.ok(files.length >= 40);
   assert.equal(files.filter((p) => /\.(png|jpe?g|webp|gif)$/i.test(p)).length, 0);
+  // 本地 build 过分包产物时，每组必须 ≤ 2 MB（微信单个分包上限）
+  const a = join(root, 'miniprogram/assets');
+  if (existsSync(a)) {
+    for (const n of readdirSync(a, { withFileTypes: true })) {
+      if (!n.isDirectory()) continue;
+      const g = walk(`miniprogram/assets/${n.name}`);
+      const bytes = g.reduce((sum, f) => sum + statSync(join(root, f)).size, 0);
+      assert.ok(bytes <= 2 * 1024 * 1024, `分包 ${n.name} ${bytes} B 超 2 MB`);
+    }
+  }
 });
 
 // ── B6：存档规范化的两处「表示差异」，不是分叉 ───────────────────────

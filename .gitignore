@@ -3,3 +3,7 @@ relay.local.json
 *.local.json
 node_modules/
 __pycache__/
+
+# P4 分包产物：由 npm run assets:build 生成，webp 二进制不进仓库
+miniprogram/assets/
+mp-assets-build/

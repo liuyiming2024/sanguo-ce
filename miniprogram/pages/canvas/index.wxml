@@ -1,0 +1,36 @@
+<view class="page">
+  <view class="head">
+    <view class="seal">策</view>
+    <view class="htext">
+      <view class="title">画 布 格 网</view>
+      <view class="sub">wxCanvas · 绘制指令 · 零位图</view>
+    </view>
+  </view>
+
+  <view class="note">同一份 terrain.tiles 数据，换一层皮：小程序 canvas 2d 节点 + 归一化 fillRect 指令。不读任何 PNG，色块与城点都由逻辑层算出。</view>
+
+  <canvas type="2d" id="mini" class="miniCanvas"></canvas>
+
+  <view class="status">{{status}}</view>
+  <view wx:if="{{size}}" class="mono">逻辑尺寸 {{size}} · DPR {{dpr}} · 指令 {{painted}} 条</view>
+  <view wx:if="{{err}}" class="err">{{err}}</view>
+
+  <view wx:if="{{summary}}" class="card">
+    <view class="ct">局 面</view>
+    <view class="kv"><text>军历</text><text>第 {{summary.turn}} 旬</text></view>
+    <view class="kv"><text>己城 / 敌城</text><text>{{summary.ownCities}} / {{summary.hostileCities}}</text></view>
+    <view class="kv"><text>领地</text><text>{{summary.land}} 格</text></view>
+    <view class="kv"><text>库存粮</text><text>{{summary.grain}}</text></view>
+  </view>
+
+  <view class="row">
+    <button class="btn primary" bindtap="onPush">推 一 旬 并 重 画</button>
+    <button class="btn" bindtap="onRedraw">重 画</button>
+  </view>
+  <view class="row">
+    <button class="btn ghost" bindtap="onSlice">回 色 块 页</button>
+    <button class="btn ghost" bindtap="onBack">返 回</button>
+  </view>
+
+  <view class="foot">画布节点、DPR、指令消费都在 src/platform/canvas.js；数据层仍由 sync-miniprogram.mjs 镜像。真机未验。</view>
+</view>

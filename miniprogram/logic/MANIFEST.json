@@ -63,7 +63,7 @@
     },
     {
       "path": "src/platform/canvas.js",
-      "sha256": "9216f1e883ef5982fe8d6b6d98904b6049231b5ebfaf45d066e97e278c519b75"
+      "sha256": "e158cbca3ceb87aebdc48356bf160bb2944909d3f2e67e89f5c39ec1973c397b"
     },
     {
       "path": "src/platform/index.js",

@@ -109,6 +109,10 @@ Page({
     wx.navigateTo({ url: '/pages/slice/index' });
   },
 
+  onCanvas() {
+    wx.navigateTo({ url: '/pages/canvas/index' });
+  },
+
   onShareAppMessage() {
     // 分享 path 仍不携带整段口令（几千字符会被截断），但可以带六位短号。
     // 短号只是取件码：对方点开卡片看到它，去「传帖台」兑换整帖；本页不联网。
