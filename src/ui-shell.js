@@ -873,12 +873,20 @@ SOFTWARE.`;
     }
     function paint() {
       saveState();
-      // 跨倍率档重渲背景：笔在逻辑坐标里缩小加密，放大不把短笔拉成鱼鳞斜纹。
-      // 重渲是秒级开销，滚轮连续缩放会跨好几个整数档，延后到停手 180ms
-      // 后只做一次。上一轮「期间用上一档即时合成」会把低位图拉大，正是糊的
-      // 根源 —— 用户明确「坚决不要糊」，改成未就绪就保留上一帧的清晰画面，
-      // 不重绘、不拉伸；新档就绪后一次性切过去。代价是跨档瞬间短暂停顿。
-      if (a.setTier) {
+      /* 矢量即时层：笔被录成 Path2D，每帧按当前倍率直接重放，任意倍率都是
+         锐利路径边缘。跨档只重录路径（纯字符串 + 路径对象，没有 4× 离屏
+         栅格化），即时完成 —— 不再需要 180ms 防抖，也不再有「保留上一帧
+         清晰画面」那段短暂停顿。用户「坚决不要糊」的最后一截在此收掉。
+         无 Path2D 的环境仍走原位图防抖路径，行为不变。 */
+      if (a.hasVector && a.setVectorTier) {
+        clearTimeout(tierDebounce);
+        a.setVectorTier(zoom);            // 只记目标档，本帧照常用旧 Path2D 重放
+        tierDebounce = setTimeout(() => {
+          if (a.applyVectorTier && a.applyVectorTier()) paint();
+        }, 120);                         // 停手后把笔加密到目标档，再刷一帧
+      } else if (a.setTier) {
+        // 位图兜底：重渲是秒级开销，延后到停手 180ms 后只做一次；
+        // 期间不重绘、不把上一档位图拉大（拉伸就是糊）。
         const target = a.tierOf(zoom);
         if (target !== a.tier) {
           clearTimeout(tierDebounce);
@@ -902,10 +910,25 @@ SOFTWARE.`;
       ctx.translate(cw / 2 + px, ch / 2 + py);
       ctx.scale(zoom * base, zoom * base);
       ctx.translate(-a.W / 2, -a.H / 2);
-      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-      // 显式目标尺寸：高倍率档的 bg 是超采样图，不能按源尺寸直接贴
-      ctx.drawImage(a.bg, 0, 0, a.W, a.H);
-      if (a.fg) ctx.drawImage(a.fg, 0, 0, a.W, a.H);
+      if (a.hasVector && a.drawVector) {
+        // 纸底 + 平滑低频底罩（柔和，不是线条，谈不上糊）+ 矢量笔重放。
+        // 没有 drawImage(a.bg) 这一步，也就不存在「把位图拉大」。
+        ctx.fillStyle = '#e9e3d1'; ctx.fillRect(0, 0, a.W, a.H);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(a.wash, 0, 0, a.W, a.H);
+        const eff = zoom * base;
+        // 屏幕可见区反变换回 1400×1100 逻辑坐标，只重放看得见的笔。
+        const vx0 = a.W / 2 + (-cw / 2 - px) / eff,
+              vx1 = a.W / 2 + (cw / 2 - px) / eff,
+              vy0 = a.H / 2 + (-ch / 2 - py) / eff,
+              vy1 = a.H / 2 + (ch / 2 - py) / eff;
+        a.drawVector(ctx, { eff, vx0, vx1, vy0, vy1, showFeatures: !!a.fg });
+      } else {
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        // 显式目标尺寸：高倍率档的 bg 是超采样图，不能按源尺寸直接贴
+        ctx.drawImage(a.bg, 0, 0, a.W, a.H);
+        if (a.fg) ctx.drawImage(a.fg, 0, 0, a.W, a.H);
+      }
       ctx.restore();
       // 屏幕空间两层：工笔双勾细笔 + 三级注记，都在 1400×1100 坐标系下画，
       // 再整体映射到实际画布，缩放时字不糊、笔不被拉粗。

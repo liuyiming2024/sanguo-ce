@@ -653,3 +653,38 @@ SVG 自证指纹升到 `round:12` 并加 `tiers:6`，两份静态文件重新生
 `preview-vector-live-x563.png`（三档矢量即时）、
 `preview-vector-rejected-blank.png`（被否掉的空纸方案）、
 `preview-atlas-no-stretch.png`（典籍页零拉伸定稿）。
+
+## 第十四轮：典籍页也换成矢量内核（零停顿 · 零糊帧）
+
+第十三轮把 demos 改成 Path2D 即时重放后，留了一句「典籍页仍是位图内核，
+要与 demos 一样缩放全程有反馈且矢量，得把 Path2D 层搬进 `src/atlas.js`
+（会动到 203 测试内核）」。这轮做掉，不拿测试数量当挡箭牌。
+
+- **录制器**：`createVectorRecorder()` 从 demos 精简抽出（只留带包围盒的
+  `strokes[]` / `texts[]`）；`makeBg(zb, rec)` / `makeFg(f, rec)` 加 rec 分支，
+  rec 时 `S=1`、跳过超采样缩放与 ImageData 底罩。**默认位图路径一字未改**，
+  `bg/fg` 仍返回，纯 Node 自检的指令序列与确定性 hash 不受影响。
+- **合成**：`ui-shell.paint` 优先 `a.drawVector`——纸底 + 平滑 `a.wash` +
+  Path2D 重放，**没有 `drawImage(a.bg)` 这一步**。线宽 `lw/eff` 补偿、
+  短笔局部缩放 `m=min(eff,2.5)`、长线不缩；视口按 `cw/ch/px/py` 反变换。
+- **零停顿**：上一版跨档「保留上一帧清晰画面、不重绘」的短暂停顿也消了。
+  `setVectorTier` 只记目标档，本帧用旧 Path2D 即时重放（旧档同样是锐利
+  矢量，不是被拉大的位图），停手 120ms 后 `applyVectorTier()` 加密到目标档
+  再刷一帧。缩放每一帧都有画面，且每一帧都清晰。
+- **网格索引**：20×16 逻辑桶 + 跨格大笔单列，每帧只取视口覆盖的桶，
+  `Uint32` 戳去重。`drawVector` 实测 **8~122ms**。
+- **实拍**：×1 与位图版观感一致（差异 609 像素）；连续缩放中 vs 停手后差异
+  165（确实升了档，且缩放中已是清晰画面）；竖屏 / 中原详图 / 复位零报错。
+- **单测**：新增 `tests/atlas-vector.test.mjs` 5 项（录制 / 确定性 / 视口裁剪 /
+  切分图重录 / 默认位图接口未破坏），全套 **231/231**。
+
+另落 P4：`docs/小程序资源分包方案.md` 与 `scripts/check-mp-assets.mjs`。
+最实在的一刀是查出 `src/portrait.js` **运行时只加载 4 张 sheet（13.32 MB）**，
+其余 48 张单帧 PNG（15.38 MB）与 10 张源 JPG（4.09 MB）零引用，都可不入包；
+清单口径「分包总 ≤20MB」下已在限内。`miniprogram/app.json` 未改，真机体积
+须在开发者工具里核，脚本不假装验过。
+
+墨战第十一轮：只查到「枯笔飞白 / 降低硬件负荷」这类视觉方向，对应笔锋边缘
+与网格索引；阵法五套、神卡日卡、皴染反馈势力、墨色相溶即死继续不采纳。
+本轮无战斗机制或地图符号改动，不硬造对照条目。
+

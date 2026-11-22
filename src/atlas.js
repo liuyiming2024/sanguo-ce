@@ -428,13 +428,258 @@ const LANDMARKS={
 /* ---------- 背景层：连续底罩 + 一次性扫描游走笔触 ----------
    zb = 笔触密度倍率。大局部时按倍率重渲：笔在逻辑坐标里更密更细（除以 zb），
    离屏图超采样 S 倍保证清晰；合成后屏幕笔宽 ≈ 原尺寸，不会被拉成鱼鳞斜纹。 */
-function makeBg(zb){
+function createVectorRecorder(){
+  /* 同一批笔同时留一份结构化记录：页面高倍率用 Path2D 即时重放，
+     不再把离屏位图拉大（那才是一切「糊」的根源）。 */
+  const strokes=[], texts=[];
+  let M=[1,0,0,1,0,0];
+  const stack=[];
+  let st={fill:'#000',stroke:'#000',lw:1,alpha:1,dash:[],
+          font:'10px serif',align:'start',baseline:'alphabetic',
+          cap:'butt',join:'miter'};
+  let d=[];
+  const F=n=>(+n.toFixed(1));
+  const ap=(x,y)=>[F(M[0]*x+M[2]*y+M[4]), F(M[1]*x+M[3]*y+M[5])];
+  const sc=()=>Math.sqrt(Math.abs(M[0]*M[3]-M[1]*M[2]))||1;
+  function col(v){
+    if(v==null) return ['#000',1];
+    v=String(v).trim(); let m;
+    // createRadialGradient 返回的对象被赋给 fillStyle 时，不是 CSS 颜色；
+    // 标成 alpha 0，SVG 与 Path2D 重放都会跳过，不再出现 fill="[object Object]"
+    if(/^\[object/i.test(v)) return ['#000',0];
+    if((m=v.match(/^#([0-9a-f]{6})$/i))) return ['#'+m[1],1];
+    if((m=v.match(/^#([0-9a-f]{3})$/i))) return ['#'+m[1].split('').map(c=>c+c).join(''),1];
+    if((m=v.match(/^rgba?\(([^)]+)\)$/i))){
+      const q=m[1].split(',').map(parseFloat);
+      return [`rgb(${Math.round(q[0])},${Math.round(q[1])},${Math.round(q[2])})`,
+              q.length>3?q[3]:1];
+    }
+    return [v,1];
+  }
+  function emitPath(mode){
+    if(!d.length) return;
+    const ds=d.join(' ');
+    const [c0,a0]=col(mode==='fill'?st.fill:st.stroke);
+    const op=(a0*st.alpha).toFixed(3);
+    // 包围盒用于视口裁剪：高倍率下只重放看得见的笔，不必每帧全画 6144 条
+    const nums=(ds.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number);
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+    for(let i=0;i+1<nums.length;i+=2){
+      if(nums[i]<x0)x0=nums[i]; if(nums[i]>x1)x1=nums[i];
+      if(nums[i+1]<y0)y0=nums[i+1]; if(nums[i+1]>y1)y1=nums[i+1];
+    }
+    strokes.push({d:ds,mode,color:c0,alpha:a0*st.alpha,lw:st.lw*sc(),
+      dash:st.dash.slice(),cap:st.cap,join:st.join,box:[x0,y0,x1,y1]});
+  }
+  function txt(t,xx,yy,mode){
+    const [c0,a0]=col(mode==='fill'?st.fill:st.stroke);
+    const q=ap(xx,yy);
+    const fs=(parseFloat((String(st.font).match(/([\d.]+)px/)||[])[1])||10)*sc();
+    const anchor=st.align==='center'?'middle':(st.align==='right'||st.align==='end')?'end':'start';
+    const fam=String(st.font).replace(/^[\d.]+\s*px\s*/,'').replace(/"/g,'')||'serif';
+    const esc=String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // 题识 / 比例尺 / 朱印文字随图走（不是屏幕固定字号），矢量层也要重放
+    texts.push({t:String(t),x:q[0],y:q[1],fs,mode,color:c0,alpha:a0*st.alpha,
+      lw:st.lw*sc(),anchor,fam,baseline:st.baseline});
+  }
+  const P2=(x,y)=>ap(x,y).join(' ');
+  function polyArc(cx,cy,rx,ry,a0,a1,rot){
+    const N=20, pts=[];
+    for(let i=0;i<=N;i++){
+      const a=a0+(a1-a0)*i/N, u=Math.cos(a)*rx, v=Math.sin(a)*ry;
+      pts.push(ap(cx+u*Math.cos(rot)-v*Math.sin(rot), cy+u*Math.sin(rot)+v*Math.cos(rot)));
+    }
+    d.push((d.length?'L ':'M ')+pts[0].join(' '));
+    for(let i=1;i<pts.length;i++) d.push('L '+pts[i].join(' '));
+  }
+  const api={
+    get fillStyle(){return st.fill}, set fillStyle(v){st.fill=v},
+    get strokeStyle(){return st.stroke}, set strokeStyle(v){st.stroke=v},
+    get lineWidth(){return st.lw}, set lineWidth(v){st.lw=v},
+    get globalAlpha(){return st.alpha}, set globalAlpha(v){st.alpha=v},
+    get font(){return st.font}, set font(v){st.font=v},
+    get textAlign(){return st.align}, set textAlign(v){st.align=v},
+    get textBaseline(){return st.baseline}, set textBaseline(v){st.baseline=v},
+    get lineCap(){return st.cap}, set lineCap(v){st.cap=v},
+    get lineJoin(){return st.join}, set lineJoin(v){st.join=v},
+    get globalCompositeOperation(){return 'source-over'}, set globalCompositeOperation(v){},
+    get imageSmoothingEnabled(){return true}, set imageSmoothingEnabled(v){},
+    get imageSmoothingQuality(){return 'high'}, set imageSmoothingQuality(v){},
+    save(){stack.push({...st,M:[...M]})},
+    restore(){const q=stack.pop(); if(q){st={...q};M=[...q.M];}},
+    scale(x,y){M=[M[0]*x,M[1]*x,M[2]*y,M[3]*y,M[4],M[5]]},
+    translate(x,y){M=[M[0],M[1],M[2],M[3],M[4]+M[0]*x+M[2]*y,M[5]+M[1]*x+M[3]*y]},
+    rotate(a){const c=Math.cos(a),sn=Math.sin(a);
+      M=[M[0]*c+M[2]*sn,M[1]*c+M[3]*sn,M[0]*-sn+M[2]*c,M[1]*-sn+M[3]*c,M[4],M[5]]},
+    transform(a,b,c,d2,e,f){M=[M[0]*a+M[2]*b,M[1]*a+M[3]*b,M[0]*c+M[2]*d2,
+      M[1]*c+M[3]*d2,M[0]*e+M[2]*f+M[4],M[1]*e+M[3]*f+M[5]]},
+    setTransform(a,b,c,d2,e,f){M=[a,b,c,d2,e,f]},
+    setLineDash(a){st.dash=a||[]}, getLineDash(){return st.dash.slice()},
+    beginPath(){d=[]},
+    moveTo(x,y){d.push('M '+P2(x,y))},
+    lineTo(x,y){d.push('L '+P2(x,y))},
+    quadraticCurveTo(cx,cy,x,y){d.push('Q '+ap(cx,cy).join(' ')+' '+ap(x,y).join(' '))},
+    bezierCurveTo(a,b,c,d2,e,f){d.push('C '+ap(a,b).join(' ')+' '+ap(c,d2).join(' ')+' '+ap(e,f).join(' '))},
+    closePath(){d.push('Z')},
+    rect(x,y,w,h){d.push('M '+P2(x,y));d.push('L '+P2(x+w,y));
+      d.push('L '+P2(x+w,y+h));d.push('L '+P2(x,y+h));d.push('Z')},
+    arc(cx,cy,r,a0,a1){polyArc(cx,cy,r,r,a0,a1,0)},
+    ellipse(cx,cy,rx,ry,rot,a0,a1){polyArc(cx,cy,rx,ry,a0,a1,rot||0)},
+    fill(){emitPath('fill')}, stroke(){emitPath('stroke')},
+    fillRect(x,y,w,h){api.beginPath();api.rect(x,y,w,h);api.fill()},
+    strokeRect(x,y,w,h){api.beginPath();api.rect(x,y,w,h);api.stroke()},
+    clearRect(){}, clip(){},
+    fillText(t,x,y){txt(t,x,y,'fill')}, strokeText(t,x,y){txt(t,x,y,'stroke')},
+    measureText(t){return {width:String(t).length*8}},
+    createImageData(w,h){return {width:w,height:h,data:new Uint8ClampedArray(w*h*4)}},
+    putImageData(){}, getImageData(){return {data:new Uint8ClampedArray(4)}},
+    drawImage(){},   // 底罩由 buildSvg 生成矢量色块网格代替
+    createLinearGradient(){return {addColorStop(){}}},
+    createRadialGradient(){return {addColorStop(){}}},
+  };
+  return {api, strokes, texts};
+}
+
+/* ── 矢量即时层（典籍页与 demos 同一套）────────────────────────────────
+   位图内核在跨倍率档时要「秒级重渲 + 防抖」，期间画面要么被拉糊、要么
+   干脆停住不重绘。笔本来就是 canvas 路径（数学描述），这里把它们录成
+   Path2D 缓存，每帧按当前倍率直接重放：任意倍率都是锐利矢量边缘，
+   没有「把位图拉大」这一步，也不需要等新档就绪。
+   默认路径（无 rec）一字未改，bg/fg 仍返回离屏 canvas，纯 Node 自检不变。 */
+let vecStrokes=[], vecTexts=[], vecBgEnd=0, vecBgTextEnd=0;
+let vecTier=0, vecFocus='', vecPending=0;
+let washCanvas=null;
+/* 空间网格索引：×3 档约 5.5 万笔，每帧全量遍历包围盒判断要几百毫秒。
+   按 20×16 逻辑格分桶，重放时只取视口覆盖的桶；跨格太多的大笔（图廓、
+   河流、州界）单独放 vecBig 每帧检查。去重用一个 Uint32 戳，避免重复画。 */
+let vecGrid=null, vecBig=[], vecStamp=null, vecStampId=0;
+function buildVectorIndex(){
+  const GX=20, GY=16, gw=W/GX, gh=H/GY;
+  const buckets=Array.from({length:GX*GY},()=>[]);
+  vecBig=[];
+  for(let i=0;i<vecStrokes.length;i++){
+    const b=vecStrokes[i].box;
+    const x0=Math.max(0,Math.floor(b[0]/gw)), x1=Math.min(GX-1,Math.floor(b[2]/gw));
+    const y0=Math.max(0,Math.floor(b[1]/gh)), y1=Math.min(GY-1,Math.floor(b[3]/gh));
+    if(x1<x0||y1<y0){ vecBig.push(i); continue; }
+    if((x1-x0+1)*(y1-y0+1)>8){ vecBig.push(i); continue; }
+    for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++) buckets[y*GX+x].push(i);
+  }
+  vecGrid={GX,GY,gw,gh,buckets};
+  vecStamp=new Uint32Array(vecStrokes.length);
+  vecStampId=0;
+}
+
+/** 低频连续场底罩：颜色柔和，本就该用平滑图承担（不是线条，谈不上糊）。
+    懒生成，默认位图路径完全不碰它。 */
+function makeWash(){
+  if(washCanvas) return washCanvas;
+  const FW=350, FH=275;
+  const c=mk(); c.width=FW; c.height=FH;
+  const g=c.getContext('2d'), im=g.createImageData(FW,FH);
+  for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
+    const lon=LON0+i/FW*(LON1-LON0), lat=LAT1-j/FH*(LAT1-LAT0);
+    const [r,gg,b,reg]=fieldColor(lon,lat);
+    const k=(j*FW+i)*4;
+    im.data[k]=r; im.data[k+1]=gg; im.data[k+2]=b;
+    im.data[k+3]=Math.round(255*clamp(0.56+0.44*reg.density,0,1));
+  }
+  g.putImageData(im,0,0);
+  const big=mk(); big.width=W; big.height=H;
+  const b=big.getContext('2d');
+  b.imageSmoothingEnabled=true; b.imageSmoothingQuality='high';
+  b.drawImage(c,0,0,W,H);
+  washCanvas=big; return big;
+}
+
+/** 重录矢量笔层。笔密度封顶 3 档：makeBg(zb) 笔数约按 zb² 涨，跟到 12 会
+    生成 28 万条路径 / 28 万个 Path2D（实测 4~5s 且内存爆）。矢量路径本来
+    就能任意缩放，不需要「按倍率重新生成」来防糊 —— 那是位图时代的思路。 */
+function buildVector(zb,f){
+  zb=clamp(Math.round(zb),1,3);
+  if(vecStrokes.length && vecTier===zb && vecFocus===f) return;
+  const savedLabels=labels.slice(), savedSeal=sealOn;
+  const rc=createVectorRecorder();
+  makeBg(zb, rc.api);
+  vecBgEnd=rc.strokes.length; vecBgTextEnd=rc.texts.length;
+  makeFg(f, rc.api);
+  labels.length=0; for(const x of savedLabels) labels.push(x);
+  sealOn=savedSeal;
+  vecStrokes=rc.strokes.filter(o=>o.alpha>0.002).map(o=>{
+    try{ return {...o,p:new Path2D(o.d)}; }catch(e){ return null; }
+  }).filter(Boolean);
+  vecTexts=rc.texts.filter(t=>t.alpha>0.002);
+  vecTier=zb; vecFocus=f;
+  buildVectorIndex();
+}
+
+/** 在「已设好 zoom/pan 变换」的 ctx 上重放。view 需给 eff（有效倍率）与
+    vx0/vx1/vy0/vy1（逻辑坐标可见区，由调用方按画布尺寸反变换算出）。 */
+function drawVector(g, view){
+  if(!vecStrokes.length) buildVector(1,focus);   // 首次懒构建
+  if(!vecStrokes.length) return 0;
+  const z=view.eff||1, m=Math.min(z,2.5), pad=6;
+  const {vx0,vx1,vy0,vy1}=view;
+  const end=view.showFeatures===false?vecBgEnd:vecStrokes.length;
+  let shown=0;
+  // 只取视口覆盖的网格桶，再用精确包围盒筛一次
+  const {GX,GY,gw,gh,buckets}=vecGrid;
+  const gx0=clamp(Math.floor(vx0/gw),0,GX-1), gx1=clamp(Math.floor(vx1/gw),0,GX-1);
+  const gy0=clamp(Math.floor(vy0/gh),0,GY-1), gy1=clamp(Math.floor(vy1/gh),0,GY-1);
+  const stamp=++vecStampId, cand=[];
+  const take=(i)=>{ if(i<end && vecStamp[i]!==stamp){ vecStamp[i]=stamp; cand.push(i); } };
+  for(let y=gy0;y<=gy1;y++) for(let x=gx0;x<=gx1;x++){
+    const bk=buckets[y*GX+x];
+    for(let k=0;k<bk.length;k++) take(bk[k]);
+  }
+  for(let k=0;k<vecBig.length;k++) take(vecBig[k]);
+  for(let ci=0;ci<cand.length;ci++){
+    const i=cand[ci], o=vecStrokes[i], b=o.box;
+    if(b[2]+pad<vx0||b[0]-pad>vx1||b[3]+pad<vy0||b[1]-pad>vy1) continue;
+    const small=(b[2]-b[0])<40 && (b[3]-b[1])<40;
+    const paint=(lw)=>{
+      g.globalAlpha=o.alpha;
+      if(o.mode==='fill'){ g.fillStyle=o.color; g.fill(o.p); }
+      else{
+        g.strokeStyle=o.color; g.lineWidth=Math.max(0.12,lw);
+        if(o.dash.length) g.setLineDash(o.dash.map(v=>v/z));
+        g.lineCap=o.cap; g.lineJoin=o.join;
+        g.stroke(o.p);
+        if(o.dash.length) g.setLineDash([]);
+      }
+    };
+    if(small){
+      const cx=(b[0]+b[2])/2, cy=(b[1]+b[3])/2;
+      g.save(); g.translate(cx,cy); g.scale(1/m,1/m); g.translate(-cx,-cy);
+      paint(o.lw*m/z); g.restore();
+    }else paint(o.lw/z);
+    shown++;
+  }
+  const tEnd=view.showFeatures===false?vecBgTextEnd:vecTexts.length;
+  for(let i=0;i<tEnd;i++){
+    const t=vecTexts[i];
+    if(t.x<vx0-40||t.x>vx1+40||t.y<vy0-40||t.y>vy1+40) continue;
+    g.font=`${t.fs}px ${t.fam}`;
+    g.textAlign=t.anchor==='middle'?'center':t.anchor==='end'?'right':'left';
+    g.textBaseline=t.baseline==='top'?'top':t.baseline==='middle'?'middle':'alphabetic';
+    g.globalAlpha=t.alpha;
+    if(t.mode==='fill'){ g.fillStyle=t.color; g.fillText(t.t,t.x,t.y); }
+    else { g.strokeStyle=t.color; g.lineWidth=t.lw/z; g.strokeText(t.t,t.x,t.y); }
+  }
+  g.globalAlpha=1;
+  return shown;
+}
+
+function makeBg(zb, rec){
   zb = zb||1;
-  // 离屏超采样封顶 4（见 demos 同处说明）：tier 可到 6，S 到 4 折中内存
-  const S = clamp(Math.ceil(zb),1,4);
-  const c=mk(); c.width=W*S; c.height=H*S;
-  const g=c.getContext('2d');
-  g.scale(S,S);
+  // rec 为矢量录制器：它记录逻辑坐标里的路径，不能 g.scale(S,S)（会把坐标
+  // 整体放大 S 倍）。纸底与底罩由 drawVector 调用方单独铺，这里只录笔。
+  // 默认路径（无 rec）一字未改，纯 Node 自检的指令序列不受影响。
+  const S = rec ? 1 : clamp(Math.ceil(zb),1,4);
+  let c=null, g;
+  if(rec) g=rec;
+  else { c=mk(); c.width=W*S; c.height=H*S; g=c.getContext('2d'); g.scale(S,S); }
+  if(!rec){
   // 纸底
   g.fillStyle='#e9e3d1'; g.fillRect(0,0,W,H);
   // 连续场底罩：低分辨率生成后平滑放大，无台阶
@@ -452,6 +697,7 @@ function makeBg(zb){
   const fc=mk(); fc.width=FW; fc.height=FH;
   fc.getContext('2d').putImageData(im,0,0);
   g.drawImage(fc,0,0,W,H);
+  }
 
   // 图廓：手绘抖笔双线，不用 rect
   function border(inset,wid,col,lw){
@@ -683,9 +929,10 @@ function makeBg(zb){
 }
 
 /* ---------- 地物层 ---------- */
-function makeFg(f){
-  const c=mk(); c.width=W; c.height=H;
-  const g=c.getContext('2d');
+function makeFg(f, rec){
+  let c=null, g;
+  if(rec) g=rec;
+  else { c=mk(); c.width=W; c.height=H; g=c.getContext('2d'); }
   labels.length=0;
   sealOn = (f==='all' || f==='zhongyuan');
 
@@ -1109,6 +1356,25 @@ function drawInkDetail(g, view){
     lon2x, lat2y, x2lon, y2lat,
     tierOf,
     get tier(){ return tier; },
+    // ── 矢量即时层：与位图 bg/fg 并存，调用方优先走这一层 ──
+    get hasVector(){ return typeof Path2D!=='undefined'; },
+    get wash(){ return makeWash(); },
+    drawVector,
+    vectorTierOf: z => clamp(Math.round(z),1,3),
+    /** 只记目标档，不立刻重录。缩放期间 drawVector 用现有 Path2D 即时重放
+        （旧档同样是锐利矢量，不是被拉大的位图），停手后 applyVectorTier()
+        才把笔加密到目标档。这样每次点击都跟手，且全程没有一帧是糊的。 */
+    setVectorTier(t){
+      vecPending = clamp(Math.round(t),1,3);
+      return vecPending;
+    },
+    /** 停手后真正重录；返回是否真的换了档（换档才需要 repaint）。 */
+    applyVectorTier(){
+      const nt = vecPending || 1;
+      if(nt===vecTier && vecFocus===focus && vecStrokes.length) return false;
+      buildVector(nt,focus);
+      return true;
+    },
     setTier(t){
       const nt = clamp(Math.round(t),1,6);
       if(nt !== tier){ tier = nt; bg = makeBg(tier); api.bg = bg; }
@@ -1117,7 +1383,10 @@ function drawInkDetail(g, view){
     // 切分图：重建地物层（分图专属地物随档出现），注记层自动跟着更新
     setFocus(f){
       const nf = FOCUS[f] ? f : 'all';
-      if(nf !== focus){ focus = nf; fg = opts.fg === false ? null : makeFg(focus); api.fg = fg; }
+      if(nf !== focus){
+        focus = nf; fg = opts.fg === false ? null : makeFg(focus); api.fg = fg;
+        vecTier = -1;   // 分图换了，矢量层必须重录
+      }
       return fg;
     },
   };
