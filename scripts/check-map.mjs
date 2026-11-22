@@ -1,5 +1,6 @@
 // 静态自检：配置、地形生成、连通性、导航控件、版本指纹。CI 与本地共用。
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { createTerrain, terrainStats } from '../src/terrain.js';
@@ -866,11 +867,77 @@ ok(/边界再处理核对/.test(mainDoc2) && /战线推进 \/ 策略对演/.test
 ok(/战线推进（本轮边界再处理）/.test(readme) && /没有自然终局/.test(readme),
   'README 没改掉「城数纹丝不动 / 无自然终局」的旧边界');
 ok(!/不驱动 AI 攻城自动结算/.test(readme), 'README 还写着旧版「不驱动自动结算」');
-// 不写死具体单测数：README 明确「以当期命令输出为准」，锁死 217 会逼着
-// 下一轮把当前实数改回旧数。只守「锚点小节在、单测实数格式在、策略对演入口在」。
-ok(/当前验证实数/.test(readme) && /\d+ 单测 \/ \d+ 文件全过/.test(readme) &&
-   /strategy-sim\.mjs/.test(readme),
-  'README 当前实数或策略对演入口没更新');
+ok(/\d+ 单测 \/ \d+ 文件全过/.test(readme) &&
+   /strategy-sim\.mjs/.test(readme) && /sync:mp/.test(readme),
+  'README 当前实数锚点 / 策略对演 / 镜像同步入口没更新');
+
+
+
+// ── 小程序适配（P1/P2/P5）：宿主收口 / 镜像一致 / 切片页零渲染 ──────────
+const persistSrc = readFileSync(join(root, 'src/persist.js'), 'utf8');
+const slotsSrc = readFileSync(join(root, 'src/save-slots.js'), 'utf8');
+const platformDir = join(root, 'src/platform');
+const platformIdx = existsSync(join(platformDir, 'index.js'))
+  ? readFileSync(join(platformDir, 'index.js'), 'utf8') : '';
+const sliceCore = readFileSync(join(root, 'miniprogram/utils/slice-core.js'), 'utf8');
+const slicePage = readFileSync(join(root, 'miniprogram/pages/slice/index.js'), 'utf8');
+const appJson = JSON.parse(readFileSync(join(root, 'miniprogram/app.json'), 'utf8'));
+const appJs = readFileSync(join(root, 'miniprogram/app.js'), 'utf8');
+const miniDoc = readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8');
+
+// ① 宿主收口：真正碰宿主的两个持久层文件不许再直接调 localStorage / Date.now。
+// 注释里的「不引用 localStorage」是宣言，不带点，不会被下面的精确匹配误伤。
+for (const [name, src] of [['persist.js', persistSrc], ['save-slots.js', slotsSrc]]) {
+  ok(!/localStorage\s*\./.test(src), `${name} 又直接调了 localStorage，宿主没走 platform/`);
+  ok(!/Date\.now\(\)/.test(src), `${name} 又直接调了 Date.now，存时没走 platform.now()`);
+  ok(/from '\.\/platform\/index\.js'/.test(src), `${name} 没 import 平台层`);
+}
+// 策略 / 战斗 / 重放链路本来就是纯的，P1 不该把它们弄脏。
+const pureLayer = ['campaign.js', 'pathfind.js', 'terrain.js', 'siege-grid.js',
+  'story.js', 'persist.js', 'economy.js', 'ai.js', 'field-resolve.js',
+  'sync.js', 'rng.js', 'outcome.js', 'save-slots.js', 'condition.js'];
+for (const f of pureLayer) {
+  const p = join(root, 'src', f);
+  if (!existsSync(p)) { ok(false, `纯逻辑层缺 ${f}`); continue; }
+  const t = readFileSync(p, 'utf8');
+  ok(!/\bdocument\s*\.|\bwindow\s*\.|\bwx\s*\./.test(t),
+    `纯逻辑层 ${f} 出现宿主 API（皮必须重写，但不该写进引擎）`);
+}
+
+// ② 平台层四个适配点齐全。
+for (const f of ['index.js', 'storage.js', 'input.js', 'canvas.js']) {
+  ok(existsSync(join(platformDir, f)), `src/platform/ 缺 ${f}`);
+}
+for (const fn of ['configurePlatform', 'resetPlatform', 'detectPlatform', 'storage', 'now', 'randomBytes']) {
+  ok(new RegExp(`export function ${fn}\\b`).test(platformIdx), `平台层缺导出 ${fn}`);
+}
+ok(/wxStorageDriver/.test(platformIdx) && /normalizePointer/.test(platformIdx) &&
+   /wxCanvas/.test(platformIdx), '平台层没把四个适配点聚合出来');
+
+// ③ 镜像必须与源逐字一致（交给同步脚本自己的 --check，不在护栏里重造一套 hash）。
+try {
+  const out = execFileSync(process.execPath,
+    [join(root, 'scripts/sync-miniprogram.mjs'), '--check'], { encoding: 'utf8' });
+  ok(/镜像一致/.test(out), '小程序逻辑层镜像 --check 没通过');
+} catch (e) {
+  ok(false, '小程序逻辑层镜像与源分叉：跑 node scripts/sync-miniprogram.mjs');
+}
+ok(existsSync(join(root, 'scripts/strategy-sim.mjs')), '策略对演脚本缺失');
+
+// ④ 最小可玩切片：只接逻辑层、零渲染、onHide/onShow 齐全、页面已注册。
+ok(appJson.pages.includes('pages/slice/index') && appJson.pages.includes('pages/index/index'),
+  'app.json 没同时注册切片页与传帖台首页');
+ok(/installHost\(\{ wx \}\)/.test(appJs), 'app.js 没注入小程序存储驱动');
+ok(/bootSlice|pushTurn|hideSlice|showSlice/.test(sliceCore) &&
+   /from '\.\.\/logic\/src\/campaign\.js'/.test(sliceCore),
+  'slice-core.js 没从镜像 import 逻辑层');
+for (const bad of ['document.', 'window.', 'getContext', 'Path2D', 'drawImage']) {
+  ok(!slicePage.includes(bad) && !sliceCore.includes(bad), `切片链路出现宿主渲染 API ${bad}`);
+}
+ok(/onHide\(\)/.test(slicePage) && /onShow\(\)/.test(slicePage),
+  '切片页缺 onHide / onShow 生命周期');
+ok(/§十|最小可玩切片|src\/platform\//.test(miniDoc), '小程序后台说明没补适配台账');
+ok(/最小可玩切片|sync:mp/.test(readme), 'README 没补小程序适配段');
 
 
 if (problems.length) {
