@@ -17,7 +17,7 @@
 
 | 命令 | 最近一次实测 | 说明 |
 | --- | --- | --- |
-| `npm test` | **247 单测 / 32 文件全过** | `node --test tests/*.mjs`；含长局、简算、端侧烟测、P4 包体与格网、画布链路与分包方案 11 项 |
+| `npm test` | **252 单测 / 33 文件全过** | `node --test tests/*.mjs`；含长局、简算、端侧烟测、P4 包体与格网、画布链路与分包方案 11 项、矢量内核回归 5 项 |
 | `npm run check` | 静态自检全绿 | 地图 / 连通性 / 指纹 / 章回 / 旬循环 / 简算 / 镜像一致 / 包体核算 / 分包方案 / 画布契约 / 署名 / 明文护栏 |
 | `npm run smoke` | **163 项真 Chromium 烟测全过** | 含旬计簿、素材致谢、三席存档、终局页、推一旬入账 |
 | `npm run sync:mp` | 24 个 `.js` + config 模块 | 从主 `src/` 的 ESM 闭包生成小程序逻辑层镜像；改了 `src/` 必跑 |
@@ -768,14 +768,14 @@ scripts/longrun.mjs        纯逻辑长局对演（含易主 / 简算观测，�
 scripts/strategy-sim.mjs   四策略 × 多 seed 对演（补「未真人试玩」边界）
 scripts/sync-miniprogram.mjs  小程序逻辑层镜像：ESM 闭包 + MANIFEST + --check
 scripts/logic-slice.mjs    主工程侧双时钟复验：纯 Node 比对两份存档 JSON
-tests/                     32 个 node:test 单测文件（含长局 / 简算 / 端侧 / 包体 / 画布）
+tests/                     33 个 node:test 单测文件（含长局 / 简算 / 端侧 / 包体 / 画布 / 矢量）
 supabase/schema.sql        零预算联机地基（与本机存档两条线，别混读）
 ```
 
 ## 运行
 
 ```bash
-npm test          # 以当期输出为准（最近一次 247/247，见顶部「当前验证实数」）
+npm test          # 以当期输出为准（最近一次 252/252，见顶部「当前验证实数」）
 npm run check     # 地图/连通性/导航/指纹/旬循环/简算/镜像/包体/分包/画布/署名，失败真退出
 npm run smoke     # 起本地服务 + 真 Chromium 烟测（最近一次 163/163）
 npm run sync:mp   # 改了 src/ 或 config/ 后刷新小程序逻辑层镜像
