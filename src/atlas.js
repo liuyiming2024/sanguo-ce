@@ -574,22 +574,27 @@ function buildVectorIndex(){
     懒生成，默认位图路径完全不碰它。 */
 function makeWash(){
   if(washCanvas) return washCanvas;
-  const FW=350, FH=275;
-  const c=mk(); c.width=FW; c.height=FH;
-  const g=c.getContext('2d'), im=g.createImageData(FW,FH);
-  for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
-    const lon=LON0+i/FW*(LON1-LON0), lat=LAT1-j/FH*(LAT1-LAT0);
-    const [r,gg,b,reg]=fieldColor(lon,lat);
-    const k=(j*FW+i)*4;
-    im.data[k]=r; im.data[k+1]=gg; im.data[k+2]=b;
-    im.data[k+3]=Math.round(255*clamp(0.56+0.44*reg.density,0,1));
-  }
-  g.putImageData(im,0,0);
-  const big=mk(); big.width=W; big.height=H;
-  const b=big.getContext('2d');
-  b.imageSmoothingEnabled=true; b.imageSmoothingQuality='high';
-  b.drawImage(c,0,0,W,H);
-  washCanvas=big; return big;
+  // 连续渐变底罩：南北主渐变 + 三处区域径向晕染。旧版逐像素 fieldColor
+  // 底罩在秦岭—淮河一带露出近水平的密度/色相断层，实拍读成「两半纸」。
+  const c=mk(); c.width=W; c.height=H;
+  const g=c.getContext('2d');
+  const ns=g.createLinearGradient(0,0,0,H);
+  ns.addColorStop(0,   'rgba(195,177,135,.88)');
+  ns.addColorStop(.30, 'rgba(198,181,141,.82)');
+  ns.addColorStop(.52, 'rgba(169,172,145,.70)');
+  ns.addColorStop(.72, 'rgba(143,168,147,.60)');
+  ns.addColorStop(1,   'rgba(125,158,138,.55)');
+  g.fillStyle=ns; g.fillRect(0,0,W,H);
+  const rad=(fx,fy,r,col)=>{
+    const cx=fx*W, cy=fy*H, rr=r*Math.max(W,H);
+    const gr=g.createRadialGradient(cx,cy,0,cx,cy,rr);
+    gr.addColorStop(0,col); gr.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=gr; g.fillRect(0,0,W,H);
+  };
+  rad(.16,.14,.34,'rgba(220,201,162,.62)');
+  rad(.60,.47,.26,'rgba(109,148,148,.40)');
+  rad(.62,.88,.42,'rgba(143,174,146,.34)');
+  washCanvas=c; return c;
 }
 
 /** 重录矢量笔层。笔密度封顶 3 档：makeBg(zb) 笔数约按 zb² 涨，跟到 12 会
@@ -817,7 +822,12 @@ function makeBg(zb, rec){
       const dens=r.density;
       const step=(lerp(26,8,dens)+rnd(x*.13+y*.07)*8)*k;
       // 边地留白：密度越低越常跳笔，白从笔缝里连续漏出
-      if(rnd(x*.031+y*.017) > 0.30+0.68*dens){ x+=step*.7; continue; }
+      /* 聚散由低频簇场给，不由「逐格按 density 跳笔」给：旧口径全图均匀
+         扫格，实拍是一层等密度纹样平铺（docs/背景层落地清单.md 实拍推翻
+         记录第 1 条）。簇心成片落笔、簇外整片透纸，纸白才参与构图。 */
+      const cl = fbm(lon*.26, lat*.29, seed*.021);
+      const keep = clamp((0.30 + 0.68*dens) * clamp((cl-.33)*3.0, .05, 1.20), 0, 1);
+      if(rnd(x*.031+y*.017) > keep){ x+=step*.7; continue; }
       // 方向不只跟随低频风场：叠两项高频扰动，避免整片区域同向排成斜纹布。
       const ang=r.wind+(n-.5)*1.05+(rnd(x*.019+y*.023)-.5)*1.5
                +(rnd(x*.41+y*.37)-.5)*1.25

@@ -69,7 +69,9 @@ const DPR = Math.min(2, window.devicePixelRatio||1);
 cv.width = W*DPR; cv.height = H*DPR;
 ctx.scale(DPR,DPR);
 
-let seed = 202005, zoom = 1, panX = 0, panY = 0, showFeatures = true, showGrid = true;
+/* 格网是「上层逻辑界格」，默认不压在画上：实拍里它把全境图读成坐标纸。
+   工具条「压上格子」仍可手动开，导出图永远不带。 */
+let seed = 202005, zoom = 1, panX = 0, panY = 0, showFeatures = true, showGrid = false;
 let bg = null, fg = null, dragging = false, lastX = 0, lastY = 0;
 let focus = 'all', showInk = true;
 /* 注记不再烘进离屏图层：按比例尺分级、屏幕固定字号绘制，缩放时字不会跟着糊成一团 */
@@ -637,7 +639,13 @@ function makeBg(zb, rec){
       const dens=r.density;
       const step=(lerp(26,8,dens)+rnd(x*.13+y*.07)*8)*k;
       // 边地留白：密度越低越常跳笔，白从笔缝里连续漏出
-      if(rnd(x*.031+y*.017) > 0.30+0.68*dens){ x+=step*.7; continue; }
+      /* 聚散由低频簇场给，不由「逐格按 density 跳笔」给。
+         旧口径全图均匀扫格，实拍是一层等密度纹样平铺（见
+         docs/背景层落地清单.md「本轮实拍推翻记录」第 1 条）。
+         簇心成片落笔、簇外整片透纸，纸白才真的参与构图。 */
+      const cl = fbm(lon*.26, lat*.29, seed*.021);
+      const keep = clamp((0.30 + 0.68*dens) * clamp((cl-.33)*3.0, .05, 1.20), 0, 1);
+      if(rnd(x*.031+y*.017) > keep){ x+=step*.7; continue; }
       // 方向不只跟随低频风场：叠两项高频扰动，避免整片区域同向排成斜纹布。
       const ang=r.wind+(n-.5)*1.05+(rnd(x*.019+y*.023)-.5)*1.5
                +(rnd(x*.41+y*.37)-.5)*1.25
@@ -1164,22 +1172,25 @@ let vecShown=0;
 let washCanvas=null;
 function buildWash(){
   if(washCanvas) return washCanvas;
-  const FW=350,FH=275;
-  const c=document.createElement('canvas'); c.width=FW; c.height=FH;
-  const g=c.getContext('2d'), im=g.createImageData(FW,FH);
-  for(let j=0;j<FH;j++) for(let i=0;i<FW;i++){
-    const lon=LON0+i/FW*(LON1-LON0), lat=LAT1-j/FH*(LAT1-LAT0);
-    const [r,gg,b,reg]=fieldColor(lon,lat);
-    const k=(j*FW+i)*4;
-    im.data[k]=r; im.data[k+1]=gg; im.data[k+2]=b;
-    im.data[k+3]=Math.round(255*clamp(0.56+0.44*reg.density,0,1));
-  }
-  g.putImageData(im,0,0);
-  const big=document.createElement('canvas'); big.width=W; big.height=H;
-  const b=big.getContext('2d');
-  b.imageSmoothingEnabled=true; b.imageSmoothingQuality='high';
-  b.drawImage(c,0,0,W,H);
-  washCanvas=big; return big;
+  const c=document.createElement('canvas'); c.width=W; c.height=H;
+  const g=c.getContext('2d');
+  const ns=g.createLinearGradient(0,0,0,H);
+  ns.addColorStop(0,   'rgba(195,177,135,.88)');
+  ns.addColorStop(.30, 'rgba(198,181,141,.82)');
+  ns.addColorStop(.52, 'rgba(169,172,145,.70)');
+  ns.addColorStop(.72, 'rgba(143,168,147,.60)');
+  ns.addColorStop(1,   'rgba(125,158,138,.55)');
+  g.fillStyle=ns; g.fillRect(0,0,W,H);
+  const rad=(fx,fy,r,col)=>{
+    const cx=fx*W, cy=fy*H, rr=r*Math.max(W,H);
+    const gr=g.createRadialGradient(cx,cy,0,cx,cy,rr);
+    gr.addColorStop(0,col); gr.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=gr; g.fillRect(0,0,W,H);
+  };
+  rad(.16,.14,.34,'rgba(220,201,162,.62)');   // 河西沙碛
+  rad(.60,.47,.26,'rgba(109,148,148,.40)');   // 中原湿区
+  rad(.62,.88,.42,'rgba(143,174,146,.34)');   // 岭南
+  washCanvas=c; return c;
 }
 
 let vecStrokes=[], vecTexts=[], vecBgEnd=0, vecBgTextEnd=0;
@@ -1459,18 +1470,16 @@ function createSvgRecorder(){
 /* 连续场底罩的矢量等效：低频色块网格 + 高斯滤镜。仍是矢量指令，
    放大不像素化；密度低的边地透明度小，纸从缝里透出一丢丢。 */
 function svgWash(){
-  // 纯底罩行跳变 >1 像素的实测：100×78+blur2.6 = 8578；
-  // 140×110+blur 2.6/4.0/6.0/8.0 = 6928/2872/2479/1992。
-  // 细化色块 + 加大模糊一起用最平，取 140×110 + 8.0；南北渐变仍完整。
-  const NX=140, NY=110, cw=W/NX, ch=H/NY, o=[];
-  const F=n=>(+n.toFixed(1));
-  for(let j=0;j<NY;j++) for(let i=0;i<NX;i++){
-    const lon=LON0+(i+.5)/NX*(LON1-LON0), lat=LAT1-(j+.5)/NY*(LAT1-LAT0);
-    const [r,gg,b,reg]=fieldColor(lon,lat);
-    const a=clamp(0.56+0.44*reg.density,0,1).toFixed(2);
-    o.push(`<rect x="${F(i*cw)}" y="${F(j*ch)}" width="${F(cw+.6)}" height="${F(ch+.6)}" fill="rgb(${r},${gg},${b})" fill-opacity="${a}"/>`);
-  }
-  return `<g id="wash" filter="url(#washBlur)">${o.join('')}</g>`;
+  /* 连续场底罩改用 SVG 原生渐变：南北一条主渐变 + 三处区域径向晕染。
+     旧版 140×110 = 15400 个 rect + 高斯模糊，实拍会露出成行色阶和一条
+     近水平的南北断层，整张读成「没画完的图表纸」，已否。渐变本身连续，
+     无限放大也不会出现色块接缝；区域信息仍留在笔色里（fieldColor）。 */
+  return `<g id="wash">` +
+    `<rect width="${W}" height="${H}" fill="url(#ns)"/>` +
+    `<rect width="${W}" height="${H}" fill="url(#desert)"/>` +
+    `<rect width="${W}" height="${H}" fill="url(#wet)"/>` +
+    `<rect width="${W}" height="${H}" fill="url(#south)"/>` +
+    `</g>`;
 }
 
 function buildSvg(){
@@ -1493,23 +1502,31 @@ function buildSvg(){
   const O=[];
   O.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   O.push(`<title>建安五年全境舆图 · 全量矢量</title>`);
-  O.push(`<desc>全量矢量（非骨架）：纸底 / 连续场底罩 / 全部地貌笔触 / 水系 / 州界 / 城邑 / 题识 / 格网 / 注记，均为 path·rect·text 矢量指令，无位图。注记含 L3 县邑共 ${items.length} 处，已按十三方向自动避让。若单独打开只看到一串孤立地名而无地貌，那是早期「矢量骨架」旧快照，不是本文件。州界为示意，纵横不拘实距。</desc>`);
+  O.push(`<desc>全量矢量（非骨架）：纸底 / 连续渐变底罩 / 全部地貌笔触 / 水系 / 州界 / 城邑 / 题识 / 注记（不压格网），均为 path·rect·text 矢量指令，无位图。注记含 L3 县邑共 ${items.length} 处，已按十三方向自动避让。若单独打开只看到一串孤立地名而无地貌，那是早期「矢量骨架」旧快照，不是本文件。州界为示意，纵横不拘实距。</desc>`);
   O.push(`<metadata id="build">{"round":13,"full":true,"avoid":true,"vector":true,"labels":${items.length},"paths":${nPath},"note":"非骨架"}</metadata>`);
-  O.push(`<defs><filter id="washBlur" x="-4%" y="-4%" width="108%" height="108%"><feGaussianBlur stdDeviation="8.0"/></filter></defs>`);
+  O.push(`<defs>
+    <linearGradient id="ns" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#c3b187" stop-opacity="0.88"/>
+      <stop offset="0.30" stop-color="#c6b58d" stop-opacity="0.82"/>
+      <stop offset="0.52" stop-color="#a9ac91" stop-opacity="0.70"/>
+      <stop offset="0.72" stop-color="#8fa893" stop-opacity="0.60"/>
+      <stop offset="1" stop-color="#7d9e8a" stop-opacity="0.55"/>
+    </linearGradient>
+    <radialGradient id="desert" cx="0.16" cy="0.14" r="0.34">
+      <stop offset="0" stop-color="#dcc9a2" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#dcc9a2" stop-opacity="0"/></radialGradient>
+    <radialGradient id="wet" cx="0.60" cy="0.47" r="0.26">
+      <stop offset="0" stop-color="#6d9494" stop-opacity="0.40"/>
+      <stop offset="1" stop-color="#6d9494" stop-opacity="0"/></radialGradient>
+    <radialGradient id="south" cx="0.62" cy="0.88" r="0.42">
+      <stop offset="0" stop-color="#8fae92" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#8fae92" stop-opacity="0"/></radialGradient>
+  </defs>`);
   O.push(`<rect id="paper" width="${W}" height="${H}" fill="#e9e3d1"/>`);
   O.push(svgWash());
   O.push(`<g id="strokes">\n${strokeParts}\n</g>`);
-  // 格网按 ×1 基准，与 viewBox 对齐；线宽恒定，放大不糊
-  if(showGrid){
-    const cell=GRID_BASE, m=cell*3;
-    let d='',dm='';
-    for(let x=0;x<W;x+=cell) d+=`M ${F(x)} 0 L ${F(x)} ${H} `;
-    for(let y=0;y<H;y+=cell) d+=`M 0 ${F(y)} L ${W} ${F(y)} `;
-    for(let x=0;x<W;x+=m) dm+=`M ${F(x)} 0 L ${F(x)} ${H} `;
-    for(let y=0;y<H;y+=m) dm+=`M 0 ${F(y)} L ${W} ${F(y)} `;
-    O.push(`<g id="grid-fine" fill="none" stroke="#c8a86a" stroke-opacity="0.30" stroke-width="1" vector-effect="non-scaling-stroke"><path d="${d}"/></g>`);
-    O.push(`<g id="grid-major" fill="none" stroke="#e0c287" stroke-opacity="0.55" stroke-width="1.3" vector-effect="non-scaling-stroke"><path d="${dm}"/></g>`);
-  }
+  /* 纯矢量交付图不压格网：格网是上层逻辑界格（计里画方），压在画上会让
+     整张读成坐标纸，与「形象画法」相冲。页面工具条仍可手动压格子看尺度。 */
   // 注记：用避让后的 X/Y 与最终字号；淡描边保证密背景上可读
   let tx='';
   for(const {L,X,Y,fs,vert} of items){

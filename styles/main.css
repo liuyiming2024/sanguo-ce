@@ -714,3 +714,17 @@ body::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:2;
 .coverCard .proChoice .pcBtn{margin-top:6px}
 .coverCard .startBtn{letter-spacing:4px;font-size:14px}
 .coverCard .tiny{margin:12px 0 0;font-size:10px}
+
+/* ── 封面可读性修正（审美复审）────────────────────────────────────────
+   旧口径把 h3 / 檄文正文写成 #20251f（近黑），可封面是墨底深卡，实拍里
+   整页只有一枚印和一圈金框能看见，文字几乎读不出 —— 不是"留白"，是没画。
+   改成纸色系并给卡片一层极淡纸光，保留墨底气质但让字真的能读。 */
+.coverCard{
+  background:linear-gradient(180deg,rgba(233,227,209,.060),rgba(233,227,209,.014));
+  box-shadow:0 0 0 1px rgba(200,168,106,.22),0 18px 60px rgba(0,0,0,.45)}
+.coverCard .menuSub,.coverCard .proDate{color:#d8c89a}
+.coverCard .prologue h3{color:#eadfc5}
+.coverCard .proBeat{color:#d9cdb1}
+.coverCard .proSource,.coverCard .proRole{color:#aa9d7e}
+.coverCard .proChoice summary{color:#bdae86}
+.coverCard .tiny{color:#9c9176}
