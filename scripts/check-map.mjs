@@ -1044,6 +1044,62 @@ ok(/§十二|画布格网|assets:build/.test(sliceDoc2), '小程序后台说明�
 ok(/mp-canvas|assets:plan|画布格网/.test(readme), 'README 没补画布链路与分包入口');
 
 
+
+// ── 可交互格网：视口相机 / 命中层 / P1 最后适配点被消费 ─────────────
+const miniSrc = readFileSync(join(root, 'src/platform/mini-map.js'), 'utf8');
+const inputSrc = readFileSync(join(root, 'src/platform/input.js'), 'utf8');
+const platformIdx2 = readFileSync(join(root, 'src/platform/index.js'), 'utf8');
+const sliceJs3 = readFileSync(join(root, 'miniprogram/pages/slice/index.js'), 'utf8');
+const sliceWxml3 = readFileSync(join(root, 'miniprogram/pages/slice/index.wxml'), 'utf8');
+const canvasJs3 = readFileSync(join(root, 'miniprogram/pages/canvas/index.js'), 'utf8');
+const canvasWxml3 = readFileSync(join(root, 'miniprogram/pages/canvas/index.wxml'), 'utf8');
+const sliceCore3 = readFileSync(join(root, 'miniprogram/utils/slice-core.js'), 'utf8');
+const miniDoc3 = readFileSync(join(root, 'docs/小程序军令帖验证说明.md'), 'utf8');
+
+for (const fn of ['miniMapSize', 'fullBox', 'clampBox', 'panBox', 'zoomBox', 'boxOf',
+  'boxZoom', 'createMiniCamera', 'hitTestMiniMap', 'resolveMiniMapHit']) {
+  ok(new RegExp(`export function ${fn}\\b`).test(miniSrc), `mini-map.js 缺导出 ${fn}`);
+}
+for (const fn of ['normalizeTouches', 'touchDistance', 'pinchRatio']) {
+  ok(new RegExp(`export function ${fn}\\b`).test(inputSrc), `input.js 缺导出 ${fn}`);
+  ok(new RegExp(fn).test(platformIdx2), `平台聚合入口没重导出 ${fn}`);
+}
+ok(/from '\.\/input\.js'/.test(miniSrc) && /normalizePointer\(/.test(miniSrc),
+  'mini-map.js 没消费 input.js：P1 的指针归一仍是死接口');
+ok(/minSpanC|minSpanR/.test(miniSrc), '视口缺最小跨度夹取，放大到单格会失去意义');
+ok(/rect:\s*\{/.test(readFileSync(join(root, 'src/platform/canvas.js'), 'utf8')),
+  'wxCanvas 没返回实时 rect，命中换算拿不到 left/top');
+// 纯逻辑：相机与命中不许碰宿主 API / 墙钟 / 随机
+for (const bad of ['document.', 'window.', 'wx.', 'getContext', 'new Image',
+  'Date.now', 'Math.random', 'localStorage']) {
+  ok(!miniSrc.includes(bad) && !inputSrc.includes(bad), `可交互层出现宿主 API ${bad}`);
+}
+// 默认全图回归：boxOf 不给参数时必须回全图，zoom=1
+ok(/opts\.box \?\? opts\.view \?\? fullBox\(state\)/.test(miniSrc),
+  '默认视口口径变了，旧 18×14 基线可能破');
+ok(/export const miniMap = \(state, opts\)/.test(sliceCore3) &&
+   /miniCamera|createMiniCamera/.test(sliceCore3) &&
+   /resolveMiniMapHit/.test(sliceCore3), 'slice-core.js 没把可交互层透出去');
+// 两条皮都消费，且色块页仍零 Canvas
+ok(/data-i="\{\{index\}\}"/.test(sliceWxml3) && /onCellTap\(/.test(sliceJs3) &&
+   /miniHit\(/.test(sliceJs3) && /onZoomIn\(/.test(sliceJs3),
+  '色块页没接相机 / 点格命中');
+for (const bad of ['<canvas', '<image', 'getContext', 'createSelectorQuery', 'drawImage']) {
+  ok(!sliceWxml3.includes(bad) && !sliceJs3.includes(bad), `色块页破了零 Canvas 基线：${bad}`);
+}
+for (const k of ['bindtouchstart="onTouchStart"', 'bindtouchmove="onTouchMove"',
+  'bindtouchend="onTouchEnd"']) {
+  ok(canvasWxml3.includes(k), `画布页缺 ${k}`);
+}
+for (const k of ['onTouchStart(', 'onTouchMove(', 'onTouchEnd(', 'pinchRatio(',
+  'normalizeTouches(', 'miniResolveHit(', 'this._cam.pan(', 'this._cam.zoom(']) {
+  ok(canvasJs3.includes(k), `画布页逻辑缺 ${k}`);
+}
+ok(existsSync(join(root, 'tests/mp-interact.test.mjs')), '可交互格网回归单测缺失');
+ok(/§十三|可交互格网/.test(miniDoc3), '小程序后台说明没补 §十三');
+ok(/可交互格网|miniCamera/.test(readme), 'README 没补可交互格网段');
+
+
 if (problems.length) {
   console.error(`\n✗ 静态自检未通过（${problems.length} 项）：\n - ` + problems.join('\n - '));
   process.exit(1);

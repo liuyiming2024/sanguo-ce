@@ -9,11 +9,27 @@
 
   <view class="note">同一份 terrain.tiles 数据，换一层皮：小程序 canvas 2d 节点 + 归一化 fillRect 指令。不读任何 PNG，色块与城点都由逻辑层算出。</view>
 
-  <canvas type="2d" id="mini" class="miniCanvas"></canvas>
+  <canvas type="2d" id="mini" class="miniCanvas"
+          bindtouchstart="onTouchStart" bindtouchmove="onTouchMove" bindtouchend="onTouchEnd"></canvas>
 
   <view class="status">{{status}}</view>
-  <view wx:if="{{size}}" class="mono">逻辑尺寸 {{size}} · DPR {{dpr}} · 指令 {{painted}} 条</view>
+  <view wx:if="{{size}}" class="mono">逻辑尺寸 {{size}} · DPR {{dpr}} · 指令 {{painted}} 条 · 放大 {{zoom}}×</view>
   <view wx:if="{{err}}" class="err">{{err}}</view>
+
+  <view wx:if="{{hit}}" class="card hitCard">
+    <view class="ct">所 点 之 格</view>
+    <view class="kv"><text>源格</text><text>{{hit.where}}</text></view>
+    <view class="kv"><text>归属</text><text>{{hit.owner}}</text></view>
+    <view class="kv"><text>地貌</text><text>{{hit.terrain}}</text></view>
+    <view class="kv"><text>城</text><text>{{hit.city}}</text></view>
+    <view class="kv"><text>事件</text><text>{{hit.source}}</text></view>
+  </view>
+
+  <view class="row">
+    <button class="btn" bindtap="onZoomIn">放 大</button>
+    <button class="btn" bindtap="onZoomOut">缩 小</button>
+    <button class="btn ghost" bindtap="onReset">复 位</button>
+  </view>
 
   <view wx:if="{{summary}}" class="card">
     <view class="ct">局 面</view>

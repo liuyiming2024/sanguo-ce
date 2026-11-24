@@ -63,19 +63,19 @@
     },
     {
       "path": "src/platform/canvas.js",
-      "sha256": "e158cbca3ceb87aebdc48356bf160bb2944909d3f2e67e89f5c39ec1973c397b"
+      "sha256": "0619b8dd8c27079965a05596095aa2550c59883b3076c278758fa742537a851f"
     },
     {
       "path": "src/platform/index.js",
-      "sha256": "4e24ea9fd398ffcbefc3c275f4685c31cc0177a0effe7501a01f215917463ba5"
+      "sha256": "2c5f2875db5a20fecad6b3e68c4abb85aeb41a3241f5b98a4f1993f07fafb049"
     },
     {
       "path": "src/platform/input.js",
-      "sha256": "7395841bad66717e16ec24be72fccf58810c49a9e815eb896f39fa3641aeb688"
+      "sha256": "5c04fe8c75bd1a728ec3d9a9b69254fd68188160940fb3f209f3c2a3782dc6cf"
     },
     {
       "path": "src/platform/mini-map.js",
-      "sha256": "5d16ef67df6b9cbcc24a46813ea63a7eca0dccd21dd3b525657bea9797134dbd"
+      "sha256": "efbe1b64d97be50b2de1255f6b92cb260b93d5fbe7b37fbce0382cafbe65bd3e"
     },
     {
       "path": "src/platform/storage.js",

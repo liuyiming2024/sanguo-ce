@@ -17,11 +17,11 @@
 
 | 命令 | 最近一次实测 | 说明 |
 | --- | --- | --- |
-| `npm test` | **252 单测 / 33 文件全过** | `node --test tests/*.mjs`；含长局、简算、端侧烟测、P4 包体与格网、画布链路与分包方案 11 项、矢量内核回归 5 项 |
+| `npm test` | **267 单测 / 34 文件全过** | `node --test tests/*.mjs`；含长局、简算、端侧烟测、P4 包体与格网、画布链路 11 项、矢量内核 5 项、可交互格网 15 项 |
 | `npm run check` | 静态自检全绿 | 地图 / 连通性 / 指纹 / 章回 / 旬循环 / 简算 / 镜像一致 / 包体核算 / 分包方案 / 画布契约 / 署名 / 明文护栏 |
 | `npm run smoke` | **163 项真 Chromium 烟测全过** | 含旬计簿、素材致谢、三席存档、终局页、推一旬入账 |
 | `npm run sync:mp` | 24 个 `.js` + config 模块 | 从主 `src/` 的 ESM 闭包生成小程序逻辑层镜像；改了 `src/` 必跑 |
-| `npm run bundle` | 主包约 0.21 MiB / 0 位图 | P4 包体核算：PNG sheet 13.32 MiB；webp 压缩后 2.59 MiB、分两组各 ≤ 2 MB |
+| `npm run bundle` | 主包约 0.2 MiB / 0 位图 | P4 包体核算：PNG sheet 13.32 MiB；webp 压缩后 2.59 MiB、分两组各 ≤ 2 MB |
 | `npm run assets:plan` | 分包方案护栏 | 每组 ≤ 2 MB、主包 ≤ 2 MB、plan 的 PNG 字节与磁盘一致 |
 | `npm run assets:build` | 生成本地 webp 产物 | `miniprogram/assets/` 已 gitignore，产物不进仓库；真分包待真机启用 |
 | `npm run logic:slice` | 纯 Node 双时钟复验 | 对面推的 `scripts/logic-slice.mjs`：快照快进 vs 实时推进逐字段一致 |
@@ -34,7 +34,8 @@
 - **玩家可见署名（B1/B2 已闭环）**：系统页「素材致谢 · 开源许可」完整保留 `MIT License / Copyright (c) 2018 Lingdong Huang` 与两份 LICENSE 全文；`src/ink-stroke.js` / `src/guandu.js` 头部声明、`demos/third-party/ATTRIBUTION.md` 与两份 LICENSE 逐字复核过。
 - **典籍与舆图**：`src/atlas.js`（三级注记分级 / 中原详图开关）、`config/historica.json`（文言六门）、游戏内「典籍总揽」纸页，自 v0.9.4 起在库；白话考据留 `docs/`。
 - **传帖台**：`src/ticket-store.js` + `supabase/schema.sql` + 独立 `bridge.html`，与本机存档是两条线。
-- **画布链路真接上 + 压缩分包方案（本轮）**：`src/platform/canvas.js` 加纯函数 `applyDrawOps()`（归一化指令 → duck-typed 2d ctx，零宿主 API）与 `hostDpr()`；另开 `miniprogram/pages/canvas/` 用 `wxCanvas()` 拿节点画同一份 `miniMapOps()` 指令，**切片页仍保持零 Canvas 回归基线不动**。压缩实测：sharp / PIL 两套交叉验证，4 张 sheet 从 13.32 MiB → webp **2.59 MiB**，按 infantry 1.65 / engine 0.94 MiB 分两组各 ≤ 2 MB，主包 + 分包 2.80 MiB。`app.json` 仍未启用 `subpackages`（webp 解码与端侧皮重写未真机验），但给了 `assets-plan.json` + `app.subpackages.example.json` + 一键 `assets:build`。白话全本见 `docs/小程序军令帖验证说明.md` §十二。
+- **可交互格网（本轮）**：`src/platform/mini-map.js` 从 18×14 静态缩略推进成**视口 + 相机 + 命中**：`opts.box` 看局部（不给时输出与旧版逐字一致，回归基线不破）、`panBox/zoomBox/createMiniCamera` 纯函数且缩放锚点保持、`hitTestMiniMap/resolveMiniMapHit` 把 mouse / touch / changedTouches / detail 四种事件 + 实时 rect 归一成源格。**P1 四个适配点至此全部有真实调用方**（input.js 被命中层消费）。色块页用点格 + 按钮缩放、画布页用单指平移 / 双指捏合 / 点击查格，两条皮共用同一份 `miniMapOps` 数据，色块页仍零 Canvas。白话全本见 `docs/小程序军令帖验证说明.md` §十三。
+- **画布链路真接上 + 压缩分包方案**：`src/platform/canvas.js` 加纯函数 `applyDrawOps()`（归一化指令 → duck-typed 2d ctx，零宿主 API）与 `hostDpr()`；另开 `miniprogram/pages/canvas/` 用 `wxCanvas()` 拿节点画同一份 `miniMapOps()` 指令，**切片页仍保持零 Canvas 回归基线不动**。压缩实测：sharp / PIL 两套交叉验证，4 张 sheet 从 13.32 MiB → webp **2.59 MiB**，按 infantry 1.65 / engine 0.94 MiB 分两组各 ≤ 2 MB，主包 + 分包 2.80 MiB。`app.json` 仍未启用 `subpackages`（webp 解码与端侧皮重写未真机验），但给了 `assets-plan.json` + `app.subpackages.example.json` + 一键 `assets:build`。白话全本见 `docs/小程序军令帖验证说明.md` §十二。
 - **P4 包体核算 + 零位图格网**：核完发现清单两处前提要改——运行时其实只加载 `src/portrait.js` 里 4 张 sheet（13.32 MiB，不是 52 张 PNG），且舆图是 `guandu.js` / `atlas.js` 的程序化离屏画布、`.png` 字面量 0 处，**「按章分包两张舆图」不成立**。3 张 sheet 各自超微信单个分包 2 MB，直接声明 `subpackages` 会失败，必须先压缩；只有 `trooper-tiny-sheet`（71 KB）可进主包。`src/platform/mini-map.js` 把 144×108 栅格确定性降采样成 18×14 色块 + 纯 JSON 绘制指令，切片页用 WXML 色块消费，仍零 PNG / 零 Canvas。白话全本见 `docs/小程序军令帖验证说明.md` §十一。
 - **B6 存档表示差异**：`undefined`↔`{}` / `''` 两处已定位，都 falsy、不进判定，`logic-slice.mjs` 按存档 JSON 比对、镜像侧回归验 `hashState` 一致，**不改 `campaign.js` / `persist.js` 核心资产**。
 - **小程序适配（P1/P2/P3/P5）**：`src/platform/` 薄适配层（storage / 指针归一 / 画布节点 / now·randomBytes 注入）；核完发现九个纯逻辑模块本来就不碰宿主，真正收口的只有 `persist.js` 与 `save-slots.js` 两处。`scripts/sync-miniprogram.mjs` 从 ESM 依赖闭包把 **23 个纯逻辑 `.js`** 原字节镜像到 `miniprogram/logic/`（import 路径一字不改），`MANIFEST.json` + 自检保证不分叉；`miniprogram/pages/slice/` 是「最小可玩切片」——冷启动 / 推旬 / 战报文本 / `onHide` 拍快照 `onShow` 指纹比对，零 PNG、零 Canvas、零结算层。白话全本见 `docs/小程序军令帖验证说明.md` §十。
@@ -741,7 +742,7 @@ src/campaign.js            纯逻辑策略层：回合、地块产出、在途�
 src/economy.js             一旬结算：产量分摊 / 驻军与在途耗粮 / 断粮 / 发令约束 / 断粮减产系数
 src/field-resolve.js       AI 滞留战斗简算：独立派生随机流，结果走 resolveBattle 回写
 src/ai.js                  AI 四类权重决策：只出 spec，落库仍走 issueOrder；断粮按饿城比例救荒
-src/platform/              薄适配层：storage / input / canvas（含 applyDrawOps）/ index + mini-map
+src/platform/              薄适配层：storage / input（含多指归一）/ canvas（applyDrawOps+rect）/ index + mini-map（视口/相机/命中）
 miniprogram/logic/         生成镜像：24 个纯逻辑 .js + config ESM + MANIFEST（勿手改）
 miniprogram/utils/slice-core.js   最小可玩切片的纯逻辑核心（Node 可直接跑）
 miniprogram/pages/slice/   色块页：冷启动 / 推旬 / 读档 / onHide·onShow / 零位图格网（零 Canvas）
@@ -752,6 +753,7 @@ scripts/check-mp-bundle.mjs   P4 包体核算：主包 / 分包 / sheet / 底稿
 scripts/mp-assets.mjs         分包方案：--measure / --build / --check
 tests/mp-bundle.test.mjs    P4 格网 / 包体 / B6 存档表示差异回归
 tests/mp-canvas.test.mjs    画布链路 / 分包方案 / 镜像一致回归
+tests/mp-interact.test.mjs  可交互格网：视口 / 相机 / 命中 / 两皮消费
 src/save-slots.js          甲乙丙三席存档 + 覆盖前备份 + 坏档回退
 src/outcome.js             终局三态只读判定（不进指纹）
 src/battle-session.js      双时钟会话：快照 / 离开停跑 / 同算法快进 / 邮箱按步回放
@@ -768,14 +770,14 @@ scripts/longrun.mjs        纯逻辑长局对演（含易主 / 简算观测，�
 scripts/strategy-sim.mjs   四策略 × 多 seed 对演（补「未真人试玩」边界）
 scripts/sync-miniprogram.mjs  小程序逻辑层镜像：ESM 闭包 + MANIFEST + --check
 scripts/logic-slice.mjs    主工程侧双时钟复验：纯 Node 比对两份存档 JSON
-tests/                     33 个 node:test 单测文件（含长局 / 简算 / 端侧 / 包体 / 画布 / 矢量）
+tests/                     34 个 node:test 单测文件（含长局 / 简算 / 端侧 / 包体 / 画布 / 矢量 / 交互）
 supabase/schema.sql        零预算联机地基（与本机存档两条线，别混读）
 ```
 
 ## 运行
 
 ```bash
-npm test          # 以当期输出为准（最近一次 252/252，见顶部「当前验证实数」）
+npm test          # 以当期输出为准（最近一次 267/267，见顶部「当前验证实数」）
 npm run check     # 地图/连通性/导航/指纹/旬循环/简算/镜像/包体/分包/画布/署名，失败真退出
 npm run smoke     # 起本地服务 + 真 Chromium 烟测（最近一次 163/163）
 npm run sync:mp   # 改了 src/ 或 config/ 后刷新小程序逻辑层镜像
@@ -811,6 +813,8 @@ node scripts/strategy-sim.mjs  # 可选：四策略对演
   后并入。10 张源底稿 JPG（B5 待溯源）与 48 张单帧 PNG 明确不进包。
 - **画布页不是两端跑**：`pages/canvas/` 只用 `applyDrawOps` 画逻辑层降采样格网，没有战场、
   没有位图立绘、没有 `soldier.js`；真机 canvas 2d 节点与 DPR 行为未验，拿不到节点会如实降级。
+- **可交互格网不是可交互舆图**：视口与命中作用在 18×14 态势缩略上，每格约 8×8 源格；
+  双指手势只做了最朴素的增量平移，真机 touch 序列、惯性、阻尼未验。
 - **舆图不是位图**：`guandu.js` / `atlas.js` 是程序化离屏画布，仓库里没有 `bg+fg` 图片文件，
   清单里「按章分包两张舆图」是旧口径，别再照抄。
 - **长局系数未由真人试玩定稿**：0.035 / 0.07 / 1.0 / 0.6 这组由 200 旬 × 5 seed

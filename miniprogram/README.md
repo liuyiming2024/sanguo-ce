@@ -75,11 +75,25 @@ Node 走内存 `Map`；四个适配点是 storage / 指针归一 / 画布节点 
 有主格按势力着色、无主格按主导地貌给淡色、城池叠墨点。**不读任何 PNG、不用 Canvas**，
 宿主只负责把色块摆出来（将来接 `wxCanvas` 时把 `miniMapOps` 的 `fillRect` 指令喂给 ctx 即可）。
 
-包体核算（`npm run bundle`）的硬结论：首包约 0.21 MiB / 0 位图已成立，但运行时真正加载的
+包体核算（`npm run bundle`）的硬结论：首包约 0.2 MiB / 0 位图已成立，但运行时真正加载的
 4 张 sheet 合计 13.32 MiB，其中 3 张**各自**超微信单个分包 2 MB —— 直接声明 `subpackages`
 会失败，必须先压缩 / 降分辨率。只有 `trooper-tiny-sheet`（71 KB）能与逻辑层同进主包。
 另外「按章分包两张舆图」不成立：舆图是 `guandu.js` / `atlas.js` 的程序化离屏画布，
 仓库里没有 `bg+fg` 位图文件。10 张源底稿 JPG 与 48 张单帧 PNG 明确不进包。
+
+## 可交互格网（两条皮共用）
+
+`src/platform/mini-map.js` 现在带**视口 + 相机 + 命中**：传 `opts.box` 看局部，
+`createMiniCamera()` 的 `pan / zoom / reset` 全是纯函数且缩放锚点保持，
+`resolveMiniMapHit(e, rect, state, opts)` 把 mouse / touch / changedTouches / detail
+四种事件形状经 `input.js` 归一，再用实时 `rect` 换算成源格（`sc/sr/tileIndex/owner/terrain/cityId`）。
+**不传 box 时输出仍是原来的 18×14 全图**，逐字一致，回归基线没破。
+
+- 色块页：点任意格看详情，按钮放大 / 缩小 / 复位；**仍零 Canvas**。
+- 画布页：单指拖拽平移、双指捏合缩放、抬手点击查格，另有三个按钮。
+
+这是 P1 四个适配点里最后一个（input）被真实消费；storage / canvas / index 早已有调用方。
+两条皮共用同一份 `miniMapOps` 数据，改的是皮，不是引擎。
 
 ## 画布格网（`pages/canvas/`）
 
@@ -93,7 +107,7 @@ Node 走内存 `Map`；四个适配点是 storage / 指针归一 / 画布节点 
 
 PNG 原样分包会失败（4 张 sheet 13.32 MiB，其中 3 张各自超微信单个分包 2 MB）。实测
 sharp / PIL 转 webp q=80 后合计 **2.59 MiB**，按 `infantry`（1.65）/ `engine`（0.94）分两组
-各 ≤ 2 MB，主包 + 分包 2.80 MiB。`assets-plan.json` 是唯一数字来源，
+各 ≤ 2 MB，主包 + 分包约 2.8 MiB。`assets-plan.json` 是唯一数字来源，
 `app.subpackages.example.json` 是待启用模板。
 
 ```

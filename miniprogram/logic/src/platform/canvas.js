@@ -68,15 +68,20 @@ export function wxCanvas(selector, wx, { dpr = 2 } = {}) {
     if (!wx?.createSelectorQuery) { reject(new Error('wxCanvas 需要传入 wx')); return; }
     wx.createSelectorQuery()
       .select(selector)
-      .fields({ node: true, size: true })
+      .fields({ node: true, size: true, rect: true })
       .exec((res) => {
         const r = res?.[0];
         if (!r?.node) { resolve(null); return; }
         const node = r.node;
         node.width = Math.round(r.width * dpr);
         node.height = Math.round(r.height * dpr);
+        // 实时 rect：命中换算要用「触点 clientX/Y 减去 left/top」，
+        // 与浏览器 getBoundingClientRect 同一口径；假 wx 没给就按 0 兜底。
         resolve({ node, ctx: node.getContext('2d'),
-          width: r.width, height: r.height, dpr });
+          width: r.width, height: r.height, dpr,
+          rect: { left: r.left ?? 0, top: r.top ?? 0,
+            right: r.right ?? r.width, bottom: r.bottom ?? r.height,
+            width: r.width, height: r.height } });
       });
   });
 }

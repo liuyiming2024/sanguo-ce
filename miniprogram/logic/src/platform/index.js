@@ -11,8 +11,8 @@
 import { detectStorage, memoryDriver, wxStorageDriver, browserDriver } from './storage.js';
 
 export { wxStorageDriver, memoryDriver, browserDriver };
-export { normalizePointer, midpoint } from './input.js';
-export { browserCanvas, wxCanvas } from './canvas.js';
+export { normalizePointer, normalizeTouches, midpoint, touchDistance, pinchRatio } from './input.js';
+export { browserCanvas, wxCanvas, applyDrawOps, hostDpr } from './canvas.js';
 
 let _storage = null;
 let _now = null;

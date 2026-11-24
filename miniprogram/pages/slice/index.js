@@ -1,8 +1,12 @@
 // P2「最小可玩切片」：只接 campaign + 推旬 + 战报文本 + 本机读档。
 // 零 PNG、零 Canvas、零地图渲染、零结算层；页面只做注入与 setData，
 // 所有局面逻辑在 utils/slice-core.js（可在 Node 里整条跑，见 tests/miniprogram-slice.test.mjs）。
+//
+// 本轮加「可交互」但仍守零 Canvas 基线：点 WXML 色块查格、按钮缩放视口。
+// 相机与命中都在镜像逻辑层，页面只传 data-i 和按钮事件。
 import {
-  bootSlice, pushTurn, hideSlice, showSlice, sliceSummary, miniMap, SLICE_VERSION,
+  bootSlice, pushTurn, hideSlice, showSlice, sliceSummary, miniMap,
+  miniCamera, miniHit, SLICE_VERSION,
 } from '../../utils/slice-core.js';
 import { storage as platformStorage } from '../../logic/src/platform/index.js';
 
@@ -16,17 +20,27 @@ Page({
     err: '',
     mini: null,
     cellW: 100 / 18,
+    zoom: '1.00',
+    hit: null,
+  },
+
+  _resetCamera() {
+    this._cam = miniCamera(this._slice.state);
+    this.setData({ hit: null });
   },
 
   _refreshMini() {
     if (!this._slice) return;
-    const m = miniMap(this._slice.state);
-    this.setData({ mini: m, cellW: 100 / m.cols });
+    if (!this._cam) this._cam = miniCamera(this._slice.state);
+    const m = miniMap(this._slice.state, this._cam.opts());
+    this.setData({ mini: m, cellW: 100 / m.cols,
+      zoom: this._cam.zoomLevel().toFixed(2) });
   },
 
   onLoad() {
     this._slice = bootSlice();
     this._hidden = false;
+    this._resetCamera();
     this._refreshMini();
     this.setData({
       summary: sliceSummary(this._slice.state),
@@ -35,6 +49,26 @@ Page({
       lines: ['建安五年 · 一旬一推。此页只验逻辑层，不带战场、不带地图。'],
     });
   },
+
+  /** 点色块：data-i → 输出格 → 归一化点 → 镜像层的命中换算。 */
+  onCellTap(e) {
+    if (!this._slice || !this.data.mini) return;
+    const i = Number(e?.currentTarget?.dataset?.i);
+    if (!Number.isInteger(i) || i < 0) return;
+    const m = this.data.mini;
+    const oc = i % m.cols, or = Math.floor(i / m.cols);
+    const hit = miniHit(this._slice.state, this._cam.opts(),
+      { x: (oc + 0.5) / m.cols, y: (or + 0.5) / m.rows });
+    this.setData({ hit: hit ? {
+      where: `${hit.sc},${hit.sr}（格 ${hit.c},${hit.r}）`,
+      owner: hit.owner || '无主', terrain: hit.terrain,
+      city: hit.cityId || '—',
+    } : null });
+  },
+
+  onZoomIn() { this._cam.zoom(1.6); this.setData({ hit: null }); this._refreshMini(); },
+  onZoomOut() { this._cam.zoom(1 / 1.6); this.setData({ hit: null }); this._refreshMini(); },
+  onReset() { this._cam.reset(); this.setData({ hit: null }); this._refreshMini(); },
 
   onPush() {
     if (!this._slice) return;
@@ -72,6 +106,7 @@ Page({
     }
     this._slice = { state: r.state, rng: r.rng, cfg: r.cfg };
     this._hidden = false;
+    this._resetCamera();
     this._refreshMini();
     this.setData({
       summary: r.summary,
@@ -89,6 +124,7 @@ Page({
     if (!r.ok) { this.setData({ err: r.reason, lifecycle: '读档失败' }); return; }
     this._slice = { state: r.state, rng: r.rng, cfg: r.cfg };
     this._hidden = false;
+    this._resetCamera();
     this._refreshMini();
     this.setData({
       summary: r.summary, hash: r.hash, err: '',
@@ -99,6 +135,7 @@ Page({
   onNew() {
     this._slice = bootSlice();
     this._hidden = false;
+    this._resetCamera();
     this._refreshMini();
     this.setData({
       summary: sliceSummary(this._slice.state),

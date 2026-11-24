@@ -10,17 +10,28 @@ import { serializeGame, deserializeGame, SAVE_KEY } from '../logic/src/persist.j
 import { hashState } from '../logic/src/sync.js';
 import { checkOutcome } from '../logic/src/outcome.js';
 import { xunLedger } from '../logic/src/economy.js';
-import { configurePlatform, wxStorageDriver, storage as platformStorage } from '../logic/src/platform/index.js';
-import { miniMapView, miniMapDrawOps } from '../logic/src/platform/mini-map.js';
+import { configurePlatform, wxStorageDriver, storage as platformStorage,
+  normalizeTouches, pinchRatio } from '../logic/src/platform/index.js';
+import { miniMapView, miniMapDrawOps, createMiniCamera, hitTestMiniMap,
+  resolveMiniMapHit, panBox, zoomBox, fullBox, boxZoom } from '../logic/src/platform/mini-map.js';
 import { CAMPAIGN } from '../logic/config/campaign.js';
 
 export const SLICE_KEY = SAVE_KEY;
 export const SLICE_VERSION = CAMPAIGN.meta.version;
 
 /** P4 程序化回退：零位图格网。页面用 miniMap 铺 WXML 色块，
- *  将来接 wxCanvas 时把 miniMapOps 的 fillRect 指令喂给 ctx 即可，数据层不用改。 */
+ *  画布页把 miniMapOps 的 fillRect 指令喂给 ctx，数据层不用改。
+ *  本轮起两条皮共用「相机 + 命中」：传 opts.box 看局部，传 point 查格。 */
 export const miniMap = (state, opts) => miniMapView(state, opts);
 export const miniMapOps = (state, opts) => miniMapDrawOps(state, opts);
+export const miniCamera = (state, opts) => createMiniCamera(state, opts);
+export const miniHit = (state, opts, point) => hitTestMiniMap(state, opts, point);
+export const miniResolveHit = (e, rect, state, opts) => resolveMiniMapHit(e, rect, state, opts);
+export const miniPan = panBox;
+export const miniZoom = zoomBox;
+export const miniFullBox = fullBox;
+export const miniZoomLevel = boxZoom;
+export { normalizeTouches, pinchRatio };
 
 /** 宿主注入：小程序传 wx，Node 测试传自己的 storage mock + 固定 now。 */
 export function installHost({ wx, storage, now } = {}) {

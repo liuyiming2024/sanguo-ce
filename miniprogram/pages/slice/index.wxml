@@ -13,11 +13,26 @@
     <view class="ct">零 位 图 格 网 · {{mini.cols}}×{{mini.rows}}</view>
     <view class="mini">
       <view wx:for="{{mini.cells}}" wx:key="k" class="cell"
+            data-i="{{index}}" bindtap="onCellTap"
             style="width:{{cellW}}%;background:{{item.color}}">
         <view wx:if="{{item.city}}" class="cityDot"></view>
       </view>
     </view>
-    <view class="tip">青绿＝司空府 · 绛＝河北 · 赭＝客势；淡色为山河地貌，墨点为城。由 terrain.tiles 确定性降采样，不读任何位图。</view>
+    <view class="tip">青绿＝司空府 · 绛＝河北 · 赭＝客势；淡色为山河地貌，墨点为城。点任意格看详情 · 放大 {{zoom}}×</view>
+  </view>
+
+  <view class="row">
+    <button class="btn ghost" bindtap="onZoomIn">放 大</button>
+    <button class="btn ghost" bindtap="onZoomOut">缩 小</button>
+    <button class="btn ghost" bindtap="onReset">复 位</button>
+  </view>
+
+  <view wx:if="{{hit}}" class="card">
+    <view class="ct">所 点 之 格</view>
+    <view class="kv"><text>源格</text><text>{{hit.where}}</text></view>
+    <view class="kv"><text>归属</text><text>{{hit.owner}}</text></view>
+    <view class="kv"><text>地貌</text><text>{{hit.terrain}}</text></view>
+    <view class="kv"><text>城</text><text>{{hit.city}}</text></view>
   </view>
 
   <view wx:if="{{summary}}" class="card">
