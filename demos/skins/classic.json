@@ -1,30 +1,24 @@
 {
   "id": "classic",
+  "letter": "A",
   "title": "写意底图（现行 · 备份基线）",
-  "status": "已固化 / 可一键回退",
-  "baselineCommit": "d25542b99981ef7a22b57754548a94b54c87db96",
-  "backupBranch": "backup/pre-skin-d25542b9",
-  "baselineSvgSha256": "ea34abeb538c3d0851fa7c7bad585abbc13cf6181214274970929a3c9562c59d",
-  "baselineSvgFile": "demos/skins/写意底图-备份基线.svg",
+  "status": "已固化 / 回退锚点",
   "params": {
     "wash": "warm",
     "brush": 1.0,
-    "ridge": false,
+    "ridgeMode": false,
     "riverHook": false,
     "grid": false,
-    "washStops": [
-      ["0", "#c3b187", 0.88],
-      ["0.30", "#c6b58d", 0.82],
-      ["0.52", "#a9ac91", 0.70],
-      ["0.72", "#8fa893", 0.60],
-      ["1", "#7d9e8a", 0.55]
-    ],
-    "washRadials": [
-      { "id": "desert", "cx": 0.16, "cy": 0.14, "r": 0.34, "color": "#dcc9a2", "a": 0.62 },
-      { "id": "wet", "cx": 0.60, "cy": 0.47, "r": 0.26, "color": "#6d9494", "a": 0.40 },
-      { "id": "south", "cx": 0.62, "cy": 0.88, "r": 0.42, "color": "#8fae92", "a": 0.34 }
-    ]
+    "tone": "none"
   },
-  "visual": "纸味渐变底罩 + 低频簇场撒笔 + 细线地物；无山形骨架、无双勾大河。第十六轮审美复审后的现状。",
-  "regression": "切到本皮肤必须与备份基线 SVG 逐像素一致；全套 265/265 单测、163/163 烟测为护栏。"
+  "visual": "暖纸渐变、低频簇场撒笔、细线地物；无山势骨架、无双勾大河。第十六轮后的现状。",
+  "tradeoff": "什么都不用改；任何一档不满意都能一键回到它。",
+  "openForFeedback": [
+    "无"
+  ],
+  "staticSvg": "demos/skins/风格A-写意底图.svg",
+  "round": 18,
+  "baselineCommit": "cd7ef4840f43e75ddfd15f604386f485de919860",
+  "backupBranch": "backup/pre-skin-d25542b9",
+  "multiSkinBackup": "backup/pre-multi-skin-cd7ef484"
 }

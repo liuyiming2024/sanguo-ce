@@ -1,35 +1,26 @@
 {
   "id": "landscape",
-  "title": "形象画法（大改候选 · 待审阅）",
-  "status": "候选 / 非定稿 / 默认不启用",
-  "basedOn": "classic",
+  "letter": "B",
+  "title": "形象画法（淡纸山势）",
+  "status": "候选",
   "params": {
     "wash": "paper",
     "brush": 0.42,
-    "ridge": true,
+    "ridgeMode": "cun",
     "riverHook": true,
     "grid": false,
-    "washStops": [
-      ["0", "#ded5bd", 0.42],
-      ["0.35", "#ded7c3", 0.38],
-      ["0.55", "#d8d6c4", 0.30],
-      ["0.78", "#cfd6c6", 0.26],
-      ["1", "#cdd5c6", 0.24]
-    ],
-    "washRadials": [
-      { "id": "desert", "cx": 0.16, "cy": 0.14, "r": 0.34, "color": "#d8c8a6", "a": 0.22 },
-      { "id": "wet", "cx": 0.60, "cy": 0.47, "r": 0.26, "color": "#8fa8a6", "a": 0.16 },
-      { "id": "south", "cx": 0.62, "cy": 0.88, "r": 0.42, "color": "#9db09a", "a": 0.14 }
-    ]
+    "tone": "none"
   },
-  "visual": "底罩大幅减淡、纸主导；撒笔压到 0.42 倍让纸透出来；按 RIDGES 六条主脊补成组顺势皴笔 + 脊线亮墨提光与留水线；黄河补断续双勾岸笔与纸白芯。",
-  "source": "docs/毛笔笔势与古舆图参考资料.md §三.8/9/11（形象画法：见山画山、见水画水，水→山→道→城；皴法从山势来不从格来；笔要读成受光的脊，不是沟）",
-  "notChanged": "玩法 / 存档 / 确定性语义 / 注记避让 / 史料锚点 / 州界 / 势力层（仍不画）/ src 其余模块。RIDGES 与 HUANGHE 都是仓库既有常量，没有新造地名。",
+  "visual": "纸主导、撒笔减到 0.42、六条主脊披麻皴、黄河断续双勾岸笔。",
+  "tradeoff": "山势含蓄、下半仍空；适合\"要像一张淡墨画\"但不要重彩。",
   "openForFeedback": [
-    "山脊是不是读成了受光的脊，还是又变成划痕／灰色三角",
-    "双勾大河有没有把水系立成中轴，还是与既有细河线打架",
-    "纸透出来的量够不够，下半幅是否仍显空",
-    "城郭与注记层级要不要跟着提级（本轮刻意没动，等反馈）",
-    "要不要把它接进 src/atlas.js 典籍页与主地图"
-  ]
+    "山脊是否读成受光的脊",
+    "要不要把皴再提浓",
+    "下半空白能否接受"
+  ],
+  "staticSvg": "demos/skins/风格B-形象画法.svg",
+  "round": 18,
+  "baselineCommit": "cd7ef4840f43e75ddfd15f604386f485de919860",
+  "backupBranch": "backup/pre-skin-d25542b9",
+  "multiSkinBackup": "backup/pre-multi-skin-cd7ef484"
 }

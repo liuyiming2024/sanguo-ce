@@ -1,0 +1,26 @@
+{
+  "id": "grid",
+  "letter": "E",
+  "title": "计里画方（规整制图）",
+  "status": "候选",
+  "params": {
+    "wash": "plan",
+    "brush": 0.3,
+    "ridgeMode": false,
+    "riverHook": true,
+    "grid": true,
+    "tone": "cool"
+  },
+  "visual": "冷纸、色差压平、细朱方格与主格、撒笔 0.30、双勾大河。",
+  "tradeoff": "《广舆图》计里画方一路；**会读成坐标纸**，这是该档意图不是 bug。",
+  "openForFeedback": [
+    "格网密度会不会太抢",
+    "要不要横向注记",
+    "规整 vs 形象二选一"
+  ],
+  "staticSvg": "demos/skins/风格E-计里画方.svg",
+  "round": 18,
+  "baselineCommit": "cd7ef4840f43e75ddfd15f604386f485de919860",
+  "backupBranch": "backup/pre-skin-d25542b9",
+  "multiSkinBackup": "backup/pre-multi-skin-cd7ef484"
+}

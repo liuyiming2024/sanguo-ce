@@ -40,8 +40,12 @@
   <canvas id="cv"></canvas>
   <div id="bar">
     <select id="skinSel" aria-label="皮肤" title="切换皮肤（大改之前先看再定稿）">
-      <option value="classic">写意底图（现行）</option>
-      <option value="landscape">形象画法（候选）</option>
+      <option value="classic">A · 写意底图（现行基线）</option>
+      <option value="landscape">B · 形象画法（淡纸山势）</option>
+      <option value="silk">C · 旧绢设色（矿物色）</option>
+      <option value="mono">D · 水墨素卷（纯墨）</option>
+      <option value="grid">E · 计里画方（规整制图）</option>
+      <option value="night">F · 夜墨暗绢（深底反白）</option>
     </select>
     <span id="skinNote">写意底图（现行 · 备份基线）</span>
     <button id="redraw">重落一笔</button>
@@ -130,22 +134,101 @@ const WASH = {
          {id:'south',cx:.62,cy:.88,r:.42,c:'#8fae92',a:.34}]
   },
   paper: {
-    /* 纸主导：底罩大幅减淡、南北色差压到极弱，让墨笔与山脊读得出。
-       不是去掉底罩，是把它从「画面主体」退回「纸的底色」。 */
+    /* 纸主导：底罩大幅减淡、南北色差压到极弱，让墨笔与山脊读得出。 */
     ns:[['0','#ded5bd',.42],['0.35','#ded7c3',.38],['0.55','#d8d6c4',.30],
         ['0.78','#cfd6c6',.26],['1','#cdd5c6',.24]],
     rad:[{id:'desert',cx:.16,cy:.14,r:.34,c:'#d8c8a6',a:.22},
          {id:'wet',cx:.60,cy:.47,r:.26,c:'#8fa8a6',a:.16},
          {id:'south',cx:.62,cy:.88,r:.42,c:'#9db09a',a:.14}]
+  },
+  silk: {
+    ns:[['0','#c9a878',.62],['0.30','#c8ad86',.58],['0.52','#b8ab86',.50],
+        ['0.72','#93a78a',.46],['1','#87a188',.44]],
+    rad:[{id:'desert',cx:.16,cy:.14,r:.34,c:'#d9b878',a:.34},
+         {id:'wet',cx:.60,cy:.47,r:.26,c:'#5f8f8a',a:.30},
+         {id:'south',cx:.62,cy:.88,r:.42,c:'#7d9d78',a:.26}]
+  },
+  rice: {
+    ns:[['0','#eae4d4',.30],['0.35','#e8e3d5',.28],['0.55','#e4e2d8',.22],
+        ['0.78','#dee3dc',.20],['1','#dbe2dc',.18]],
+    rad:[{id:'desert',cx:.16,cy:.14,r:.34,c:'#d8cdae',a:.10},
+         {id:'wet',cx:.60,cy:.47,r:.26,c:'#9db4b2',a:.08},
+         {id:'south',cx:.62,cy:.88,r:.42,c:'#a6bba6',a:.08}]
+  },
+  plan: {
+    ns:[['0','#e6e5da',.46],['0.35','#e5e6de',.43],['0.55','#e0e4df',.37],
+        ['0.78','#dbe2e0',.33],['1','#d8e0dd',.30]],
+    rad:[{id:'desert',cx:.16,cy:.14,r:.34,c:'#d8cfae',a:.16},
+         {id:'wet',cx:.60,cy:.47,r:.26,c:'#9db6b6',a:.14},
+         {id:'south',cx:.62,cy:.88,r:.42,c:'#a8bda8',a:.12}]
+  },
+  ink: {
+    ns:[['0','#141c1a',.94],['0.30','#17211e',.93],['0.52','#17231f',.92],
+        ['0.72','#14211d',.91],['1','#121d1a',.90]],
+    rad:[{id:'desert',cx:.16,cy:.14,r:.34,c:'#3a3222',a:.34},
+         {id:'wet',cx:.60,cy:.47,r:.26,c:'#1e3a3c',a:.34},
+         {id:'south',cx:.62,cy:.88,r:.42,c:'#1d3328',a:.30}]
   }
 };
 const SKINS = {
-  classic:   {title:'写意底图（现行 · 备份基线）',wash:'warm',  brush:1.00,ridge:false,riverHook:false},
-  landscape: {title:'形象画法（大改候选 · 待审阅）',wash:'paper', brush:0.42,ridge:true, riverHook:true}
+  classic:   {title:'写意底图（现行 · 备份基线）', short:'写意底图',
+              wash:'warm',  brush:1.00, ridgeMode:false, riverHook:false, grid:false, tone:'none'},
+  landscape: {title:'形象画法（大改候选）',       short:'形象画法',
+              wash:'paper', brush:0.42, ridgeMode:'cun',       riverHook:true,  grid:false, tone:'none'},
+  silk:      {title:'旧绢设色（矿物色 · 没骨山）', short:'旧绢设色',
+              wash:'silk',  brush:0.78, ridgeMode:'boneless',  riverHook:true,  grid:false, tone:'warm'},
+  mono:      {title:'水墨素卷（纯墨 · 朱题唯一彩）', short:'水墨素卷',
+              wash:'rice',  brush:0.55, ridgeMode:'bold',      riverHook:true,  grid:false, tone:'gray'},
+  grid:      {title:'计里画方（规整制图）',        short:'计里画方',
+              wash:'plan',  brush:0.30, ridgeMode:false,       riverHook:true,  grid:true,  tone:'cool'},
+  night:     {title:'夜墨暗绢（深底反白）',        short:'夜墨暗绢',
+              wash:'ink',   brush:0.48, ridgeMode:'bold',      riverHook:true,  grid:false, tone:'invert'}
 };
 let skin='classic';
 const SK = () => SKINS[skin];
 const CW = () => WASH[SK().wash];
+
+/* 皮肤级颜色变换：只在录制器 col() 一处生效，页面 Path2D 重放与导出 SVG
+   用的是同一批已变换的 color，不会出现「页面一套、文件一套」。
+   none 直接原样返回 —— classic 的每条 path 因此与备份基线逐字相同。
+   gray / invert 都保护朱色，让朱题与朱印仍是画面唯一彩。 */
+function T(v){
+  if(typeof v!=='string') return v;
+  const mode=SK().tone||'none';
+  if(mode==='none') return v;
+  let r,g,b,a,fmt;
+  const m=v.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i);
+  if(m){ r=+m[1]; g=+m[2]; b=+m[3]; a=m[4]===undefined?1:+m[4]; fmt=/^rgba/i.test(v)?'rgba':'rgb'; }
+  else{
+    const h=v.match(/^#([0-9a-f]{6})$/i); if(!h) return v;
+    r=parseInt(h[1].slice(0,2),16); g=parseInt(h[1].slice(2,4),16);
+    b=parseInt(h[1].slice(4,6),16); a=1; fmt='hex';
+  }
+  const red = r>g*1.35 && r>b*1.35 && r>90;
+  const out=(R,G,B)=>{
+    R=Math.round(clamp(R,0,255)); G=Math.round(clamp(G,0,255)); B=Math.round(clamp(B,0,255));
+    if(fmt==='hex') return '#'+[R,G,B].map(x=>x.toString(16).padStart(2,'0')).join('');
+    if(fmt==='rgba') return `rgba(${R},${G},${B},${a})`;
+    return `rgb(${R},${G},${B})`;
+  };
+  if(mode==='warm')  return out(r+7, g+2, b-9);
+  if(mode==='cool')  return out(r-5, g+1, b+7);
+  if(mode==='gray'){ if(red) return v; const L=.299*r+.587*g+.114*b; return out(L,L,L); }
+  if(mode==='invert'){
+    /* 第一版把每支淡墨都反白成亮笔，实拍满图浅短划、城邑成白贴纸、朱印
+       成纯亮橙方块。改成：只有够暗的笔才提亮，偏亮的笔直接压进墨底。 */
+    if(red) return out(186,104,74);              // 朱印收成暗赭，印字才浮得出来
+    const L=(.299*r+.587*g+.114*b)/255;
+    if(L>.62) return out(r*.34, g*.36, b*.34);
+    return out(108+74*(1-L), 106+70*(1-L), 94+64*(1-L));
+  }
+  return v;
+}
+const PAPER = () => SK().tone==='invert' ? '#121a17' : '#e9e3d1';
+const HALO  = () => SK().tone==='invert' ? '#141c18' : '#f0e9d6';
+const HALO_A= () => SK().tone==='invert' ? 0.92 : 0.78;
+const GRIDC = () => SK().grid ? '#b0604e' : '#c8a86a';
+const GRIDM = () => SK().grid ? '#9a4234' : '#e0c287';
 
 /* ---------- 区域权重：南北之别是连续场，不是分区填色 ---------- */
 const C_NORTH=[186,168,126], C_SOUTH=[118,148,120], C_DESERT=[214,197,160],
@@ -336,6 +419,8 @@ function layoutLabels(o){
 
 /* 注记分级绘制：屏幕固定字号，位置随图变换，布局与导出共用 layoutLabels */
 function drawLabels(){
+  const C=T;   // 注记色随皮肤变换（夜墨底上黑字必须反白）
+
   /* 屏幕固定字号，但高倍率要给一档阶梯：×4.2 画面里地物放大 4 倍、
      字仍 10px 就淡到读不出（实拍可见）。非线性放大，只给两小档。 */
   const k=clamp(0.90+0.10*zoom,0.90,1.18)*(zoom>=3?1.25:zoom>=2?1.12:1);
@@ -345,35 +430,35 @@ function drawLabels(){
     const {L,X,Y,fs,vert}=it;
     if(L.kind==='seal'){
       const n=L.txt.length, step=fs+2, y0=Y+12*k, cy=y0+(n-1)*step/2;
-      irregular(ctx,X,cy,10*k,n*9*k+7,X*.1+Y*.07,'rgba(233,227,209,.80)',null,0);
-      vlabel(ctx,L.txt,X,y0,fs,'rgba(116,38,30,.95)','rgba(236,228,206,.92)',step);
+      irregular(ctx,X,cy,10*k,n*9*k+7,X*.1+Y*.07,C('rgba(233,227,209,.80)'),null,0);
+      vlabel(ctx,L.txt,X,y0,fs,C('rgba(116,38,30,.95)'),C('rgba(236,228,206,.92)'),step);
     } else if(L.kind==='capital'){
-      vlabel(ctx,L.txt,X,Y,fs,'rgba(38,32,24,.94)','rgba(236,228,206,.90)',fs+2);
+      vlabel(ctx,L.txt,X,Y,fs,C('rgba(38,32,24,.94)'),C('rgba(236,228,206,.90)'),fs+2);
     } else if(L.kind==='state'){
       ctx.font=`${fs}px serif`; ctx.textAlign='left'; ctx.lineWidth=2.4;
-      ctx.strokeStyle='rgba(236,228,206,.75)'; ctx.strokeText(L.txt,X,Y);
-      ctx.fillStyle='rgba(140,58,44,.72)'; ctx.fillText(L.txt,X,Y);
+      ctx.strokeStyle=C('rgba(236,228,206,.75)'); ctx.strokeText(L.txt,X,Y);
+      ctx.fillStyle=C('rgba(140,58,44,.72)'); ctx.fillText(L.txt,X,Y);
     } else if(L.kind==='cmd'){
       ctx.font=`${fs}px serif`; ctx.textAlign='center'; ctx.lineWidth=2;
-      ctx.strokeStyle='rgba(236,228,206,.65)'; ctx.strokeText(L.txt,X,Y);
-      ctx.fillStyle='rgba(52,44,32,.76)'; ctx.fillText(L.txt,X,Y);
+      ctx.strokeStyle=C('rgba(236,228,206,.65)'); ctx.strokeText(L.txt,X,Y);
+      ctx.fillStyle=C('rgba(52,44,32,.76)'); ctx.fillText(L.txt,X,Y);
     } else if(L.kind==='county'){
       ctx.font=`${fs}px serif`; ctx.textAlign='center'; ctx.lineWidth=1.8;
-      ctx.strokeStyle='rgba(236,228,206,.58)'; ctx.strokeText(L.txt,X,Y);
-      ctx.fillStyle='rgba(72,62,46,.62)'; ctx.fillText(L.txt,X,Y);
+      ctx.strokeStyle=C('rgba(236,228,206,.58)'); ctx.strokeText(L.txt,X,Y);
+      ctx.fillStyle=C('rgba(72,62,46,.62)'); ctx.fillText(L.txt,X,Y);
     } else { // ink
       ctx.font=`${fs}px serif`; ctx.textAlign='left'; ctx.lineWidth=2.2;
-      ctx.strokeStyle='rgba(236,228,206,.86)'; ctx.strokeText(L.txt,X,Y);
-      ctx.fillStyle='rgba(64,52,38,.86)'; ctx.fillText(L.txt,X,Y);
+      ctx.strokeStyle=C('rgba(236,228,206,.86)'); ctx.strokeText(L.txt,X,Y);
+      ctx.fillStyle=C('rgba(64,52,38,.86)'); ctx.fillText(L.txt,X,Y);
     }
   }
   if(focus!=='all'){
     ctx.font='bold 16px serif'; ctx.textAlign='left'; ctx.lineWidth=3.2;
-    ctx.strokeStyle='rgba(236,228,206,.92)'; ctx.strokeText(V.title,22,32);
-    ctx.fillStyle='rgba(40,34,26,.92)'; ctx.fillText(V.title,22,32);
-    ctx.font='11px serif'; ctx.lineWidth=2.4; ctx.strokeStyle='rgba(236,228,206,.88)';
+    ctx.strokeStyle=C('rgba(236,228,206,.92)'); ctx.strokeText(V.title,22,32);
+    ctx.fillStyle=C('rgba(40,34,26,.92)'); ctx.fillText(V.title,22,32);
+    ctx.font='11px serif'; ctx.lineWidth=2.4; ctx.strokeStyle=C('rgba(236,228,206,.88)');
     ctx.strokeText(V.sub,22,50);
-    ctx.fillStyle='rgba(64,52,38,.88)'; ctx.fillText(V.sub,22,50);
+    ctx.fillStyle=C('rgba(64,52,38,.88)'); ctx.fillText(V.sub,22,50);
   }
   return (focus==='all'?'':V.title.split(' · ')[0]+' ') + (L3?'注记 L3 县邑':L2?'注记 L2 郡治':'注记 L1 州治');
 }
@@ -551,55 +636,119 @@ function resampleLine(pts, step){
   return out;
 }
 function drawLandscape(g, zb){
-  const k=1/zb;
-  /* 第二版推翻记录：第一版把皴笔全部严格沿法向、等距采样、等长落笔，
-     实拍直接读成一排排黑刷子／栅栏 —— 正是 v0.6.0「一笔山脊实验」和
-     背景层清单里删掉的「一排栅栏式竖皴」。这次按参考资料 §三.8 的
-     披麻皴改：长柔曲线顺着山脊走向、不等距、断笔意连、淡墨，不是垂直刷。 */
-  RIDGES.forEach((R,ri)=>{
-    const P=R.p.map(([lo,la])=>[lon2x(lo),lat2y(la)]);
-    const sp=resampleLine(P,9*k);
-    if(sp.length<4) return;
-    // ① 脊线：断续、带弧、淡墨，不贯通；两侧不画平行等距副脊
-    for(let i=2;i<sp.length-3;i+=3){
-      if(rnd(ri*131+i*.37)>.66) continue;
-      const q0=sp[i], q1=sp[Math.min(i+3,sp.length-1)];
-      const mx=(q0[0]+q1[0])/2 - q0[3]*(3+rnd(ri*17+i*.7)*5)*k;
-      const my=(q0[1]+q1[1])/2 + q0[2]*(3+rnd(ri*29+i*.9)*5)*k;
-      brush(g,[[q0[0],q0[1]],[mx,my],[q1[0],q1[1]]],
-            (1.6+rnd(ri*37+i*1.3)*.9)*k,.20*k,'rgba(56,68,56,.44)',.52);
-    }
-    // ② 披麻皴：沿脊走向的长柔弧笔，簇间距离由低频噪声给，绝不逐点落
-    let i=4;
-    while(i<sp.length-5){
-      const [x,y,ux,uy]=sp[i], nx=-uy, ny=ux;
-      const f=fbm(x*.011+ri*7,y*.013,seed*.004);
-      const gap=(3+Math.floor(f*7+ rnd(ri*53+i*.29)*4));   // 不等距
-      if(f>.36){
-        const grp=2+Math.floor(rnd(ri*71+i*.41)*2);
-        for(let t=0;t<grp;t++){
-          const bo=(rnd(ri*89+i*.7+t*13)-.5)*14*k;          // 簇内散开
-          const sx=x+nx*bo, sy=y+ny*bo;
-          const L=(20+rnd(ri*97+i*.83+t*17)*34)*k*R.a;
-          const bend=(rnd(ri*103+i*.61+t*19)-.5)*13*k;      // 弧度，不是直线
-          const ang=(rnd(ri*109+i*.47+t*23)-.5)*.62;        // 方向偏转，不严格顺脊
-          const ca=Math.cos(ang), sa=Math.sin(ang);
-          const dx=(ux*ca-uy*sa)*L, dy=(ux*sa+uy*ca)*L;
-          const ex=sx+dx+nx*(rnd(ri*113+i*.31+t*29)-.5)*9*k;
-          const ey=sy+dy+ny*(rnd(ri*127+i*.23+t*31)-.5)*9*k;
-          const mx=(sx+ex)/2+nx*bend, my=(sy+ey)/2+ny*bend;
-          const tone=.26+rnd(ri*137+i*.19+t*37)*.24;
-          brush(g,[[sx,sy],[mx,my],[ex,ey]],
-                (2.0+rnd(ri*139+i*.17+t*41)*1.4)*k,.16*k,
-                `rgba(52,64,52,${tone.toFixed(2)})`,.52);
-          // 收笔处一小笔稍浓，墨色与运动一致；不是每笔都加
-          if(rnd(ri*149+i*.13+t*43)>.55)
-            brush(g,[[mx,my],[ex,ey]],1.0*k,.10*k,'rgba(40,52,42,.46)',.50);
-        }
+  const k=1/zb, mode=SK().ridgeMode;
+  /* B · 披麻皴：长柔弧顺脊走向、簇距由低频噪声给、断笔意连、淡墨。
+     第一版严格沿法向 + 等距采样 + 等长，实拍读成一排排黑刷子／栅栏，
+     正是 v0.6.0「一笔山脊实验」与背景层清单删掉的竖皴。 */
+  if(mode==='cun'){
+    RIDGES.forEach((R,ri)=>{
+      const P=R.p.map(([lo,la])=>[lon2x(lo),lat2y(la)]);
+      const sp=resampleLine(P,9*k);
+      if(sp.length<4) return;
+      for(let i=2;i<sp.length-3;i+=3){
+        if(rnd(ri*131+i*.37)>.66) continue;
+        const q0=sp[i], q1=sp[Math.min(i+3,sp.length-1)];
+        const mx=(q0[0]+q1[0])/2 - q0[3]*(3+rnd(ri*17+i*.7)*5)*k;
+        const my=(q0[1]+q1[1])/2 + q0[2]*(3+rnd(ri*29+i*.9)*5)*k;
+        brush(g,[[q0[0],q0[1]],[mx,my],[q1[0],q1[1]]],
+              (1.6+rnd(ri*37+i*1.3)*.9)*k,.20*k,'rgba(56,68,56,.44)',.52);
       }
-      i+=Math.max(2,gap);
-    }
-  });
+      let i=4;
+      while(i<sp.length-5){
+        const [x,y,ux,uy]=sp[i], nx=-uy, ny=ux;
+        const f=fbm(x*.011+ri*7,y*.013,seed*.004);
+        const gap=(3+Math.floor(f*7+ rnd(ri*53+i*.29)*4));
+        if(f>.36){
+          const grp=2+Math.floor(rnd(ri*71+i*.41)*2);
+          for(let t=0;t<grp;t++){
+            const bo=(rnd(ri*89+i*.7+t*13)-.5)*14*k;
+            const sx=x+nx*bo, sy=y+ny*bo;
+            const L=(20+rnd(ri*97+i*.83+t*17)*34)*k*R.a;
+            const bend=(rnd(ri*103+i*.61+t*19)-.5)*13*k;
+            const ang=(rnd(ri*109+i*.47+t*23)-.5)*.62;
+            const ca=Math.cos(ang), sa=Math.sin(ang);
+            const dx=(ux*ca-uy*sa)*L, dy=(ux*sa+uy*ca)*L;
+            const ex=sx+dx+nx*(rnd(ri*113+i*.31+t*29)-.5)*9*k;
+            const ey=sy+dy+ny*(rnd(ri*127+i*.23+t*31)-.5)*9*k;
+            const mx=(sx+ex)/2+nx*bend, my=(sy+ey)/2+ny*bend;
+            const tone=.26+rnd(ri*137+i*.19+t*37)*.24;
+            brush(g,[[sx,sy],[mx,my],[ex,ey]],
+                  (2.0+rnd(ri*139+i*.17+t*41)*1.4)*k,.16*k,
+                  `rgba(52,64,52,${tone.toFixed(2)})`,.52);
+            if(rnd(ri*149+i*.13+t*43)>.55)
+              brush(g,[[mx,my],[ex,ey]],1.0*k,.10*k,'rgba(40,52,42,.46)',.50);
+          }
+        }
+        i+=Math.max(2,gap);
+      }
+    });
+  }
+  /* C · 没骨山：不勾线、不皴擦，宽淡色笔顺脊成片铺出山体。宽笔仍是
+     变宽多边形，不是色块或椭圆；矿物色由笔色给，脊顶一道极淡提光。 */
+  if(mode==='boneless'){
+    RIDGES.forEach((R,ri)=>{
+      const P=R.p.map(([lo,la])=>[lon2x(lo),lat2y(la)]);
+      const sp=resampleLine(P,13*k);
+      let i=2;
+      while(i<sp.length-3){
+        const [x,y,ux,uy]=sp[i], nx=-uy, ny=ux;
+        const f=fbm(x*.013+ri*11,y*.015,seed*.006);
+        const L=(16+rnd(ri*61+i*.37)*22)*k*R.a;
+        /* 宽笔顺着山脊走向铺，不是沿法向垂直刷：第一版沿法向成组落笔，
+           实拍读成一排排竖直淡色条，又踩了「栅栏」那个坑。 */
+        for(const side of [-1,1]){
+          const off=(3+rnd(ri*67+i*.41)*6)*k;
+          const sx=x+nx*side*off, sy=y+ny*side*off;
+          const ex=sx+ux*L, ey=sy+uy*L;
+          const mx=(sx+ex)/2+nx*side*(2+f*7)*k, my=(sy+ey)/2+ny*side*(2+f*7)*k;
+          brush(g,[[sx,sy],[mx,my],[ex,ey]],(6+f*4)*k,.6*k,
+                side<0?'rgba(86,106,84,.18)':'rgba(128,106,72,.16)',.44);
+        }
+        i+=2+Math.floor(f*5);
+      }
+      for(let j=1;j<sp.length-2;j+=4){
+        if(rnd(ri*79+j*.23)>.74) continue;
+        brush(g,[sp[j],sp[Math.min(j+2,sp.length-1)]],2.0*k,.2*k,
+              'rgba(226,214,178,.26)',.40);
+      }
+    });
+  }
+  /* D 水墨 / F 夜墨 立骨：一条断续主脊 + 少量长皴，颜色交给 T()，
+     水墨下是浓墨、夜墨下自动反白成浅笔，同一套笔路两种气质。 */
+  if(mode==='bold'){
+    RIDGES.forEach((R,ri)=>{
+      const P=R.p.map(([lo,la])=>[lon2x(lo),lat2y(la)]);
+      const sp=resampleLine(P,8*k);
+      for(let i=1;i<sp.length-2;i+=2){
+        if(rnd(ri*83+i*.33)>.84) continue;
+        const q0=sp[i], q1=sp[Math.min(i+2,sp.length-1)];
+        const mx=(q0[0]+q1[0])/2-q0[3]*1.2*k, my=(q0[1]+q1[1])/2+q0[2]*1.2*k;
+        brush(g,[[q0[0],q0[1]],[mx,my],[q1[0],q1[1]]],
+              (2.2+rnd(ri*89+i*.41)*1.1)*k,.22*k,'rgba(42,54,44,.62)',.62);
+      }
+      let i=5;
+      while(i<sp.length-6){
+        const [x,y,ux,uy]=sp[i], nx=-uy, ny=ux;
+        const f=fbm(x*.012+ri*5,y*.014,seed*.005);
+        if(f>.40){
+          const grp=2+Math.floor(rnd(ri*97+i*.27)*2);
+          for(let t=0;t<grp;t++){
+            const bo=(rnd(ri*101+i*.19+t*17)-.5)*10*k;
+            const sx=x+nx*bo, sy=y+ny*bo;
+            const L=(18+rnd(ri*103+i*.23+t*19)*30)*k*R.a;
+            const ang=(rnd(ri*107+i*.17+t*23)-.5)*.55;
+            const ca=Math.cos(ang), sa=Math.sin(ang);
+            const dx=(ux*ca-uy*sa)*L, dy=(ux*sa+uy*ca)*L;
+            brush(g,[[sx,sy],[sx+dx,sy+dy]],
+                  (1.7+rnd(ri*109+i*.13+t*29)*1.0)*k,.14*k,
+                  'rgba(48,60,48,.40)',.50);
+          }
+        }
+        i+=3+Math.floor(f*5);
+      }
+    });
+  }
+  /* 双勾大河：断续岸笔 + 纸白芯，笔断意连，不贯通、不填色。 */
   if(SK().riverHook){
     const HP=HUANGHE.map(([lo,la])=>[lon2x(lo),lat2y(la)]);
     const hs=resampleLine(HP,12*k), w=4.6*k;
@@ -891,7 +1040,7 @@ function makeBg(zb, rec){
   }
   /* 形象画法候选：山势骨架 + 双勾大河，只在 landscape 皮肤落笔。
      classic 走不到这里，逐像素等于备份基线。 */
-  if(SK().ridge) drawLandscape(g, zb);
+  if(SK().ridgeMode) drawLandscape(g, zb);
   return c;
 }
 
@@ -1422,12 +1571,17 @@ function composite(){
   const useVec = typeof Path2D!=='undefined';
   if(useVec){
     buildVectorStrokes(zoom,focus);
-    ctx.fillStyle='#e9e3d1'; ctx.fillRect(0,0,W,H);      // 纸
+    ctx.fillStyle=PAPER(); ctx.fillRect(0,0,W,H);      // 纸（夜墨换深底）
     ctx.drawImage(buildWash(),0,0,W,H);                  // 低频连续场底罩（柔和，非线条）
     vecShown=replayVector(ctx,showFeatures);
   }else{
+    /* 位图兜底（无 Path2D 环境）：色调走 canvas filter 近似，只作降级可用，
+       不作为审美判断依据。 */
+    ctx.filter = SK().tone==='gray' ? 'grayscale(1)' :
+                 SK().tone==='invert' ? 'invert(1) hue-rotate(160deg)' : 'none';
     if(bg) ctx.drawImage(bg,0,0,W,H);
     if(showFeatures && fg) ctx.drawImage(fg,0,0,W,H);
+    ctx.filter='none';
   }
   ctx.restore();
   // 格网：墨底 + 亮金双色，按 zoom 连续退场
@@ -1436,7 +1590,7 @@ function composite(){
     const z=zoom, cell=GRID_BASE*z, alphaFine=clamp((z-0.62)/0.32,0,1), alphaMajor=clamp((z-0.38)/0.30,0,1);
     if(alphaFine>0.01){
       ctx.save(); ctx.globalAlpha=alphaFine*.30;
-      ctx.strokeStyle='#c8a86a'; ctx.lineWidth=1/z;
+      ctx.strokeStyle=GRIDC(); ctx.lineWidth=1/z;
       ctx.beginPath();
       for(let x=(panX%cell+cell)%cell;x<W;x+=cell){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
       for(let y=(panY%cell+cell)%cell;y<H;y+=cell){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
@@ -1444,7 +1598,7 @@ function composite(){
     }
     if(alphaMajor>0.01){
       ctx.save(); ctx.globalAlpha=alphaMajor*.50;
-      ctx.strokeStyle='#e0c287'; ctx.lineWidth=1.3/z;
+      ctx.strokeStyle=GRIDM(); ctx.lineWidth=1.3/z;
       const m=cell*3; ctx.beginPath();
       for(let x=(panX%m+m)%m;x<W;x+=m){ ctx.moveTo(x,0); ctx.lineTo(x,H); }
       for(let y=(panY%m+m)%m;y<H;y+=m){ ctx.moveTo(0,y); ctx.lineTo(W,y); }
@@ -1503,14 +1657,14 @@ function createSvgRecorder(){
     // createRadialGradient 返回的对象被赋给 fillStyle 时，不是 CSS 颜色；
     // 标成 alpha 0，SVG 与 Path2D 重放都会跳过，不再出现 fill="[object Object]"
     if(/^\[object/i.test(v)) return ['#000',0];
-    if((m=v.match(/^#([0-9a-f]{6})$/i))) return ['#'+m[1],1];
-    if((m=v.match(/^#([0-9a-f]{3})$/i))) return ['#'+m[1].split('').map(c=>c+c).join(''),1];
+    if((m=v.match(/^#([0-9a-f]{6})$/i))) return [T('#'+m[1]),1];
+    if((m=v.match(/^#([0-9a-f]{3})$/i))) return [T('#'+m[1].split('').map(c=>c+c).join('')),1];
     if((m=v.match(/^rgba?\(([^)]+)\)$/i))){
       const q=m[1].split(',').map(parseFloat);
-      return [`rgb(${Math.round(q[0])},${Math.round(q[1])},${Math.round(q[2])})`,
+      return [T(`rgb(${Math.round(q[0])},${Math.round(q[1])},${Math.round(q[2])})`),
               q.length>3?q[3]:1];
     }
-    return [v,1];
+    return [T(v),1];
   }
   function emitPath(mode){
     if(!d.length) return;
@@ -1647,19 +1801,29 @@ function buildSvg(){
   const O=[];
   O.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`);
   O.push(`<title>建安五年全境舆图 · 全量矢量</title>`);
-  O.push(`<desc>全量矢量（非骨架）· 皮肤：${SK().title}：纸底 / 连续渐变底罩 / 全部地貌笔触 / 水系 / 州界 / 城邑 / 题识 / 注记（不压格网），均为 path·rect·text 矢量指令，无位图。注记含 L3 县邑共 ${items.length} 处，已按十三方向自动避让。若单独打开只看到一串孤立地名而无地貌，那是早期「矢量骨架」旧快照，不是本文件。州界为示意，纵横不拘实距。</desc>`);
-  O.push(`<metadata id="build">{"round":14,"full":true,"avoid":true,"vector":true,"skin":"${skin}","labels":${items.length},"paths":${nPath},"note":"非骨架"}</metadata>`);
+  O.push(`<desc>全量矢量（非骨架）· 皮肤：${SK().title}（${SK().short}）：纸底 / 连续渐变底罩 / 全部地貌笔触 / 水系 / 州界 / 城邑 / 题识 / 注记（不压格网），均为 path·rect·text 矢量指令，无位图。注记含 L3 县邑共 ${items.length} 处，已按十三方向自动避让。若单独打开只看到一串孤立地名而无地貌，那是早期「矢量骨架」旧快照，不是本文件。州界为示意，纵横不拘实距。</desc>`);
+  O.push(`<metadata id="build">{"round":15,"full":true,"avoid":true,"vector":true,"skin":"${skin}","short":"${SK().short}","tone":"${SK().tone}","labels":${items.length},"paths":${nPath},"note":"非骨架"}</metadata>`);
   O.push(svgDefs());
-  O.push(`<rect id="paper" width="${W}" height="${H}" fill="#e9e3d1"/>`);
+  O.push(`<rect id="paper" width="${W}" height="${H}" fill="${PAPER()}"/>`);
   O.push(svgWash());
   O.push(`<g id="strokes">\n${strokeParts}\n</g>`);
-  /* 纯矢量交付图不压格网：格网是上层逻辑界格（计里画方），压在画上会让
-     整张读成坐标纸，与「形象画法」相冲。页面工具条仍可手动压格子看尺度。 */
+  /* 默认不压格网（计里画方的逻辑界格会读成坐标纸）；只有 E 计里画方
+     这一档主动要格网，才写进交付图。页面工具条仍可手动压格子看尺度。 */
+  if(SK().grid){
+    const cell=GRID_BASE, m=cell*3;
+    let d='',dm='';
+    for(let x=0;x<W;x+=cell) d+=`M ${F(x)} 0 L ${F(x)} ${H} `;
+    for(let y=0;y<H;y+=cell) d+=`M 0 ${F(y)} L ${W} ${F(y)} `;
+    for(let x=0;x<W;x+=m) dm+=`M ${F(x)} 0 L ${F(x)} ${H} `;
+    for(let y=0;y<H;y+=m) dm+=`M 0 ${F(y)} L ${W} ${F(y)} `;
+    O.push(`<g id="grid-fine" fill="none" stroke="${GRIDC()}" stroke-opacity="0.42" stroke-width="1" vector-effect="non-scaling-stroke"><path d="${d}"/></g>`);
+    O.push(`<g id="grid-major" fill="none" stroke="${GRIDM()}" stroke-opacity="0.62" stroke-width="1.3" vector-effect="non-scaling-stroke"><path d="${dm}"/></g>`);
+  }
   // 注记：用避让后的 X/Y 与最终字号；淡描边保证密背景上可读
   let tx='';
   for(const {L,X,Y,fs,vert} of items){
     const esc=L.txt.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    const col=L.kind==='seal'?'#9b2b22':L.kind==='capital'?'#7a3124':'#374039';
+    const col=T(L.kind==='seal'?'#9b2b22':L.kind==='capital'?'#7a3124':'#374039');
     let one='';
     if(vert){
       const y0 = L.kind==='seal' ? Y+12 : Y;
@@ -1669,7 +1833,7 @@ function buildSvg(){
       one=`<text x="${F(X)}" y="${F(Y)}">${esc}</text>`;
     }
     tx+=`<g class="l${L.level}" font-size="${F(fs)}" fill="${col}" text-anchor="middle" `+
-        `stroke="#f0e9d6" stroke-opacity="0.78" stroke-width="${F(fs*.22)}" `+
+        `stroke="${HALO()}" stroke-opacity="${HALO_A()}" stroke-width="${F(fs*.22)}" `+
         `paint-order="stroke fill" font-family="Noto Serif CJK SC,Source Han Serif SC,Songti SC,serif">${one}</g>`;
   }
   O.push(`<g id="labels">${tx}</g>`);
@@ -1680,7 +1844,7 @@ window.__atlasSvg = buildSvg;   // 验证脚本取静态矢量文件用
 document.getElementById('exportSvg').addEventListener('click', ()=>{
   const blob=new Blob([buildSvg()],{type:'image/svg+xml;charset=utf-8'});
   const u=URL.createObjectURL(blob), a=document.createElement('a');
-  a.href=u; a.download='建安五年全境舆图-全量矢量.svg'; document.body.appendChild(a);
+  a.href=u; a.download=`建安五年全境舆图-${SK().short}-全量矢量.svg`; document.body.appendChild(a);
   a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(u),1500);
 });
 
@@ -1733,6 +1897,8 @@ function setSkin(next){
   vecStrokes=[]; vecTexts=[]; vecTier=0; vecFocus=''; vecSkin='';
   document.getElementById('skinSel').value=next;
   document.getElementById('skinNote').textContent=SK().title;
+  showGrid=!!SK().grid;
+  document.getElementById('toggleGrid').setAttribute('aria-pressed',String(showGrid));
   rebuild(tierOf(zoom));
 }
 document.getElementById('skinSel').onchange=e=>setSkin(e.target.value);

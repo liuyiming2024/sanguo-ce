@@ -1,0 +1,26 @@
+{
+  "id": "night",
+  "letter": "F",
+  "title": "夜墨暗绢（深底反白）",
+  "status": "候选 / 待调",
+  "params": {
+    "wash": "ink",
+    "brush": 0.48,
+    "ridgeMode": "bold",
+    "riverHook": true,
+    "grid": false,
+    "tone": "invert"
+  },
+  "visual": "深墨底、暗笔提亮、亮笔压进底、朱印收暗赭，与主工程墨底 UI 同气质。",
+  "tradeoff": "辨识度最高但**偏暗、小字可读性弱**；第一版反白过亮成白贴纸，已压暗一次。",
+  "openForFeedback": [
+    "整体要不要再提亮一档",
+    "朱印暗赭够不够",
+    "深底是否适合长时间看"
+  ],
+  "staticSvg": "demos/skins/风格F-夜墨暗绢.svg",
+  "round": 18,
+  "baselineCommit": "cd7ef4840f43e75ddfd15f604386f485de919860",
+  "backupBranch": "backup/pre-skin-d25542b9",
+  "multiSkinBackup": "backup/pre-multi-skin-cd7ef484"
+}

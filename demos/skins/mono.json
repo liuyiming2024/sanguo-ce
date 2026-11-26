@@ -1,0 +1,26 @@
+{
+  "id": "mono",
+  "letter": "D",
+  "title": "水墨素卷（纯墨）",
+  "status": "候选",
+  "params": {
+    "wash": "rice",
+    "brush": 0.55,
+    "ridgeMode": "bold",
+    "riverHook": true,
+    "grid": false,
+    "tone": "gray"
+  },
+  "visual": "近白纸、底罩几乎退到无、全图压成墨灰阶，朱题与朱印是唯一彩。",
+  "tradeoff": "靠浓淡而非颜色分层；山势立骨比 B 明显，但秦岭一段略带锯齿感。",
+  "openForFeedback": [
+    "纯墨是否太素",
+    "朱题唯一彩够不够",
+    "锯齿感要不要再磨"
+  ],
+  "staticSvg": "demos/skins/风格D-水墨素卷.svg",
+  "round": 18,
+  "baselineCommit": "cd7ef4840f43e75ddfd15f604386f485de919860",
+  "backupBranch": "backup/pre-skin-d25542b9",
+  "multiSkinBackup": "backup/pre-multi-skin-cd7ef484"
+}

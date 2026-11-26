@@ -1,0 +1,26 @@
+{
+  "id": "silk",
+  "letter": "C",
+  "title": "旧绢设色（矿物色 · 没骨山）",
+  "status": "候选",
+  "params": {
+    "wash": "silk",
+    "brush": 0.78,
+    "ridgeMode": "boneless",
+    "riverHook": true,
+    "grid": false,
+    "tone": "warm"
+  },
+  "visual": "赭黄旧绢底、石青石绿赭石区域色、宽淡色笔顺脊铺出没骨山、暖化笔色。",
+  "tradeoff": "最有\"古画\"气质，但与 A 同属暖调；没骨山刻意不勾线。",
+  "openForFeedback": [
+    "没骨山会不会太糊",
+    "赭色够不够旧",
+    "和 A 差异够不够"
+  ],
+  "staticSvg": "demos/skins/风格C-旧绢设色.svg",
+  "round": 18,
+  "baselineCommit": "cd7ef4840f43e75ddfd15f604386f485de919860",
+  "backupBranch": "backup/pre-skin-d25542b9",
+  "multiSkinBackup": "backup/pre-multi-skin-cd7ef484"
+}
