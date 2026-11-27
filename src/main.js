@@ -2,6 +2,7 @@
 // 策略层（campaign）、战斗层（battle-session）、地形（terrain）仍是纯逻辑；
 // 界面外壳（ui-shell）只做展示与导航；存档（persist）只做序列化。
 import { createRng, rngFromSnapshot } from './rng.js';
+import { UNIT_SKINS, getUnitSkin, setUnitSkin } from './unit-skin.js';
 import {
   createCampaign, dateLabel, advanceTurn, issueOrder, cancelOrder,
   collectResources, isHostile, cityOverview, getForces, deployUnit,
@@ -503,6 +504,10 @@ const actions = {
   },
   getSetting: (k) => !!state.settings?.[k],
   setSetting(k, v) { state.settings[k] = v; markDirty(); refreshUI(); },
+  // 单位样式皮肤：本机界面状态，不进局面 / 存档 / 命令日志。
+  getUnitSkins: () => UNIT_SKINS,
+  getUnitSkin: () => getUnitSkin(),
+  setUnitSkin(id) { if (setUnitSkin(id)) markDirty(); refreshUI(); },
 
   upgradeFacility(id) {
     const f = uiData.facilities.find((x) => x.id === id);

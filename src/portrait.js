@@ -9,6 +9,7 @@
 // 无墙钟、无 Math.random：同一 sec + heading + phase 永远画同一帧。
 import { DIR8, dirIndex } from './direction.js';
 import { VIEW } from './soldier.js';
+import { getUnitSkin } from './unit-skin.js';
 
 const BASE = new URL('../assets/units/', import.meta.url);
 const CW = 560, CH = 820, TW = 72, TH = 108;
@@ -63,6 +64,9 @@ export function createPortraits({ onReady } = {}) {
    *   kind='engine' 走器械 sheet；s<13 优先 tiny sheet（除非是器械）。
    */
   function draw(ctx, o) {
+    /* 单位重绘皮肤（第十九轮）：非 classic 档让出画面，调用方回退到
+       unit-skin.js 的重绘层。classic 档这一句直接跳过，行为逐像素不变。 */
+    if (getUnitSkin() !== 'classic') return false;
     if (!ready) return false;
     const engine = o.kind === 'engine';
     const tiny = !engine && (o.s ?? 20) < 13 && !!sheets.tiny;

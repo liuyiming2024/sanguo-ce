@@ -17,6 +17,7 @@ import { paintGongbi, GONGBI } from './gongbi.js';
 import { renderGuanduLayers } from './guandu.js';
 import { createAtlas } from './atlas.js';
 import { createPortraits } from './portrait.js';
+import { drawInkTrooper } from './unit-skin.js';
 import { headingFromDelta } from './direction.js';
 
 const PAL = {
@@ -507,6 +508,8 @@ export function createMapRenderer(canvas, { terrain, cfg, style: styleOpt = 'atl
 
   /** 程序化小兵：素材没就绪时用的一笔短人形，不是圆点、不是方块。 */
   function inkTrooper(ctx, x, y, s, heading, phase, col) {
+    /* 单位皮肤：非 classic 档由重绘层画简笔；classic 返回 false 走下面原笔路。 */
+    if (drawInkTrooper(ctx, x, y, s, heading, phase, col)) return;
     ctx.save(); ctx.translate(x, y);
     const sway = Math.sin(phase * 2.1) * s * .06;
     ctx.strokeStyle = col; ctx.lineCap = 'round'; ctx.lineJoin = 'round';

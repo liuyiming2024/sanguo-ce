@@ -16,8 +16,9 @@
 // 护心镜 + 按兵种兵器），motion 全是渲染层私有状态，
 // 不写 state、不进存档/命令日志/状态指纹；相位只取 sec（模拟时间）+ id 派生种子。
 import { CITIES } from './map-data.js';
-import { drawSoldier, idSeed, unitKind } from './soldier.js';
-import { generalLook, drawGeneralPortrait } from './general-portrait.js';
+import { drawSoldier, idSeed, unitKind } from './unit-skin.js';
+import { generalLook } from './general-portrait.js';
+import { drawGeneralPortrait } from './unit-skin.js';
 import { GENERAL_SKILL_LABEL, GENERAL_SKILL_COLOR } from './siege-combat.js';
 import { createPortraits } from './portrait.js';
 import { headingFromDelta, normAngle } from './direction.js';

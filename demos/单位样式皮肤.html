@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>单位样式重绘 · 皮肤对照</title>
+<style>
+  :root{--ink:#0e1310;--paper:#e9e3d1;--paper2:#c9c2ad;--gold:#c8a86a;--line:#3b443c;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ink);color:var(--paper2);font-family:"Noto Serif CJK SC","Songti SC",serif}
+  #wrap{position:relative;width:1400px;height:1100px;margin:0 auto;overflow:hidden;background:var(--paper)}
+  canvas{display:block;width:1400px;height:1100px}
+  #bar{position:absolute;left:14px;top:12px;z-index:10;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  #bar select{padding:8px 12px;border:1px solid var(--gold);border-radius:2px;background:rgba(14,19,16,.92);
+    color:var(--gold);font-family:inherit;font-size:13px;letter-spacing:1px;min-height:36px}
+  #bar span{font-size:12px;color:var(--gold);background:rgba(14,19,16,.86);padding:8px 10px;border-radius:2px;
+    border:1px solid rgba(200,168,106,.35)}
+  #tip{position:absolute;right:14px;bottom:12px;z-index:10;font-size:11px;color:#c9c2ad;line-height:1.7;
+    background:rgba(14,19,16,.86);border:1px solid rgba(200,168,106,.26);border-radius:2px;padding:6px 10px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="cv" width="1400" height="1100"></canvas>
+  <div id="bar">
+    <select id="skinSel" aria-label="单位样式皮肤"></select>
+    <span id="skinNote"></span>
+  </div>
+  <div id="tip">小兵 / 将领样式重绘对照 · A 是游戏内原版（八向位图），B–F 是重绘 · 切回 A 逐像素一致</div>
+</div>
+<script type="module">
+import { UNIT_SKINS, setUnitSkin, getUnitSkin, getUnitSkinInfo,
+         drawSoldier, drawGeneralPortrait, drawInkTrooper, idSeed, unitKind } from '../src/unit-skin.js';
+import { generalLook } from '../src/general-portrait.js';
+import { createPortraits } from '../src/portrait.js';
+
+/* A 档复用游戏内真实八向写实位图（不是程序化回退），这样「保存的旧版」
+   才是玩家天天看到的那一版；B–F 是重绘，走纯 canvas 路径。 */
+const portraits = createPortraits({ onReady: () => paint() });
+
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+const W=1400,H=1100;
+const sel=document.getElementById('skinSel'), note=document.getElementById('skinNote');
+for(const s of UNIT_SKINS){
+  const o=document.createElement('option'); o.value=s.id;
+  o.textContent=`${s.letter} · ${s.title}`; sel.appendChild(o);
+}
+sel.value=getUnitSkin();
+
+/* classic 档的主地图简笔：与 map-render.js 的 inkTrooper 同笔路，只在预览页复刻，
+   源码一个字节没动。 */
+function baseTrooper(ctx,x,y,s,heading,phase,col){
+  ctx.save(); ctx.translate(x,y);
+  const sway=Math.sin(phase*2.1)*s*.06;
+  ctx.strokeStyle=col;ctx.lineCap='round';ctx.lineJoin='round';ctx.lineWidth=Math.max(1,s*.13);
+  ctx.beginPath();ctx.moveTo(0,-s*.12);ctx.lineTo(sway,-s*.62);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(sway-s*.13,-s*.70);
+  ctx.quadraticCurveTo(sway,-s*.89,sway+s*.13,-s*.70);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(sway,-s*.12);ctx.lineTo(sway-s*.18+sway*.5,s*.24);
+  ctx.moveTo(sway,-s*.12);ctx.lineTo(sway+s*.18+sway*.5,s*.24);ctx.stroke();
+  const hx=Math.cos(heading)*s*.5,hy=Math.sin(heading)*s*.32;
+  ctx.beginPath();ctx.moveTo(sway,-s*.48);ctx.lineTo(sway+hx,-s*.48+hy);ctx.stroke();
+  ctx.restore();
+}
+
+const TYPES=[
+  {t:'qingbing',n:'轻兵'}, {t:'zhongjia',n:'重甲札士'},
+  {t:'chuangnu',n:'床弩'}, {t:'paoshi',n:'抛石机'},
+];
+const GENS=[
+  {name:'曹操',force:72,intellect:91,command:96,politics:94},
+  {name:'袁绍',force:68,intellect:74,command:88,politics:80},
+  {name:'关羽',force:98,intellect:76,command:93,politics:62},
+  {name:'诸葛亮',force:38,intellect:100,command:92,politics:98},
+];
+function label(t,x,y,size=13,col='#3a3228',align='left'){
+  ctx.font=`${size}px "Noto Serif CJK SC","Songti SC",serif`;
+  ctx.textAlign=align;ctx.fillStyle=col;ctx.fillText(t,x,y);ctx.textAlign='left';
+}
+function rule(x1,y1,x2,y2,col){
+  ctx.strokeStyle=col;ctx.lineWidth=1;ctx.beginPath();
+  ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+}
+function unitAt(t,x,y,s,opt={}){
+  const id=`${t}-${Math.round(x)}-${Math.round(y)}`;
+  const u={type:t,hp:opt.hp??1,maxHp:1,faction:'cao'};
+  const walk=opt.walk??false, phase=opt.phase??0;
+  const engine=unitKind(t)==='engine';
+  // classic 档优先画真实八向位图；素材未就绪才落到程序化回退（与游戏内一致）
+  if(getUnitSkin()==='classic' && portraits.ready && portraits.draw(ctx,{
+    x,y,s,heading:Math.PI/2,walk,phase,amp:1,hp:opt.hp??1,
+    kind:engine?'engine':'trooper',engine:t==='paoshi'?'trebuchet':'ballista',
+    selected:!!opt.selected,champion:!!opt.champion,
+  })) return;
+  drawSoldier(ctx,u,{
+    x,y,s,sec:opt.sec??1.2,walk,dir:opt.dir??1,
+    phase,amp:1,seed:idSeed(id),col:'#a63129',
+    selected:!!opt.selected,champion:!!opt.champion,lightGround:true,
+    def:null,
+  });
+}
+function trooperAt(x,y,s,heading,phase,col){
+  if(!drawInkTrooper(ctx,x,y,s,heading,phase,col)) baseTrooper(ctx,x,y,s,heading,phase,col);
+}
+
+function paint(){
+  const sk=getUnitSkinInfo(), dark=sk.id==='night';
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle=dark?'#121a17':'#e9e3d1';ctx.fillRect(0,0,W,H);
+  const ink=dark?'#d8d2bb':'#3a3228', sub=dark?'#9aa89a':'#6b6450',
+        line=dark?'rgba(216,210,187,.22)':'rgba(58,50,40,.28)';
+  ctx.lineCap='round';
+  // 题头
+  label('单位样式 · 重绘对照',34,42,25,ink);
+  label(`${sk.letter} · ${sk.title}`,34,70,15,dark?'#d0b070':'#8a3a2c');
+  ctx.font='12px "Noto Serif CJK SC",serif';ctx.fillStyle=sub;
+  const words=sk.desc;
+  // 两行折字
+  let ln='',yy=94;
+  for(const ch of words){
+    if(ctx.measureText(ln+ch).width>840){label(ln,34,yy,12,sub);ln=ch;yy+=18;}
+    else ln+=ch;
+  }
+  if(ln) label(ln,34,yy,12,sub);
+  label(`取舍：${sk.caveat}`,34,yy+20,11,dark?'#b09060':'#9a4a38');
+  rule(34,132,1366,132,line);
+
+  // ── 一、四类单位 × 三档尺度 ──
+  label('一 · 四类单位 / 三档尺度',34,160,15,ink);
+  // 预览刻意放大：原来的 26/16/10 在 1400 宽页面上只有十几像素，笔法读不出。
+  const sizes=[62,38,22];
+  const sizename=['放大 62','中 38','小 22'];
+  TYPES.forEach((T,ti)=>{
+    const cx=130+ti*320;
+    label(T.n,cx,192,13,ink,'center');
+    sizes.forEach((s,si)=>{
+      const x=cx-96+si*96, y=302;
+      label(sizename[si],x,y+30,10,sub,'center');
+      unitAt(T.t,x,y,s,{sec:1.2+(si*.37)});
+    });
+  });
+  rule(34,346,1366,346,line);
+
+  // ── 二、行军相位（左右步） ──
+  label('二 · 行军相位 / 选中 / 负伤',34,374,15,ink);
+  TYPES.forEach((T,ti)=>{
+    const cx=130+ti*320;
+    label(T.n,cx,406,12,sub,'center');
+    for(let i=0;i<3;i++){
+      const x=cx-100+i*100,y=498;
+      unitAt(T.t,x,y,52,{walk:true,phase:i*1.15,sec:2.1,dir:1,
+        selected:i===1,champion:i===2,hp:i===2?.45:1});
+    }
+  });
+  rule(34,548,1366,548,line);
+
+  // ── 三、四名将领 ──
+  label('三 · 将领立绘（姓名 + 五维派生，不是同一图章）',34,576,15,ink);
+  GENS.forEach((g,i)=>{
+    const x=180+i*330,y=782;
+    const look=generalLook(g);
+    drawGeneralPortrait(ctx,look,x,y,170,{hpK:[1,.72,.4,.9][i],
+      flash:i===1?.35:0,skill:i===3?'#c8a86a':null});
+    label(g.name,x,806,13,ink,'center');
+    label(`武${g.force} 智${g.intellect} 统${g.command} 政${g.politics}`,x,824,10,sub,'center');
+  });
+  rule(34,824,1366,824,line);
+
+  // ── 四、主地图驻军简笔 ──
+  label('四 · 主地图驻军 / 行军队列的程序化简笔',34,852,15,ink);
+  for(let i=0;i<12;i++){
+    const x=90+i*108,y=948;
+    trooperAt(x,y,42,Math.PI/2+i*.13,i*.7+i*.07,
+      dark?'rgba(216,210,187,.86)':'rgba(38,48,40,.86)');
+    if(i<3) label(['静止','左步','右步'][i],x,y+34,10,sub,'center');
+  }
+  rule(34,1010,1366,1010,line);
+  label('建安五年二月 · A 为游戏内八向位图原版 / B–F 为重绘 · 逻辑与存档链路零改动',34,1042,11,sub);
+  label(`皮肤 ${sk.id} · ${sk.id==='classic'?'位图原版':'纯 canvas 路径重绘'}`,1366,1042,11,sub,'right');
+}
+
+sel.onchange=e=>{ setUnitSkin(e.target.value); paint(); };
+note.textContent=getUnitSkinInfo().title;
+sel.addEventListener('change',()=>{ note.textContent=getUnitSkinInfo().title; });
+window.__setUnitSkin=(id)=>{ setUnitSkin(id); sel.value=id; note.textContent=getUnitSkinInfo().title; paint(); };
+window.__getUnitSkin=()=>getUnitSkin();
+window.__skins=UNIT_SKINS.map(s=>({id:s.id,letter:s.letter,title:s.title}));
+window.__portraitReady=()=>portraits.ready;
+paint();
+</script>
+</body>
+</html>

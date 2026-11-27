@@ -576,6 +576,11 @@ ${sec('图幅', '同一套玩法，多铺一张图')}
         <a class="bigBtn ghost" style="display:block;text-align:center;text-decoration:none" href="./?map=guandu">官渡本图 · 八回章回</a>
         <a class="bigBtn ghost" style="display:block;text-align:center;text-decoration:none" href="./?map=quanjing">十三州全境 · 两章</a>
       </div>
+${sec('单位样式', '小兵 / 将领重绘 · 旧版 A 完整保存，随时可切回')}
+      <p class="hintLine">这是本机界面状态，不进局面、不进存档、不进军令帖。A 为八向写实位图原版；B–F 是重绘（纯 canvas 路径）。切换后大地图与城池布阵的单位同时换样式。</p>
+      <div class="cmdGroup" style="max-width:560px">
+        ${(actions.getUnitSkins?.() ?? []).map(k => `<button data-act="unitSkin" data-id="${k.id}" ${actions.getUnitSkin?.() === k.id ? 'style="border-color:#c8a86a;color:#c8a86a"' : ''}>${k.letter} · ${k.title}</button>`).join('')}
+      </div>
 ${sec('系统设置', `v${cfg.meta.version} · 存档版本 1`)}
       <div class="listRow" style="cursor:default"><span class="tag">节奏</span>
         <div style="flex:1"><div class="t">自动推进回合</div><div class="s">每 ${cfg.calendar.secPerTurn} 秒走 1 旬</div></div>
@@ -1056,6 +1061,7 @@ SOFTWARE.`;
       case 'toggleAuto': actions.setAuto(!actions.getAuto()); render(); break;
       case 'toggleIdle': actions.setSetting('idleStop', !actions.getSetting('idleStop')); render(); break;
       case 'toggleSnap': actions.setSetting('snap', !actions.getSetting('snap')); render(); break;
+      case 'unitSkin': actions.setUnitSkin?.(id); render(); break;
       case 'save': actions.saveGame(); break;
       case 'load': actions.loadGame(); break;
       case 'newgame': actions.newGame(); break;
